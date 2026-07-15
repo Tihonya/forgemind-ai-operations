@@ -73,7 +73,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://forgemind:test_password@localhost:5432/forgemind_test
           REDIS_URL: redis://localhost:6379/0
-          SECRET_KEY: test_secret_key_for_ci_only
+          SECRET_KEY: test_secret_key_for_ci_only_32_chars_minimum
         run: pytest --cov=app --cov-report=xml --cov-report=term-missing -v
 
       - name: Upload coverage to Codecov
