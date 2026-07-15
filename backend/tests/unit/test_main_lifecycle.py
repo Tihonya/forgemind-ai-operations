@@ -16,14 +16,18 @@ import json
 import pathlib
 import subprocess
 import sys
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app.schemas.health import DependencyCheck, DependencyHealthSnapshot
 
 _BACKEND_CWD = "/run/media/toha/Virtual Staff/VScode/AIAutomation/backend"
 _MAIN_PATH = pathlib.Path(__file__).resolve().parents[2] / "app" / "main.py"
+
+_FIXED_TS = datetime(2026, 7, 15, 14, 0, 0, tzinfo=UTC)
 
 
 def _run_lifespan_script(code: str) -> subprocess.CompletedProcess[str]:
@@ -224,13 +228,35 @@ class TestEndpointAvailability:
 
     @pytest.mark.asyncio
     async def test_health_endpoint_works(self) -> None:
-        """Health endpoint is accessible after startup."""
+        """Health endpoint is accessible and returns structured response."""
+        from unittest.mock import AsyncMock, patch
+
+        snapshot = DependencyHealthSnapshot(
+            timestamp=_FIXED_TS,
+            checks=[
+                DependencyCheck(name="postgresql", status="ok", latency_ms=1.0, detail="ok"),
+                DependencyCheck(name="redis", status="ok", latency_ms=1.0, detail="ok"),
+                DependencyCheck(
+                    name="alembic", status="ok", latency_ms=1.0, detail="revision abc1234"
+                ),
+                DependencyCheck(name="worker", status="ok", latency_ms=1.0, detail="ok"),
+            ],
+            summary="healthy",
+        )
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.get("/health")
+            with patch(
+                "app.main.check_all_dependencies",
+                new=AsyncMock(return_value=snapshot),
+            ):
+                response = await client.get("/health")
 
         assert response.status_code == 200
-        assert response.json()["status"] == "healthy"
+        # Phase 1: structured response with status, checks, correlation_id
+        body = response.json()
+        assert body["status"] == "healthy"
+        assert "checks" in body
+        assert "correlation_id" in body
 
     @pytest.mark.asyncio
     async def test_root_endpoint_works(self) -> None:

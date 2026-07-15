@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import re
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -14,6 +15,9 @@ from starlette.types import Receive, Scope, Send
 from app.core.context import bind_correlation_id, get_correlation_id
 from app.core.correlation import CORRELATION_HEADER
 from app.main import app
+from app.schemas.health import DependencyCheck, DependencyHealthSnapshot
+
+_FIXED_TS = datetime(2026, 7, 15, 14, 0, 0, tzinfo=UTC)
 
 _UUID4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
@@ -485,12 +489,34 @@ async def test_concurrent_requests_isolated(client: AsyncClient) -> None:
 # existing endpoints still pass
 # ---------------------------------------------------------------------------
 
-
 @pytest.mark.asyncio
 async def test_health_endpoint_still_works(client: AsyncClient) -> None:
-    response = await client.get("/health")
+    """Health endpoint returns the new structured response."""
+    from unittest.mock import AsyncMock, patch
+
+    snapshot = DependencyHealthSnapshot(
+        timestamp=_FIXED_TS,
+        checks=[
+            DependencyCheck(name="postgresql", status="ok", latency_ms=1.0, detail="ok"),
+            DependencyCheck(name="redis", status="ok", latency_ms=1.0, detail="ok"),
+            DependencyCheck(
+                name="alembic", status="ok", latency_ms=1.0, detail="revision abc1234"
+            ),
+            DependencyCheck(name="worker", status="ok", latency_ms=1.0, detail="ok"),
+        ],
+        summary="healthy",
+    )
+    with patch(
+        "app.main.check_all_dependencies", new=AsyncMock(return_value=snapshot)
+    ):
+        response = await client.get("/health")
+
     assert response.status_code == 200
-    assert response.json()["status"] == "healthy"
+    # Phase 1: structured response with status, checks, correlation_id
+    body = response.json()
+    assert body["status"] == "healthy"
+    assert "checks" in body
+    assert "correlation_id" in body
 
 
 @pytest.mark.asyncio
