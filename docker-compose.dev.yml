@@ -1,0 +1,62 @@
+# Development overrides for hot reload and debugging
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.dockerfile
+      target: development
+    volumes:
+      - ./backend:/app/backend:rw
+      - ./seed:/app/seed:rw
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+    ports:
+      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/backend
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.dockerfile
+      target: development
+    volumes:
+      - ./backend:/app/backend:rw
+      - ./seed:/app/seed:rw
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+    command: python -m arq app.worker.WorkerSettings
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/frontend.dockerfile
+      target: development
+    volumes:
+      - ./frontend/src:/app/src:rw
+      - ./frontend/public:/app/public:rw
+      - ./frontend/package.json:/app/package.json:rw
+    environment:
+      NODE_ENV: development
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host 0.0.0.0
+
+  caddy:
+    ports:
+      - "80:80"
+    environment:
+      CADDY_DOMAIN: localhost
+      FRONTEND_PORT: "5173"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6379:6379"

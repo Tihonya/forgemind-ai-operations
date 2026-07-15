@@ -1,0 +1,41 @@
+# ForgeMind AI Operations - Caddy Configuration
+# This Caddyfile configures reverse proxy for the ForgeMind application.
+#
+# In production, replace {$CADDY_DOMAIN} with your actual domain.
+# Caddy will automatically provision HTTPS certificates via Let's Encrypt.
+
+{$CADDY_DOMAIN:localhost} {
+    # Global options
+    encode gzip zstd
+    log {
+        output stdout
+        format json
+    }
+
+    # API requests → backend
+    handle /api/* {
+        reverse_proxy backend:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Request-ID {req_id}
+        }
+    }
+
+    # Backend docs and health
+    handle /docs* {
+        reverse_proxy backend:8000
+    }
+    handle /redoc* {
+        reverse_proxy backend:8000
+    }
+    handle /openapi.json {
+        reverse_proxy backend:8000
+    }
+    handle /health {
+        reverse_proxy backend:8000
+    }
+
+    # Everything else → frontend
+    handle {
+        reverse_proxy frontend:{$FRONTEND_PORT:80}
+    }
+}
