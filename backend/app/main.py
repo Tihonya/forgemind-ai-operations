@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.config import settings
 
 
@@ -26,6 +27,9 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan,
 )
+
+# Correlation ID middleware (outermost — runs first on every request)
+app.add_middleware(CorrelationIdMiddleware)
 
 # CORS middleware
 app.add_middleware(
