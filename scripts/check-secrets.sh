@@ -34,7 +34,7 @@ FOUND_SECRETS=0
 if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "Checking staged files..."
     STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || echo "")
-    
+
     if [ -n "$STAGED_FILES" ]; then
         for pattern in "${PATTERNS[@]}"; do
             if echo "$STAGED_FILES" | grep -vE "$EXCLUDE_PATTERN" | xargs grep -E "$pattern" 2>/dev/null; then
