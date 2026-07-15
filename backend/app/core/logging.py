@@ -50,11 +50,10 @@ def _ensure_event_field(
 
 # Shared processor chain used by both stdlib and structlog.
 # Use list[Any] to avoid mypy conflicts with structlog's complex Processor alias.
-# NOTE: Request-context integration (ContextVar merging / correlation ID
-# auto-binding) is intentionally NOT included here.  It belongs to a later
-# work-package task.  Explicit fields (e.g. correlation_id="...") still pass
-# through because they are ordinary event-dict kwargs.
+# merge_contextvars is the first processor — it merges structlog contextvars
+# (including correlation_id bound via app.core.context) into the event dict.
 _SHARED_PROCESSORS: list[Any] = [
+    structlog.contextvars.merge_contextvars,
     structlog.stdlib.add_log_level,
     _lower_log_level,
     structlog.stdlib.add_logger_name,
