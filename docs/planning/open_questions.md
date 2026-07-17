@@ -11,6 +11,7 @@ All items below require explicit Product Owner decision before implementation be
 **Decision:** Option A — Pin to Python 3.12.
 **Status:** APPROVED by Product Owner (2026-07-15)
 **Recorded in:** 08_DECISION_LOG.md DEC-010
+**Validated:** Phase 1 implementation uses Python 3.12 successfully (239 tests passing).
 
 ---
 
@@ -19,14 +20,16 @@ All items below require explicit Product Owner decision before implementation be
 **Decision:** Option A — ARQ + Redis.
 **Status:** APPROVED by Product Owner (2026-07-15)
 **Recorded in:** 08_DECISION_LOG.md DEC-011
+**Validated:** Phase 1 diagnostic-job pipeline uses ARQ + Redis end-to-end (live smoke verified).
 
 ---
 
-### Q-6 — Reverse Proxy (DEC-014) — RESOLVED ✓
+### Q-6 — Reverse Proxy (DEC-014) — DEFERRED ✓
 
 **Decision:** Option A — Caddy.
 **Status:** APPROVED by Product Owner (2026-07-15)
 **Recorded in:** 08_DECISION_LOG.md DEC-014
+**Implementation Status:** Deferred to Phase 2 (frontend scope deferred from Phase 1). Decision remains valid; Caddy configuration will be added when Phase 2 front-end work begins.
 
 ---
 

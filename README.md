@@ -2,6 +2,23 @@
 
 Supply Risk Intelligence — a portfolio-grade industrial AI demonstration.
 
+## Current Project Status
+
+**Phase 1 — Running Skeleton: ✅ COMPLETE (2026-07-17)**
+
+The production-grade backend skeleton is live and verified end-to-end:
+FastAPI + PostgreSQL + Redis + ARQ worker, with structured logging,
+correlation-ID traces, real health checks, and the diagnostic-job
+vertical slice. 239 backend tests passing, ruff + mypy clean.
+
+- Branch: `feature/phase-1-running-skeleton`
+- Final commit: `58a2635`
+- Completion report: [`docs/phase_1/phase_1_completion_report.md`](docs/phase_1/phase_1_completion_report.md)
+- Next steps: [`docs/next_steps.md`](docs/next_steps.md)
+
+**Status:** Pending Product Owner approval for merge to `main` and Phase 2
+planning (see [next steps](docs/next_steps.md)).
+
 ## Overview
 
 ForgeMind demonstrates a complete enterprise-grade AI workflow for supply chain risk assessment. It combines deterministic business logic, RAG-powered document intelligence, and structured AI recommendations with full audit traceability and human-in-the-loop approval.
@@ -39,10 +56,10 @@ cd frontend && npm install && npm run dev && cd ..
 # Run tests (uses root .venv for backend)
 make test
 
-# Seed demo data (deferred to Phase 1)
+# Seed demo data (deferred to Phase 2 — Synthetic ERP core)
 make seed
 
-# Reset demo data (deferred to Phase 1)
+# Reset demo data (deferred to Phase 2 — Synthetic ERP core)
 make reset
 ```
 
