@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from arq.connections import RedisSettings
 
 from app.config import settings
+from app.jobs.diagnostics import run_diagnostic_job
 
 
 async def startup(ctx: dict[str, object]) -> None:
@@ -49,7 +50,7 @@ _redis_host, _redis_port, _redis_db, _redis_password = _parse_redis_url(settings
 class WorkerSettings:
     """ARQ worker settings for ForgeMind background task processing."""
 
-    functions: list[Any] = []
+    functions: list[Any] = [run_diagnostic_job]
     on_startup = startup
     on_shutdown = shutdown
     queue_name = settings.arq_queue_name
