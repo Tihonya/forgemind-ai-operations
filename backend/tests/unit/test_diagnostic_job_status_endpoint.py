@@ -126,7 +126,7 @@ def _make_diagnostic_job(
     job_id: uuid.UUID = FIXED_JOB_UUID,
     correlation_id: uuid.UUID = FIXED_CORRELATION_UUID,
     status: str = "pending",
-    checks: dict[str, Any] | None = None,
+    checks: list[dict[str, Any]] | None = None,
     error_message: str | None = None,
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
@@ -212,7 +212,18 @@ async def test_running_job_returns_200(
 async def test_completed_job_returns_200_with_checks_and_duration(
     install_session_factory: FakeSessionFactory,
 ) -> None:
-    checks = {"postgresql": "ok", "redis": "ok", "worker": "ok"}
+    # Actual persisted shape from worker (list of check objects, not dict)
+    checks = [
+        {"name": "postgresql", "status": "ok", "latency_ms": 1.99, "detail": "SELECT 1 succeeded"},
+        {"name": "redis", "status": "ok", "latency_ms": 1.79, "detail": "PING succeeded"},
+        {"name": "alembic", "status": "ok", "latency_ms": 2.69, "detail": "revision 12927017"},
+        {
+            "name": "worker",
+            "status": "ok",
+            "latency_ms": 1.57,
+            "detail": "Jul-17 13:55:53 j_complete=0",
+        },
+    ]
     job = _make_diagnostic_job(
         status="completed",
         checks=checks,
@@ -593,3 +604,153 @@ async def test_post_endpoint_still_registers(
     body = response.json()
     assert set(body.keys()) == {"job_id", "correlation_id", "status"}
     assert body["status"] == "pending"
+
+
+# ---------------------------------------------------------------------------
+# Regression tests: actual persisted checks shape (list, not dict)
+# ---------------------------------------------------------------------------
+# The worker persists checks as a list of DependencyCheck.model_dump() dicts,
+# not as a dict[str, str]. The old schema (dict[str, str] | None) caused a
+# Pydantic ValidationError on GET /api/v1/system/diagnostics/{job_id} when the
+# job was completed. These tests lock in the correct behaviour.
+# ---------------------------------------------------------------------------
+
+_REAL_WORKER_CHECKS: list[dict[str, Any]] = [
+    {"name": "postgresql", "status": "ok", "latency_ms": 1.993, "detail": "SELECT 1 succeeded"},
+    {"name": "redis", "status": "ok", "latency_ms": 1.787, "detail": "PING succeeded"},
+    {"name": "alembic", "status": "ok", "latency_ms": 2.69, "detail": "revision 12927017"},
+    {"name": "worker", "status": "ok", "latency_ms": 1.57, "detail": "worker healthy"},
+]
+
+
+@pytest.mark.asyncio
+async def test_get_completed_job_with_list_shaped_checks_returns_200(
+    install_session_factory: FakeSessionFactory,
+) -> None:
+    """A completed job whose `checks` is a list of check objects must
+    return HTTP 200 with the exact serialized shape — no Pydantic error."""
+    job = _make_diagnostic_job(
+        status="completed",
+        checks=_REAL_WORKER_CHECKS,
+        started_at=FIXED_STARTED_AT,
+        completed_at=FIXED_COMPLETED_AT,
+        duration_ms=42,
+    )
+    install_session_factory.set_row(job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/system/diagnostics/{FIXED_JOB_UUID}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["checks"] == _REAL_WORKER_CHECKS
+    assert body["duration_ms"] == 42
+    assert body["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_completed_job_serialized_checks_shape(
+    install_session_factory: FakeSessionFactory,
+) -> None:
+    """Verify the serialized checks field is a list of objects with the
+    expected keys and types, matching `DependencyCheck.model_dump()`."""
+    job = _make_diagnostic_job(
+        status="completed",
+        checks=_REAL_WORKER_CHECKS,
+        started_at=FIXED_STARTED_AT,
+        completed_at=FIXED_COMPLETED_AT,
+        duration_ms=42,
+    )
+    install_session_factory.set_row(job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/system/diagnostics/{FIXED_JOB_UUID}")
+
+    assert response.status_code == 200
+    body = response.json()
+    checks = body["checks"]
+    assert isinstance(checks, list)
+    assert len(checks) == 4
+    for check in checks:
+        assert set(check.keys()) == {"name", "status", "latency_ms", "detail"}
+        assert isinstance(check["name"], str) and len(check["name"]) > 0
+        assert check["status"] in ("ok", "error", "unknown")
+        assert isinstance(check["latency_ms"], (int, float))
+        assert check["latency_ms"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_get_completed_job_no_pydantic_validation_error(
+    install_session_factory: FakeSessionFactory,
+) -> None:
+    """The GET handler must not raise a Pydantic ValidationError when the
+    persisted checks are the actual list shape. Previously this returned
+    HTTP 500 — now it returns 200."""
+    job = _make_diagnostic_job(
+        status="completed",
+        checks=_REAL_WORKER_CHECKS,
+        started_at=FIXED_STARTED_AT,
+        completed_at=FIXED_COMPLETED_AT,
+        duration_ms=42,
+    )
+    install_session_factory.set_row(job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/system/diagnostics/{FIXED_JOB_UUID}")
+
+    # Must NOT be 500. 500 would prove the Pydantic regression is still live.
+    assert response.status_code != 500, (
+        f"Pydantic regression still live: {response.status_code} {response.text!r}"
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_pending_job_checks_null(
+    install_session_factory: FakeSessionFactory,
+) -> None:
+    """Pending job: checks must be null, not an empty list."""
+    job = _make_diagnostic_job(status="pending", checks=None)
+    install_session_factory.set_row(job)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/system/diagnostics/{FIXED_JOB_UUID}")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["checks"] is None
+    assert body["status"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_malformed_checks_fail_predictably_and_do_not_leak_internals(
+    install_session_factory: FakeSessionFactory,
+) -> None:
+    """If stored checks contain an invalid status, the response must
+    not leak Pydantic/SQLAlchemy/URL details to the client.
+
+    In production, Starlette's ServerErrorMiddleware converts the Pydantic
+    ValidationError to a generic 500. We simulate this by using
+    raise_app_exceptions=False on the ASGITransport.
+    """
+    bad_checks = [
+        {"name": "postgresql", "status": "NOT_A_REAL_STATUS", "latency_ms": 1.0, "detail": None},
+    ]
+    job = _make_diagnostic_job(
+        status="completed",
+        checks=bad_checks,
+        started_at=FIXED_STARTED_AT,
+        completed_at=FIXED_COMPLETED_AT,
+        duration_ms=10,
+    )
+    install_session_factory.set_row(job)
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/api/v1/system/diagnostics/{FIXED_JOB_UUID}")
+
+    assert response.status_code == 500
+    response_text = response.text.lower()
+    for leak in ("traceback", "pydantic", "validationerror", "postgresql+asyncpg", "redis://"):
+        assert leak not in response_text, f"Leak detected: {leak!r} in {response.text!r}"

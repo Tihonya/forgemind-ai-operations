@@ -11,6 +11,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from app.schemas.health import DependencyCheck
+
+# Canonical check-result schema reused from the dependency health module.
+# Each persisted diagnostic check item has exactly these fields:
+#   name:       str            (e.g. "postgresql", "redis", "alembic", "worker")
+#   status:     "ok"|"error"|"unknown"
+#   latency_ms: float >= 0.0
+#   detail:     str | None
+DiagnosticCheckResponse = DependencyCheck
+
 
 class DiagnosticCreateResponse(BaseModel):
     """Response for ``POST /api/v1/system/diagnostics``.
@@ -77,7 +87,7 @@ class DiagnosticJobResponse(BaseModel):
         ...,
         description="Lifecycle status: pending, running, completed, or failed",
     )
-    checks: dict[str, str] | None = Field(
+    checks: list[DiagnosticCheckResponse] | None = Field(
         default=None,
         description="Diagnostic check results (null for non-completed jobs)",
     )

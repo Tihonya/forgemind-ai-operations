@@ -71,7 +71,7 @@ class DiagnosticJob(Base):
         nullable=True,
     )
 
-    checks: Mapped[dict[str, Any] | None] = mapped_column(
+    checks: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSONB,
         nullable=True,
     )
