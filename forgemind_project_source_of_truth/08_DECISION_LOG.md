@@ -59,7 +59,7 @@
 **Date:** 2026-07-15  
 **Status:** Accepted  
 **Context:** 01_PRODUCT_AND_MVP_SCOPE.md §5 lists five target users, but FR-01 lists four roles.  
-**Decision:** Engineer is a 5th distinct RBAC role with engineer.demo account. Engineer must not inherit Production Manager or AI Administrator privileges automatically.  
+**Decision:** Engineer is a distinct fifth role and must not automatically inherit privileges from any other role, including Production Manager, Procurement Specialist or AI Administrator.  Engineer has a dedicated `engineer.demo` account.  
 **Reason:** Engineer has distinct behavior (views technical docs and alternatives) and warrants a separate RBAC identity.  
 **Consequences:** Affects auth middleware, seed data, demo accounts. Roles table contains 5 codes.  
 **Affected documents/tests:** FR-01, FR-02, AT-002  

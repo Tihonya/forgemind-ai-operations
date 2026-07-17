@@ -11,7 +11,7 @@
 **Date:** 2026-07-15
 **Status:** Accepted
 **Context:** `01_PRODUCT_AND_MVP_SCOPE.md` §5 lists five target users; FR-01 listed four roles.
-**Decision:** Engineer is a 5th distinct RBAC role with `engineer.demo` account. Engineer must not inherit Production Manager or Procurement Specialist privileges automatically.
+**Decision:** Engineer is a distinct fifth role and must not automatically inherit privileges from any other role, including Production Manager, Procurement Specialist or AI Administrator.
 **Consequence:** `users` table contains 5 initial rows; `roles` table contains 5 rows; `user_roles` table contains 5 rows. Role codes: `PRODUCTION_MANAGER`, `PROCUREMENT_SPECIALIST`, `ENGINEER`, `AI_ADMINISTRATOR`, `AUDITOR`.
 **Affected documents/tests:** AT-002, `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md`, `08_DECISION_LOG.md`.
 **Phase 2 implementation scope:** Implement login endpoint + role middleware; enforce role-based access to system endpoints (e.g., `/api/v1/system/dataset/reset` restricted to AI_ADMINISTRATOR). Full role-specific UI behavior deferred to Phase 3.
@@ -79,7 +79,7 @@ All BLOCKING findings from the Phase 2 planning review have been resolved:
   - PO lines with `status ∈ {CONFIRMED, IN_TRANSIT, DELIVERED}` AND `expected_delivery_date ≤ need_date` contribute to `confirmed_early_supply` (reduces shortage).
   - PO lines with `status ∈ {CONFIRMED, IN_TRANSIT}` AND `expected_delivery_date > need_date` do NOT reduce shortage but are recorded as `confirmed_late_supply` to trigger HIGH severity.
   - PO lines with `status ∈ {PLACED, CANCELLED}` are excluded from all supply calculations.
-  - PO lines with `status in {RECEIVED, DELIVERED}` have their received quantities already reflected in `inventory_balances.quantity_on_hand` (no double counting).
+  - PO lines with header status `RECEIVED` or line status `DELIVERED` have their received quantities already reflected in `inventory_balances.quantity_on_hand` (no double counting).
 - **Files modified:** `docs/planning/phase_2_business_model_spec.md` §5.
 
 ### 4. WP-2.7 atomicity — RESOLVED
@@ -114,8 +114,8 @@ All BLOCKING findings from the Phase 2 planning review have been resolved:
 | WP-2.4 | Golden Dataset integrity | Pending | WP-2.3 | AT-003 |
 | WP-2.5 | Auth data foundation | Pending | WP-2.2, WP-2.3 | Users/roles/role mappings |
 | WP-2.6 | Auth and RBAC services | Pending | WP-2.5 | AT-002 backend |
-| WP-2.7A | Core production read APIs | Pending | WP-2.2, WP-2.5 | Production, orders, components |
-| WP-2.7B | Supply and inventory read APIs | Pending | WP-2.2, WP-2.5 | Inventory, suppliers, POs |
+| WP-2.7A | Core production read APIs | Pending | WP-2.2, WP-2.3 | Production, orders, components |
+| WP-2.7B | Supply and inventory read APIs | Pending | WP-2.2, WP-2.3, WP-2.7A | Inventory, suppliers, POs |
 | WP-2.8 | Deterministic supply-risk engine | Pending | WP-2.7A, WP-2.7B | BOM/inventory/PO/severity logic |
 | WP-2.9 | Golden Scenario acceptance | Pending | WP-2.8 | AT-004 |
 | WP-2.10 | Phase 2 integration and closeout | Pending | WP-2.1–WP-2.9 | AT-005 backend, completion report |

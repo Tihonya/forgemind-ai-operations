@@ -223,7 +223,24 @@ The current order's own reservation is NOT subtracted — the order being analys
 
 ## 5. Purchase-order delivery semantics
 
+### 5.0 Status enums (canonical)
+
+**`purchase_orders.status` (header):** `PLACED`, `CONFIRMED`, `CANCELLED`, `RECEIVED`
+
+**`purchase_order_lines.status` (line):** `PENDING`, `CONFIRMED`, `IN_TRANSIT`, `DELIVERED`, `CANCELLED`
+
+`RECEIVED` is a header status, not a line status.
+`DELIVERED` is a line status, not a header status.
+
 ### 5.1 Quantity calculation (shortage reduction)
+
+A purchase-order line contributes to confirmed incoming supply before the need date only when:
+
+```text
+purchase_order.status = CONFIRMED
+AND purchase_order_line.status IN (CONFIRMED, IN_TRANSIT)
+AND purchase_order_line.expected_delivery_date <= need_date
+```
 
 For component `C` and work order `WO-X` with `need_date`:
 
@@ -231,7 +248,8 @@ For component `C` and work order `WO-X` with `need_date`:
 confirmed_early_supply =
     sum(purchase_order_lines.ordered_quantity
         where component_id == C
-        and purchase_order.status in (CONFIRMED, IN_TRANSIT)
+        and purchase_order.status = CONFIRMED
+        and purchase_order_line.status IN (CONFIRMED, IN_TRANSIT)
         and purchase_order_line.expected_delivery_date <= WO-X.need_date)
 
 available_supply = inventory_available_for_WO_X + confirmed_early_supply
@@ -240,31 +258,41 @@ shortage = max(0, required_quantity - available_supply)
 ```
 
 **Key rules:**
-- Only purchase-order lines with status `CONFIRMED` or `IN_TRANSIT` contribute to `confirmed_early_supply`.
-- The PO line must have `expected_delivery_date ≤ need_date` to reduce shortage.
-- Lines with status `PLACED`, `CANCELLED`, or `RECEIVED` do NOT reduce shortage:
-  - `PLACED`: not yet confirmed by supplier.
-  - `CANCELLED`: cancelled by either party.
-  - `RECEIVED`: already delivered — received quantity is reflected in `inventory_balances.quantity_on_hand` (no double counting).
-- Lines with status `DELIVERED` are treated as received and already in inventory (no separate contribution).
+- Only lines with line status `CONFIRMED` or `IN_TRANSIT` (on a header with status `CONFIRMED`) contribute to `confirmed_early_supply`.
+- The line must have `expected_delivery_date ≤ need_date` to reduce shortage.
+- Excluded lines do NOT reduce shortage:
+  - Header status `CANCELLED`: PO is cancelled.
+  - Header status `PLACED`: PO not yet confirmed by supplier.
+  - Line status `PENDING`: line not yet confirmed.
+  - Line status `CANCELLED`: line cancelled by either party.
+  - Line status `DELIVERED`: quantity already reflected in `inventory_balances.quantity_on_hand` (no double counting).
 
 ### 5.2 Lateness indicator (evidence for severity)
+
+A purchase-order line is late supply evidence when:
+
+```text
+purchase_order.status = CONFIRMED
+AND purchase_order_line.status IN (CONFIRMED, IN_TRANSIT)
+AND purchase_order_line.expected_delivery_date > need_date
+```
 
 ```text
 confirmed_late_supply =
     sum(purchase_order_lines.ordered_quantity
         where component_id == C
-        and purchase_order.status in (CONFIRMED, IN_TRANSIT)
+        and purchase_order.status = CONFIRMED
+        and purchase_order_line.status IN (CONFIRMED, IN_TRANSIT)
         and purchase_order_line.expected_delivery_date > WO-X.need_date)
 ```
 
-This is NOT subtracted from the shortage but is recorded as evidence that confirmed supply exists but arrives after the need date.
+Late supply does not reduce shortage at the need date, but it may trigger `HIGH` severity.
 
 ### 5.3 No double counting
 
 The same quantity must never be counted both as inventory and incoming supply:
-- If a PO line status is `RECEIVED` or `DELIVERED`, its `received_quantity` is already in `inventory_balances.quantity_on_hand`.
-- Only `CONFIRMED` and `IN_TRANSIT` lines (expected but not yet received) contribute to `confirmed_early_supply` or `confirmed_late_supply`.
+- If a PO line status is `DELIVERED`, its `received_quantity` is already in `inventory_balances.quantity_on_hand` (if the header status indicates receipt).
+- Only lines with status `CONFIRMED` or `IN_TRANSIT` (expected but not yet received) on a `CONFIRMED` header contribute to `confirmed_early_supply` or `confirmed_late_supply`.
 
 ## 6. Production plan → order → requirement relationships
 
