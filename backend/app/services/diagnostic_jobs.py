@@ -50,7 +50,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.core.logging import get_logger
 from app.models.diagnostic import DiagnosticJob
-from app.schemas.diagnostic import DiagnosticCreateResponse
+from app.schemas.diagnostic import DiagnosticCreateResponse, DiagnosticJobResponse
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from arq.connections import ArqRedis
@@ -291,3 +291,49 @@ async def _mark_enqueue_failure(
 from app.database import async_session_factory as _production_session_factory  # noqa: E402
 
 _session_factory: async_sessionmaker[AsyncSession] = _production_session_factory
+
+
+async def get_diagnostic_job(
+    job_id: _uuid_module.UUID,
+) -> DiagnosticJobResponse | None:
+    """Look up a diagnostic job by primary key.
+
+    Read-only: no commit, no rollback (not needed for read), no Redis
+    interaction, no enqueue.
+
+    Args:
+        job_id: Primary key UUID of the diagnostic job.
+
+    Returns:
+        ``DiagnosticJobResponse`` if the row exists, ``None`` otherwise.
+    """
+    async with _session_factory() as session:
+        result = await session.execute(
+            select(DiagnosticJob).where(DiagnosticJob.id == job_id)
+        )
+        job_row = result.scalar_one_or_none()
+
+        if job_row is None:
+            return None
+
+        # Map detached ORM attributes to response schema.
+        # Timestamps → ISO-8601 strings; UUIDs pass through directly.
+        return DiagnosticJobResponse(
+            id=job_row.id,
+            correlation_id=job_row.correlation_id,
+            status=job_row.status,
+            checks=job_row.checks,
+            error_message=job_row.error_message,
+            started_at=(
+                job_row.started_at.isoformat()
+                if job_row.started_at is not None
+                else None
+            ),
+            completed_at=(
+                job_row.completed_at.isoformat()
+                if job_row.completed_at is not None
+                else None
+            ),
+            duration_ms=job_row.duration_ms,
+            created_at=job_row.created_at.isoformat(),
+        )

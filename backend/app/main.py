@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
+from uuid import UUID
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,9 +13,9 @@ from app.config import settings
 from app.core.build_info import get_build_info
 from app.core.context import get_correlation_id
 from app.core.logging import configure_logging, get_logger
-from app.schemas.diagnostic import DiagnosticCreateResponse
+from app.schemas.diagnostic import DiagnosticCreateResponse, DiagnosticJobResponse
 from app.services.dependency_health import check_all_dependencies
-from app.services.diagnostic_jobs import enqueue_diagnostic_job
+from app.services.diagnostic_jobs import enqueue_diagnostic_job, get_diagnostic_job
 
 
 @asynccontextmanager
@@ -163,6 +164,47 @@ async def enqueue_diagnostic() -> DiagnosticCreateResponse:
     if correlation_id is None:  # pragma: no cover - middleware invariant
         raise RuntimeError("Correlation ID is not bound in request context")
     return await enqueue_diagnostic_job(correlation_id=correlation_id)
+
+
+@app.get(
+    f"{settings.api_v1_prefix}/system/diagnostics/{{job_id}}",
+    response_model=DiagnosticJobResponse,
+    status_code=200,
+    tags=["System"],
+)
+async def get_diagnostic_status(job_id: UUID) -> DiagnosticJobResponse:
+    """Retrieve diagnostic job status and results.
+
+    Approved public contract (plan §11.1):
+
+        GET /api/v1/system/diagnostics/{job_id} → HTTP 200
+        {
+            "id":             "<uuid>",
+            "correlation_id": "<uuid-v4>",
+            "status":         "pending" | "running" | "completed" | "failed",
+            "checks":         {...} | null,
+            "error_message":  null | "...",
+            "started_at":     "ISO-8601" | null,
+            "completed_at":   "ISO-8601" | null,
+            "duration_ms":    150 | null,
+            "created_at":     "ISO-8601"
+        }
+
+    Read-only: no enqueue, no row modification, no Redis.
+    Returns HTTP 404 with safe error contract when job not found.
+    """
+    from fastapi import HTTPException
+
+    result = await get_diagnostic_job(job_id)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "diagnostic_job_not_found",
+                "job_id": str(job_id),
+            },
+        )
+    return result
 
 
 @app.get("/")
