@@ -25,7 +25,7 @@ from httpx import ASGITransport, AsyncClient
 from app.main import app
 from app.schemas.health import DependencyCheck, DependencyHealthSnapshot
 
-_BACKEND_CWD = "/run/media/toha/Virtual Staff/VScode/AIAutomation/backend"
+_BACKEND_CWD = str(pathlib.Path(__file__).resolve().parents[2])
 _MAIN_PATH = pathlib.Path(__file__).resolve().parents[2] / "app" / "main.py"
 
 _FIXED_TS = datetime(2026, 7, 15, 14, 0, 0, tzinfo=UTC)
