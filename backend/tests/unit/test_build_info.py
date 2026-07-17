@@ -122,7 +122,7 @@ class TestResolveGitSha:
         def _fail(*args: object, **kwargs: object) -> None:
             raise AssertionError("subprocess.run should not be called when env var is set")
 
-        monkeypatch.setattr(build_info_mod.subprocess, "run", _fail)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", _fail)  # noqa: PGH003
         assert _resolve_git_sha() == "deadbeef1234567"
 
     def test_env_var_normalized(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -140,9 +140,7 @@ class TestResolveGitSha:
     ) -> None:
         """When git CLI succeeds, its output is used and normalized."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(
-            build_info_mod.shutil, "which", lambda name: "/usr/bin/git"  # noqa: PGH003
-        )
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/git")  # noqa: PGH003
 
         completed = subprocess.CompletedProcess(
             args=["/usr/bin/git", "rev-parse", "HEAD"],
@@ -150,7 +148,7 @@ class TestResolveGitSha:
             stdout="a1b2c3d4e5f60000000000000000000000000000\n",
             stderr="",
         )
-        monkeypatch.setattr(build_info_mod.subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
 
         result = _resolve_git_sha()
         assert result == "a1b2c3d4e5f60000000000000000000000000000"
@@ -160,9 +158,7 @@ class TestResolveGitSha:
     ) -> None:
         """Non-zero exit code (no repo) yields unknown."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(
-            build_info_mod.shutil, "which", lambda name: "/usr/bin/git"  # noqa: PGH003
-        )
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/git")  # noqa: PGH003
 
         completed = subprocess.CompletedProcess(
             args=["/usr/bin/git", "rev-parse", "HEAD"],
@@ -170,7 +166,7 @@ class TestResolveGitSha:
             stdout="",
             stderr="fatal: not a git repository",
         )
-        monkeypatch.setattr(build_info_mod.subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
 
         assert _resolve_git_sha() == "unknown"
 
@@ -179,7 +175,7 @@ class TestResolveGitSha:
     ) -> None:
         """shutil.which returns None (git not installed) yields unknown."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(build_info_mod.shutil, "which", lambda name: None)  # noqa: PGH003
+        monkeypatch.setattr("app.core.build_info.shutil.which", lambda name: None)  # noqa: PGH003
         assert _resolve_git_sha() == "unknown"
 
     def test_git_command_timeout(
@@ -187,18 +183,14 @@ class TestResolveGitSha:
     ) -> None:
         """TimeoutExpired yields unknown."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(
-            build_info_mod.shutil, "which", lambda name: "/usr/bin/git"  # noqa: PGH003
-        )
-        monkeypatch.setattr(build_info_mod.subprocess, "run", _raise_timeout)  # noqa: PGH003
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/git")  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", _raise_timeout)  # noqa: PGH003
         assert _resolve_git_sha() == "unknown"
 
     def test_git_output_invalid(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """If git produces non-hex output, normalization returns unknown."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(
-            build_info_mod.shutil, "which", lambda name: "/usr/bin/git"  # noqa: PGH003
-        )
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/git")  # noqa: PGH003
 
         completed = subprocess.CompletedProcess(
             args=["/usr/bin/git", "rev-parse", "HEAD"],
@@ -206,7 +198,7 @@ class TestResolveGitSha:
             stdout="not-a-valid-sha\n",
             stderr="",
         )
-        monkeypatch.setattr(build_info_mod.subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", lambda *a, **kw: completed)  # noqa: PGH003
 
         assert _resolve_git_sha() == "unknown"
 
@@ -223,19 +215,17 @@ class TestResolveGitSha:
     ) -> None:
         """Verify the subprocess call uses shell=False (by capturing kwargs)."""
         monkeypatch.delenv("FORGEMIND_GIT_SHA", raising=False)
-        monkeypatch.setattr(
-            build_info_mod.shutil, "which", lambda _: "/usr/bin/git"  # noqa: PGH003
-        )
+        monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/git")  # noqa: PGH003
 
-        captured_kwargs: dict = {}
+        captured_kwargs: dict[str, object] = {}
 
-        def _capture(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        def _capture(*args: str, **kwargs: object) -> subprocess.CompletedProcess[str]:
             captured_kwargs.update(kwargs)
             return subprocess.CompletedProcess(
                 args=args, returncode=1, stdout="", stderr=""
             )
 
-        monkeypatch.setattr(build_info_mod.subprocess, "run", _capture)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", _capture)  # noqa: PGH003
         _resolve_git_sha()
 
         assert captured_kwargs.get("shell") is False
@@ -302,7 +292,7 @@ class TestGetBuildInfo:
 
     def test_environment_defaults_to_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Without override, environment comes from Settings."""
-        monkeypatch.setattr(build_info_mod.settings, "environment", "production")
+        monkeypatch.setattr("app.config.settings.environment", "production")
         result = get_build_info(
             git_sha_override="abcdef0123456789",
         )
@@ -363,12 +353,12 @@ class TestModuleImportSafety:
         call_count = 0
         original_run = subprocess.run
 
-        def _tracking_run(*args: object, **kwargs: object) -> subprocess.CompletedProcess:
+        def _tracking_run(*args: str, **kwargs: object) -> subprocess.CompletedProcess[str]:
             nonlocal call_count
             call_count += 1
             return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
 
-        monkeypatch.setattr(build_info_mod.subprocess, "run", _tracking_run)  # noqa: PGH003
+        monkeypatch.setattr(subprocess, "run", _tracking_run)  # noqa: PGH003
 
         # Force reimport of the module
         saved = sys.modules.pop("app.core.build_info", None)
@@ -377,7 +367,7 @@ class TestModuleImportSafety:
         finally:
             if saved is not None:
                 sys.modules["app.core.build_info"] = saved
-            monkeypatch.setattr(build_info_mod.subprocess, "run", original_run)  # noqa: PGH003
+            monkeypatch.setattr(subprocess, "run", original_run)  # noqa: PGH003
 
         assert call_count == 0
 

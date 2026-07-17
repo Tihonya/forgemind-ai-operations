@@ -17,6 +17,7 @@ import pathlib
 import subprocess
 import sys
 from datetime import UTC, datetime
+from typing import Any
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -41,7 +42,7 @@ def _run_lifespan_script(code: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _parse_json_lines(stderr: str) -> list[dict]:
+def _parse_json_lines(stderr: str) -> list[dict[str, Any]]:
     """Parse structured JSON log lines from stderr, skipping non-JSON lines.
 
     The subprocess may emit import warnings or other non-JSON noise on stderr.

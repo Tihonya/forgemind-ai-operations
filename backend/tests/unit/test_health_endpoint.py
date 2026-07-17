@@ -25,6 +25,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
+from typing import Any, Literal
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -63,7 +64,7 @@ async def client() -> AsyncGenerator[AsyncClient, None]:
 
 
 def _check(
-    name: str, status: str, detail: str | None = None
+    name: str, status: Literal["ok", "error", "unknown"], detail: str | None = None
 ) -> DependencyCheck:
     return DependencyCheck(name=name, status=status, latency_ms=1.5, detail=detail)
 
@@ -95,7 +96,7 @@ def healthy_snapshot() -> DependencyHealthSnapshot:
 
 
 def single_failure_snapshot(
-    name: str, status: str, detail: str | None = None
+    name: str, status: Literal["ok", "error", "unknown"], detail: str | None = None
 ) -> DependencyHealthSnapshot:
     """Single named dependency fails, others ok."""
     checks = [c for c in healthy_snapshot().checks if c.name != name]
@@ -151,7 +152,7 @@ def alembic_empty_detail_snapshot() -> DependencyHealthSnapshot:
 # ---------------------------------------------------------------------------
 
 
-def _assert_shape(data: dict) -> None:
+def _assert_shape(data: dict[str, Any]) -> None:
     """Top-level shape: exactly the four public keys, correct types."""
     assert {"status", "timestamp", "correlation_id", "checks"} == set(data.keys())
     assert data["status"] in {"healthy", "degraded", "unhealthy"}
@@ -160,7 +161,7 @@ def _assert_shape(data: dict) -> None:
     assert isinstance(data["checks"], dict)
 
 
-def _assert_checks_shape(checks: dict) -> None:
+def _assert_checks_shape(checks: dict[str, Any]) -> None:
     """All five public keys are present, exactly once, and all flat strings."""
     assert set(checks.keys()) == EXPECTED_PUBLIC_KEYS
     for key, value in checks.items():
@@ -168,7 +169,7 @@ def _assert_checks_shape(checks: dict) -> None:
         assert not isinstance(value, (dict, list)), f"checks[{key!r}] is a structured object"
 
 
-def _assert_no_secrets(checks: dict) -> None:
+def _assert_no_secrets(checks: dict[str, Any]) -> None:
     """No check value contains secret-like substrings."""
     for key, value in checks.items():
         low = value.lower()
@@ -282,7 +283,7 @@ async def test_redis_failure_is_sanitized_flat_string(client: AsyncClient) -> No
 @pytest.mark.parametrize("status", ["unknown", "error"])
 @pytest.mark.asyncio
 async def test_worker_non_ok_maps_to_unavailable(
-    client: AsyncClient, status: str
+    client: AsyncClient, status: Literal["unknown", "error"]
 ) -> None:
     """worker status != 'ok' maps to the literal string 'unavailable'."""
     snapshot = single_failure_snapshot(

@@ -259,7 +259,7 @@ async def _persist_completion(
         job = result.scalar_one()
         job.status = "completed"
         job.completed_at = now
-        job.checks = checks_data  # type: ignore[assignment]
+        job.checks = checks_data
         job.duration_ms = duration_ms
         job.error_message = None
         job.updated_at = now

@@ -326,7 +326,7 @@ async def test_atomic_claim_loser_skips_checks_if_completed() -> None:
     job_id = uuid.uuid4()
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="completed", duration_ms=456)
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="pending", duration_ms=None)},
         {"kind": "first", "value": None},  # claim failed
         {"kind": "row_or_none", "value": _RowProxy(status="completed", duration_ms=456)},
@@ -356,7 +356,7 @@ async def test_atomic_claim_loser_raises_when_running() -> None:
     job_id = uuid.uuid4()
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="running")
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="pending", duration_ms=None)},
         {"kind": "first", "value": None},  # claim lost
         {"kind": "row_or_none", "value": _RowProxy(status="running", duration_ms=None)},
@@ -395,7 +395,7 @@ async def test_atomic_claim_no_two_invocations_run_checks() -> None:
     session_a = ScriptedSession(_happy_path_script(job_a), job=job_a)
     # Session B: load sees pending (so claim is tried), claim loses,
     # re-load sees running (someone else has it).
-    script_b = [
+    script_b: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="pending", duration_ms=None)},
         {"kind": "first", "value": None},
         {"kind": "row_or_none", "value": _RowProxy(status="running", duration_ms=None)},
@@ -437,7 +437,7 @@ async def test_completed_job_not_rerun() -> None:
     job_id = uuid.uuid4()
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="completed", duration_ms=123)
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="completed", duration_ms=123)},
     ]
     session = ScriptedSession(script, job=job)
@@ -464,7 +464,7 @@ async def test_running_job_raises_value_error() -> None:
     job_id = uuid.uuid4()
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="running")
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="running", duration_ms=None)},
     ]
     session = ScriptedSession(script, job=job)
@@ -577,7 +577,7 @@ async def test_missing_job_raises_runtime_error() -> None:
     """Missing job raises RuntimeError without attempting any work."""
     job_id = uuid.uuid4()
     correlation_id = str(uuid.uuid4())
-    script = [{"kind": "row_or_none", "value": None}]
+    script: list[dict[str, Any]] = [{"kind": "row_or_none", "value": None}]
     session = ScriptedSession(script, job=None)
     check_mock = AsyncMock()
 
@@ -607,7 +607,7 @@ async def test_dependency_failure_persists_failed_state() -> None:
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="pending")
     now_ts = datetime.now(UTC)
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="pending", duration_ms=None)},
         {
             "kind": "first",
@@ -642,7 +642,7 @@ async def test_persisted_error_never_contains_raw_exception_or_secrets() -> None
     correlation_id = str(uuid.uuid4())
     job = _make_orm_job(job_id=job_id, status="pending")
     now_ts = datetime.now(UTC)
-    script = [
+    script: list[dict[str, Any]] = [
         {"kind": "row_or_none", "value": _RowProxy(status="pending", duration_ms=None)},
         {
             "kind": "first",

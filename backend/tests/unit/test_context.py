@@ -6,6 +6,7 @@ import asyncio
 import io
 import json
 import sys
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -20,7 +21,7 @@ from app.core.correlation import InvalidCorrelationIdError, generate_correlation
 
 
 @pytest.fixture(autouse=True)
-def _clear_context() -> None:
+def _clear_context() -> Generator[None, None, None]:
     """Ensure clean structlog contextvars before and after each test."""
     from structlog.contextvars import clear_contextvars
 
@@ -69,7 +70,9 @@ def _capture_log_output(fn: Any) -> dict[str, Any]:
 
     lines = [ln for ln in buffer.getvalue().splitlines() if ln.strip()]
     assert len(lines) >= 1
-    return json.loads(lines[0])
+    result = json.loads(lines[0])
+    assert isinstance(result, dict)
+    return result
 
 
 class TestBindCorrelationId:

@@ -7,6 +7,7 @@ import io
 import json
 import logging
 import sys
+from collections.abc import Generator
 from typing import Any
 
 import pytest
@@ -16,7 +17,7 @@ from app.core.logging import configure_logging, get_logger
 
 
 @pytest.fixture(autouse=True)
-def _reset_logging_module() -> None:
+def _reset_logging_module() -> Generator[None, None, None]:
     """Reset the logging module's configured state between tests."""
     import structlog
 
@@ -73,7 +74,9 @@ def _parse_log_line(line: str) -> dict[str, Any]:
     stripped = line.strip()
     if not stripped:
         return {}
-    return json.loads(stripped)
+    result = json.loads(stripped)
+    assert isinstance(result, dict)
+    return result
 
 
 class TestImportSafety:

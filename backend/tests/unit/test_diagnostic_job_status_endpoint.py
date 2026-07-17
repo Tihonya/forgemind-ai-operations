@@ -543,7 +543,7 @@ async def test_post_endpoint_still_registers(
 ) -> None:
     """POST endpoint still routes and returns 202 even after GET is added."""
 
-    class FakeRowStore(dict):
+    class FakeRowStore(dict[str, DiagnosticJob]):
         """Shared dict for creation + compensation sessions."""
 
         pass
@@ -584,7 +584,7 @@ async def test_post_endpoint_still_registers(
 
     post_factory = FakeFactory()
     monkeypatch.setattr(service, "_session_factory", post_factory)
-    monkeypatch.setattr(service._uuid_module, "uuid4", lambda: FIXED_JOB_UUID)
+    monkeypatch.setattr(uuid, "uuid4", lambda: FIXED_JOB_UUID)
 
     class FakePool:
         enqueue_calls: list[dict[str, Any]] = []

@@ -316,13 +316,22 @@ async def get_diagnostic_job(
         if job_row is None:
             return None
 
+        # Convert persisted ORM checks (list[dict[str, Any]] | None) to
+        # validated DependencyCheck models. Validate each dict through the
+        # Pydantic model to ensure type safety without altering persisted
+        # JSON shape or worker behavior.
+        validated_checks = None
+        if job_row.checks is not None:
+            from app.schemas.health import DependencyCheck
+            validated_checks = [DependencyCheck.model_validate(check) for check in job_row.checks]
+
         # Map detached ORM attributes to response schema.
         # Timestamps → ISO-8601 strings; UUIDs pass through directly.
         return DiagnosticJobResponse(
             id=job_row.id,
             correlation_id=job_row.correlation_id,
             status=job_row.status,
-            checks=job_row.checks,
+            checks=validated_checks,
             error_message=job_row.error_message,
             started_at=(
                 job_row.started_at.isoformat()

@@ -42,7 +42,9 @@ def _cid(response: Any) -> str:
     # httpx Headers API varies by version: getlist() in older, get_list() in newer
     values = response.headers.get_list(CORRELATION_HEADER)
     assert len(values) == 1, f"expected exactly one header, got {values!r}"
-    return values[0]
+    value = values[0]
+    assert isinstance(value, str)
+    return value
 
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ async def test_check_postgresql_success():
     assert result.status == "ok"
     assert result.latency_ms >= 0
     assert result.detail is not None
+    assert result.detail is not None
     assert "SELECT 1" in result.detail
 
 
@@ -64,10 +65,15 @@ async def test_check_postgresql_operational_error():
     assert result.latency_ms >= 0
     assert result.detail is not None
     # Verify safe detail: only exception class name, no message
+    assert result.detail is not None
     assert "SQLAlchemy error" in result.detail
+    assert result.detail is not None
     assert "OperationalError" in result.detail
     # Ensure no connection string or sensitive info leaked
+    assert result.detail is not None
     assert "postgres://" not in result.detail
+    assert result.detail is not None
+    assert result.detail is not None
     assert "password" not in result.detail.lower()
 
 
@@ -86,10 +92,14 @@ async def test_check_postgresql_unexpected_error():
         result = await check_postgresql()
 
     assert result.status == "error"
+    assert result.detail is not None
     assert "Unexpected error" in result.detail
+    assert result.detail is not None
     assert "ValueError" in result.detail
     # Ensure sensitive info not leaked
+    assert result.detail is not None
     assert "postgres://" not in result.detail
+    assert result.detail is not None
     assert "password" not in result.detail
 
 
@@ -108,6 +118,7 @@ async def test_check_redis_success():
     assert result.status == "ok"
     assert result.latency_ms >= 0
     assert result.detail is not None
+    assert result.detail is not None
     assert "PING" in result.detail
 
 
@@ -122,6 +133,7 @@ async def test_check_redis_ping_false():
         result = await check_redis()
 
     assert result.status == "error"
+    assert result.detail is not None
     assert "PING returned False" in result.detail
 
 
@@ -139,10 +151,14 @@ async def test_check_redis_connection_error():
 
     assert result.status == "error"
     assert result.latency_ms >= 0
+    assert result.detail is not None
     assert "Redis error" in result.detail
+    assert result.detail is not None
     assert "ConnectionError" in result.detail
     # Ensure no connection string or password leaked
+    assert result.detail is not None
     assert "redis://" not in result.detail
+    assert result.detail is not None
     assert "secret" not in result.detail
 
 
@@ -167,7 +183,9 @@ async def test_check_alembic_success():
     assert result.status == "ok"
     assert result.latency_ms >= 0
     assert result.detail is not None
+    assert result.detail is not None
     assert "revision" in result.detail
+    assert result.detail is not None
     assert "abc123de" in result.detail  # Truncated to 8 chars
 
 
@@ -189,6 +207,7 @@ async def test_check_alembic_empty_table():
         result = await check_alembic()
 
     assert result.status == "unknown"
+    assert result.detail is not None
     assert "empty" in result.detail
 
 
@@ -209,6 +228,7 @@ async def test_check_alembic_table_not_exists():
         result = await check_alembic()
 
     assert result.status == "unknown"
+    assert result.detail is not None
     assert "does not exist" in result.detail
 
 
@@ -230,8 +250,10 @@ async def test_check_alembic_sqlalchemy_error():
         result = await check_alembic()
 
     assert result.status == "error"
+    assert result.detail is not None
     assert "SQLAlchemy error" in result.detail
     # Ensure no connection string leaked
+    assert result.detail is not None
     assert "postgres://" not in result.detail
 
 
@@ -265,6 +287,7 @@ async def test_check_arq_worker_key_absent():
         result = await check_arq_worker()
 
     assert result.status == "unknown"
+    assert result.detail is not None
     assert "not found" in result.detail
 
 
@@ -279,8 +302,10 @@ async def test_check_arq_worker_redis_error():
         result = await check_arq_worker()
 
     assert result.status == "unknown"
+    assert result.detail is not None
     assert "Redis error" in result.detail
     # Ensure no connection string leaked
+    assert result.detail is not None
     assert "redis://" not in result.detail
 
 
@@ -453,6 +478,8 @@ async def test_check_arq_worker_malformed_heartbeat_value():
     assert result.name == "worker"
     assert result.status == "unknown"
     assert result.latency_ms >= 0
+    assert result.detail is not None
+    assert result.detail is not None
     assert "malformed" in result.detail.lower() or "missing" in result.detail.lower()
 
 
@@ -471,6 +498,7 @@ async def test_check_arq_worker_valid_heartbeat_value():
     assert result.name == "worker"
     assert result.status == "ok"
     assert result.latency_ms >= 0
+    assert result.detail is not None
     assert "j_complete" in result.detail
 
 
@@ -574,9 +602,15 @@ async def test_error_detail_sanitization_no_connection_strings():
 
             for result in [pg_result, alembic_result]:
                 if result.detail:
+                    assert result.detail is not None
                     assert "postgres://" not in result.detail
+                    assert result.detail is not None
                     assert "mysql://" not in result.detail
+                    assert result.detail is not None
+                    assert result.detail is not None
                     assert "password" not in result.detail.lower()
+                    assert result.detail is not None
+                    assert result.detail is not None
                     assert "secret" not in result.detail.lower()
 
     # Redis errors (Redis and Worker checks)
@@ -592,8 +626,13 @@ async def test_error_detail_sanitization_no_connection_strings():
 
         for result in [redis_result, worker_result]:
             if result.detail:
+                assert result.detail is not None
                 assert "redis://" not in result.detail
+                assert result.detail is not None
+                assert result.detail is not None
                 assert "password" not in result.detail.lower()
+                assert result.detail is not None
+                assert result.detail is not None
                 assert "secret" not in result.detail.lower()
 
 

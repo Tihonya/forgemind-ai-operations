@@ -11,6 +11,7 @@ No live PostgreSQL, Redis, or worker required.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -153,7 +154,7 @@ def install_fakes(
     session_factory: FakeSessionFactory,
     pool: FakePool,
     fixed_job_id: uuid.UUID,
-) -> dict[str, Any]:
+) -> Generator[dict[str, Any], None, None]:
     """Install module-level fakes for _session_factory, _pool_factory, uuid4."""
     monkeypatch.setattr(service, "_session_factory", session_factory)
     monkeypatch.setattr(
@@ -161,7 +162,7 @@ def install_fakes(
         "_pool_factory",
         AsyncMock(return_value=pool),
     )
-    monkeypatch.setattr(service._uuid_module, "uuid4", lambda: fixed_job_id)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed_job_id)
 
     yield {
         "session_factory": session_factory,
@@ -293,7 +294,7 @@ async def test_injected_pool_not_closed(
     fixed_id = uuid.UUID("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 
     monkeypatch.setattr(service, "_session_factory", session_factory)
-    monkeypatch.setattr(service._uuid_module, "uuid4", lambda: fixed_id)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed_id)
     # Do NOT patch _pool_factory — redis_pool is supplied directly
 
     response_data = await service.enqueue_diagnostic_job(
