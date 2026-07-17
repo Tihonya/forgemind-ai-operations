@@ -12,7 +12,9 @@ from app.config import settings
 from app.core.build_info import get_build_info
 from app.core.context import get_correlation_id
 from app.core.logging import configure_logging, get_logger
+from app.schemas.diagnostic import DiagnosticCreateResponse
 from app.services.dependency_health import check_all_dependencies
+from app.services.diagnostic_jobs import enqueue_diagnostic_job
 
 
 @asynccontextmanager
@@ -129,6 +131,38 @@ async def health_check() -> dict[str, Any]:
         "correlation_id": correlation_id,
         "checks": checks,
     }
+
+
+@app.post(
+    f"{settings.api_v1_prefix}/system/diagnostics",
+    response_model=DiagnosticCreateResponse,
+    status_code=202,
+    tags=["System"],
+)
+async def enqueue_diagnostic() -> DiagnosticCreateResponse:
+    """Enqueue a diagnostic background job.
+
+    Approved public contract (plan §11.1):
+
+        POST /api/v1/system/diagnostics → HTTP 202
+        {
+            "job_id":         "<uuid>",
+            "correlation_id": "<uuid-v4>",
+            "status":         "pending"
+        }
+
+    The correlation_id is inherited from ``CorrelationIdMiddleware``
+    (already bound to the current request context). The service creates a
+    pending ``DiagnosticJob`` row, commits it, then enqueues the ARQ task
+    in a fresh Redis pool. If enqueue fails, the row is transitioned to
+    ``failed`` with a safe bounded error message and HTTP 503 is returned.
+    """
+    correlation_id = get_correlation_id()
+    # Middleware is guaranteed to have bound a canonical UUID-v4.
+    # Defensive: fail loudly if middleware behaviour regresses.
+    if correlation_id is None:  # pragma: no cover - middleware invariant
+        raise RuntimeError("Correlation ID is not bound in request context")
+    return await enqueue_diagnostic_job(correlation_id=correlation_id)
 
 
 @app.get("/")
