@@ -269,7 +269,7 @@ feat(auth): add users/roles tables and seed DEC-028 demo accounts
 - Token expiration enforced
 
 **Acceptance evidence:**
-- AT-002 partial evidence (login works, roles enforced) — full UI evidence deferred to Phase 3
+- AT-002 backend evidence only (login works, roles enforced via middleware dependency tests) — full role-specific UI evidence deferred to Phase 3
 - Login flow verified via integration tests
 - RBAC enforcement verified via dependency tests
 
@@ -285,26 +285,26 @@ feat(auth): implement login, token contract and RBAC middleware
 
 ---
 
-## WP-2.7 — Business read/CRUD APIs
+## WP-2.7A — Core production read APIs
 
-**Objective:** Provide read-only REST endpoints for all Phase 2 business entities, enabling UI consumption (Phase 3) and integration testing (WP-2.9, WP-2.10).
+**Objective:** Provide read-only REST endpoints for core production entities (plans, orders, components, BOM), enabling UI consumption (Phase 3) and integration testing.
 
 **Included scope:**
+- `GET /api/v1/products` (list)
+- `GET /api/v1/products/{code}` (detail with versions)
+- `GET /api/v1/product-versions/{code}` (detail with BOM)
+- `GET /api/v1/components` (list)
+- `GET /api/v1/components/{code}` (detail with alternatives)
 - `GET /api/v1/production-plans` (list)
-- `GET /api/v1/production-plans/{code}` (detail)
+- `GET /api/v1/production-plans/{code}` (detail with orders)
 - `GET /api/v1/production-orders` (list, filterable by plan)
 - `GET /api/v1/production-orders/{code}` (detail, includes BOM explosion)
-- `GET /api/v1/components` (list)
-- `GET /api/v1/components/{code}` (detail, includes alternatives)
-- `GET /api/v1/inventory` (list, filterable by component/warehouse)
-- `GET /api/v1/inventory/{component_code}` (detail with balances + reservations)
-- `GET /api/v1/purchase-orders` (list)
-- `GET /api/v1/purchase-orders/{po_number}` (detail with lines)
-- `GET /api/v1/suppliers` (list)
+- `GET /api/v1/production-order-requirements` (list by order)
 - All endpoints return JSON matching conceptual schema (no write operations)
 
 **Excluded scope:**
 - Write endpoints (Phase 6 approval flow)
+- Supply and inventory endpoints (WP-2.7B)
 - Risk endpoint (WP-2.9 will add `/api/v1/risks`)
 - Auth restrictions per role (Phase 4 document-level; Phase 2 only protects system endpoints)
 
@@ -313,14 +313,15 @@ feat(auth): implement login, token contract and RBAC middleware
 - WP-2.3 (seed data must exist for integration tests)
 
 **Expected files:**
+- `backend/app/api/products.py`
+- `backend/app/api/components.py`
 - `backend/app/api/production_plans.py`
 - `backend/app/api/production_orders.py`
-- `backend/app/api/components.py`
-- `backend/app/api/inventory.py`
-- `backend/app/api/purchase_orders.py`
-- `backend/app/api/suppliers.py`
-- `backend/app/schemas/*.py` (Pydantic response schemas)
-- `backend/tests/integration/test_api_*.py` (one per module)
+- `backend/app/schemas/product.py`, `component.py`, `production.py`
+- `backend/tests/integration/test_api_products.py`
+- `backend/tests/integration/test_api_components.py`
+- `backend/tests/integration/test_api_production_plans.py`
+- `backend/tests/integration/test_api_production_orders.py`
 
 **Tests/checks:**
 - All endpoints return 200 with correct JSON shape
@@ -335,12 +336,75 @@ feat(auth): implement login, token contract and RBAC middleware
 - Manual curl tests return expected data
 
 **Completion criteria:**
-- All Phase 2 entities readable via API
-- API contract stable for Phase 3 UI consumption
+- Core production entities readable via API
+- API contract stable for Phase 3 UI consumption and WP-2.7B
 
 **Proposed atomic commit:**
 ```text
-feat(api): implement Phase 2 read-only REST endpoints
+feat(api): implement core production read APIs (plans, orders, components, BOM)
+```
+
+---
+
+## WP-2.7B — Supply and inventory read APIs
+
+**Objective:** Provide read-only REST endpoints for supply and inventory entities (warehouses, balances, reservations, suppliers, purchase orders), completing the Phase 2 API surface.
+
+**Included scope:**
+- `GET /api/v1/warehouses` (list)
+- `GET /api/v1/warehouses/{code}` (detail with balances)
+- `GET /api/v1/inventory` (list, filterable by component/warehouse)
+- `GET /api/v1/inventory/{component_code}` (detail with balances + reservations)
+- `GET /api/v1/inventory-reservations` (list, filterable by component/warehouse/order)
+- `GET /api/v1/suppliers` (list)
+- `GET /api/v1/suppliers/{code}` (detail with POs)
+- `GET /api/v1/purchase-orders` (list)
+- `GET /api/v1/purchase-orders/{po_number}` (detail with lines)
+- All endpoints return JSON matching conceptual schema (no write operations)
+
+**Excluded scope:**
+- Write endpoints (Phase 6 approval flow)
+- Core production endpoints (WP-2.7A)
+- Risk endpoint (WP-2.9 will add `/api/v1/risks`)
+- Auth restrictions per role (Phase 4 document-level; Phase 2 only protects system endpoints)
+
+**Dependencies:**
+- WP-2.2 (schema)
+- WP-2.3 (seed data must exist for integration tests)
+- WP-2.7A (infrastructure and patterns established)
+
+**Expected files:**
+- `backend/app/api/warehouses.py`
+- `backend/app/api/inventory.py`
+- `backend/app/api/inventory_reservations.py`
+- `backend/app/api/suppliers.py`
+- `backend/app/api/purchase_orders.py`
+- `backend/app/schemas/inventory.py`, `supplier.py`, `purchase_order.py`
+- `backend/tests/integration/test_api_warehouses.py`
+- `backend/tests/integration/test_api_inventory.py`
+- `backend/tests/integration/test_api_inventory_reservations.py`
+- `backend/tests/integration/test_api_suppliers.py`
+- `backend/tests/integration/test_api_purchase_orders.py`
+
+**Tests/checks:**
+- All endpoints return 200 with correct JSON shape
+- Filtering by query params works
+- Natural identifiers (codes) used in URLs
+- Response schemas match conceptual spec
+- API documentation (OpenAPI) auto-generated
+
+**Acceptance evidence:**
+- `pytest tests/integration/test_api_*.py` passes
+- Swagger UI (`/docs`) displays all endpoints
+- Manual curl tests return expected data
+
+**Completion criteria:**
+- All Phase 2 supply and inventory entities readable via API
+- API contract stable for Phase 3 UI consumption and WP-2.9 risk endpoint
+
+**Proposed atomic commit:**
+```text
+feat(api): implement supply and inventory read APIs (warehouses, inventory, suppliers, POs)
 ```
 
 ---
@@ -355,7 +419,7 @@ feat(api): implement Phase 2 read-only REST endpoints
 - Inventory availability calculation (on_hand − reservations for OTHER work orders)
 - Incoming supply calculation (confirmed PO lines arriving before need_date)
 - Need-date comparison (expected_delivery_date vs production_order.need_date)
-- Severity rule engine (CRITICAL, HIGH, MEDIUM, LOW) per §8
+- Severity rule engine (CRITICAL, HIGH, MEDIUM) per §8. LOW is documented in spec but not exercised by the Golden Dataset; no Phase 2 acceptance test depends on LOW
 - Output: list of risk objects with component, required, available, shortage, severity, affected_wo
 
 **Excluded scope:**
@@ -375,7 +439,7 @@ feat(api): implement Phase 2 read-only REST endpoints
 - `backend/tests/integration/test_risk_engine_with_seed.py`
 
 **Tests/checks:**
-- Unit tests for each severity level (CRITICAL, HIGH, MEDIUM, LOW)
+- Unit tests for each exercised severity level (CRITICAL, HIGH, MEDIUM — one per Golden Dataset risk)
 - Integration test with seeded Golden Dataset returns exactly 3 risks
 - Risk derivation matches spec §7 tables (RISK-001/002/003 inputs + outputs)
 - No floating-point drift in quantity comparisons
@@ -416,7 +480,8 @@ feat(risk): implement deterministic supply-risk engine (BOM, inventory, severity
 - UI rendering (Phase 3)
 
 **Dependencies:**
-- WP-2.7 (API infrastructure)
+- WP-2.7A (core production API infrastructure)
+- WP-2.7B (supply and inventory API patterns)
 - WP-2.8 (risk engine)
 
 **Expected files:**
@@ -451,8 +516,7 @@ feat(risk): expose risk API and implement AT-004 Golden Scenario acceptance test
 **Objective:** Provide backend/integration preparation for AT-005, verify zero-LLM dependency across Phase 2, run smoke tests, and produce completion report.
 
 **Included scope:**
-- AT-005 preparation: backend contract proof that risk calculation reads from DB and returns fresh results (no caching, no hardcoded fixtures)
-- Integration test proving that changing seed data changes API output without code changes (prepare fixture modification test)
+- AT-005 backend contract test: automated integration test proving that changing an input fixture quantity changes the freshly calculated API result without changing application code (Phase 2 preparation/evidence for the backend part of AT-005).
 - Zero-LLM verification: grep backend code for LLM imports/calls; assert none in Phase 2 modules
 - Smoke test: `make test` passes (all Phase 2 tests green)
 - `mypy --strict` passes
@@ -478,17 +542,18 @@ feat(risk): expose risk API and implement AT-004 Golden Scenario acceptance test
 - Type checks pass (`mypy --strict`)
 - Linting passes (`ruff check`)
 - Zero-LLM dependency verified
-- AT-005 backend contract test passes (API returns fresh results after seed change)
+- AT-005 backend contract test passes (demonstrates DB → API chain; no hardcoded cache)
 - Completion report documents all deliverables
 
 **Acceptance evidence:**
 - `make test` output shows all tests green
 - Completion report lists all WPs completed
 - Zero-LLM grep assertion passes
-- AT-005 backend contract test passes
+- AT-005 backend contract test passes (this is Phase 2 backend preparation only)
 
 **Completion criteria:**
-- Phase 2 exit criteria met (AT-003, AT-004, partial AT-005 backend preparation)
+- Phase 2 exit criteria met (AT-003, AT-004, AT-005 backend preparation — *not* full AT-005)
+- Full AT-005 browser evidence remains deferred to Phase 3 (Core UI required)
 - Completion report written
 - Ready for Phase 3 UI work
 
@@ -514,9 +579,9 @@ WP-2.2 (schema) ─────────────────────�
   │       ▼                                                                   │
   │     WP-2.6 (auth services)                                                │
   │                                                                           │
-  ├─► WP-2.7 (CRUD APIs) ─────────────────────────────────────────────────────┤
-  │                                                                           │
-  └─► WP-2.8 (risk engine) ──► WP-2.9 (Golden Scenario) ──► WP-2.10 (closeout)
+  ├─► WP-2.7A ──► WP-2.7B ─┤
+  │                          │
+  ├─► WP-2.8 (risk engine) ──► WP-2.9 (Golden Scenario) ──► WP-2.10 (closeout)
 ```
 
 ## WP Execution Order
@@ -527,10 +592,11 @@ WP-2.2 (schema) ─────────────────────�
 4. WP-2.4 (integrity)
 5. WP-2.5 (auth data)
 6. WP-2.6 (auth services)
-7. WP-2.7 (CRUD APIs)
-8. WP-2.8 (risk engine)
-9. WP-2.9 (Golden Scenario)
-10. WP-2.10 (closeout)
+7. WP-2.7A (core production APIs: products, components, plans, orders)
+8. WP-2.7B (supply and inventory APIs: warehouses, inventory, suppliers, POs)
+9. WP-2.8 (risk engine)
+10. WP-2.9 (Golden Scenario)
+11. WP-2.10 (closeout)
 
 Note: WP-2.3 and WP-2.5 both depend on WP-2.2 (schema) and can be implemented sequentially or in parallel. WP-2.5 should be done before WP-2.6 (auth data before auth services).
 
@@ -541,7 +607,8 @@ Note: WP-2.3 and WP-2.5 both depend on WP-2.2 (schema) and can be implemented se
 - After WP-2.4: AT-003 passes
 - After WP-2.5: auth tables seeded correctly
 - After WP-2.6: login works, RBAC enforced
-- After WP-2.7: all CRUD endpoints return 200
+- After WP-2.7A: core production endpoints return 200
+- After WP-2.7B: all supply and inventory endpoints return 200
 - After WP-2.8: risk engine tests pass (unit + integration)
 - After WP-2.9: AT-004 passes (Golden Scenario exact)
 - After WP-2.10: all tests green, zero-LLM verified, completion report written
@@ -549,7 +616,7 @@ Note: WP-2.3 and WP-2.5 both depend on WP-2.2 (schema) and can be implemented se
 ## Phase 2 Exit Criteria
 
 Phase 2 is complete when:
-- WP-2.1 through WP-2.10 are done
+- WP-2.1 through WP-2.10 are done (note: WP-2.7A and WP-2.7B are both included)
 - AT-003 passes (dataset integrity)
 - AT-004 passes (Golden Scenario RISK-001/002/003 exact)
 - AT-005 backend preparation complete (API returns fresh results, test proves DB → API chain)

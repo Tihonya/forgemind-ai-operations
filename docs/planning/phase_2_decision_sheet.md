@@ -1,104 +1,127 @@
 # Phase 2 — Product Owner Decision Sheet
 
-**Date:** 2026-07-17  
-**Phase:** Phase 2 — Synthetic ERP Core  
-**Status:** DEC-009 and DEC-028 APPROVED by Product Owner.
+**Date:** 2026-07-17
+**Branch:** `feature/phase-2-synthetic-erp-planning`
+**Status:** Accepted planning artifact
 
 ---
 
-## DEC-009 — Engineer RBAC role (UPDATED)
+## DEC-009 — Engineer RBAC role
 
-**Date:** 2026-07-15  
-**Status:** **Accepted** (updated from Proposed, 2026-07-17)  
-**Context:** `01_PRODUCT_AND_MVP_SCOPE.md` §5 lists five target users; FR-01 listed four roles.  
-**Decision:** Engineer is a 5th distinct RBAC role with `engineer.demo` account. Engineer must not inherit Production Manager or AI Administrator privileges automatically.  
-**Reason:** Engineer has distinct behavior (views technical docs and alternatives) and warrants a separate RBAC identity.  
-**Consequences:** `roles` table contains 5 codes; seed creates 5 demo accounts; auth middleware supports 5 role codes.  
-**Affected documents/tests:** FR-01, FR-02, AT-002, `roles` table, `users` table, `user_roles` table, seed generator.  
-**Approved by:** Product Owner (2026-07-17)
+**Date:** 2026-07-15
+**Status:** Accepted
+**Context:** `01_PRODUCT_AND_MVP_SCOPE.md` §5 lists five target users; FR-01 listed four roles.
+**Decision:** Engineer is a 5th distinct RBAC role with `engineer.demo` account. Engineer must not inherit Production Manager or Procurement Specialist privileges automatically.
+**Consequence:** `users` table contains 5 initial rows; `roles` table contains 5 rows; `user_roles` table contains 5 rows. Role codes: `PRODUCTION_MANAGER`, `PROCUREMENT_SPECIALIST`, `ENGINEER`, `AI_ADMINISTRATOR`, `AUDITOR`.
+**Affected documents/tests:** AT-002, `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md`, `08_DECISION_LOG.md`.
+**Phase 2 implementation scope:** Implement login endpoint + role middleware; enforce role-based access to system endpoints (e.g., `/api/v1/system/dataset/reset` restricted to AI_ADMINISTRATOR). Full role-specific UI behavior deferred to Phase 3.
 
----
-
-## DEC-028 — Demo account ↔ role mapping (OFFICIALLY RECORDED)
-
-**Date:** 2026-07-17  
-**Status:** **Accepted**  
-**Context:** Five demo accounts existed as candidates in planning since Phase 1 closeout (`docs/next_steps.md`, `docs/phase_1/phase_1_completion_report.md`, `docs/planning/product_owner_decision_sheet.md`) but were not recorded as an official Decision Log entry.
-
-**Numbering note:** DEC-028 was assigned in planning documents during Phase 1 closeout (it is the 28th decision identifier in project history: DEC-001 through DEC-033 minus skipped). This entry preserves that established number rather than reassigning it.
-
-**Decision:** One primary role per demo account in Phase 2. The `user_roles` data model must support multiple roles per user (for future phases), but in Phase 2 each Golden Dataset account receives exactly one role.
-
-**Account mapping:**
-
-| Username | Role |
-|---|---|
-| `manager.demo` | Production Manager |
-| `procurement.demo` | Procurement Specialist |
-| `engineer.demo` | Engineer |
-| `admin.demo` | AI Administrator |
-| `auditor.demo` | Auditor |
-
-**Constraints:**
-- Document-level authorization and RAG filtering are deferred to Phase 4.
-- Phase 2 must not implement `document_permissions` or RAG-based access control.
-- Phase 2 must preserve `user_roles` cardinality of 1 → N (multi-role capable).
-
-**Consequences:** `users` table has 5 initial rows; `roles` table has 5 rows; `user_roles` has 5 rows (one per user). Auth middleware and seed generator must match this mapping exactly.  
-**Affected documents/tests:** `users`, `roles`, `user_roles` tables, seed generator, auth middleware, AT-002.  
-**Approved by:** Product Owner (2026-07-17)
+**Resolution note (2026-07-17):** Phase 2 implements authentication and backend RBAC enforcement. AT-002 full UI evidence (Dashboard per role) is deferred to Phase 3 because Core UI does not yet exist.
 
 ---
 
-## Phase 2 Boundary — Approved
+## DEC-028 — Demo account ↔ role mapping
 
-### In scope
-- Canonical business-domain specification (this document set).
-- Business schema (SQLAlchemy 2 models + Alembic migration).
-- Reversible Alembic migrations.
-- Deterministic Golden Dataset (RISK-001, RISK-002, RISK-003).
-- Seed command (`make seed`).
-- Dataset version/checksum verification (AT-003).
-- Users, roles and user-role mapping (entities, no login yet).
-- Five demo accounts (DEC-028 mapping).
-- Backend authentication (login endpoint, JWT/session tokens).
-- RBAC foundation (role-checking middleware).
-- CRUD/read REST APIs for Phase 2 entities.
-- Deterministic BOM, inventory and supply-risk calculations.
-- Automated evidence for AT-003 and AT-004.
-- Backend/integration preparation for AT-005 (no UI required).
-- Zero LLM dependencies.
+**Date:** 2026-07-17
+**Status:** Accepted
+**Context:** 5 demo accounts must map to 5 roles for Phase 2 seed data.
+**Decision:** One primary role per demo account in Phase 2.
 
-### Out of scope
-- RAG, embeddings, model calls, AI workflow.
-- Document-level authorization (Phase 4).
-- Complete Dashboard and Core UI (Phase 3).
-- Approval workflow and procurement-task execution (Phase 6).
-- Public HTTPS deployment, Caddy, production rate limiting (Phase 7).
-- Authenticated public demo reset (Phase 7); developer/test seed reset is allowed in Phase 2.
+**Mapping table:**
 
-### AT-005 handling
-Full browser evidence for AT-005 (UI reflects backend result after fixture change) requires Core UI (Phase 3). Phase 2 delivers the backend contract: risk calculation reads from the database and returns fresh results; any seed change is reflected in API output without code changes. Automated integration tests verify the deterministic-to-API chain — the UI verification is deferred to Phase 3.
+| Username | Display | Password (bcrypt demo hash) | Role code |
+|----------|---------|-----------------------------|-----------|
+| `manager.demo` | Production Manager | `manager123` | `PRODUCTION_MANAGER` |
+| `procurement.demo` | Procurement Specialist | `procurement123` | `PROCUREMENT_SPECIALIST` |
+| `engineer.demo` | Engineer | `engineer123` | `ENGINEER` |
+| `admin.demo` | AI Administrator | `admin123` | `AI_ADMINISTRATOR` |
+| `auditor.demo` | Auditor | `auditor123` | `AUDITOR` |
+
+**Schema constraint:** `user_roles` supports multiple roles per user (N:N relationship via join table) — future-proof for later phases.
+**Affected documents/tests:** AT-002, seed fixtures, `users`/`roles`/`user_roles` tables.
 
 ---
 
-## Work-Package Plan
+## DEC-029 — Phase 1 authentication deferral
 
-| WP | Name | Purpose |
-|---|---|---|
-| WP-2.1 | Canonical business model specification | Planning artifact: entities, fields, relationships, Golden Dataset mapping. Complete when this spec is PO-approved. |
-| WP-2.2 | Business schema foundation | SQLAlchemy 2 models, constraints, indexes and reversible Alembic migration for all Phase 2 entities. |
-| WP-2.3 | Golden Dataset fixtures and seed generator | Versioned deterministic seed data + `make seed` command producing RISK-001/002/003 exactly; clean-state and idempotent. |
-| WP-2.4 | Golden Dataset integrity | Dataset version/checksum; automated AT-003 evidence proving fixture integrity after seed. |
-| WP-2.5 | Authentication data foundation | `users`, `roles`, `user_roles` tables + five DEC-028 single-role demo accounts seeded by WP-2.3. |
-| WP-2.6 | Authentication and RBAC services | Login endpoint, password verification, JWT/session contract, role-checking middleware; no document-level permissions. |
-| WP-2.7 | Business read/CRUD APIs | Read-only endpoints for plans, orders, BOM, components, inventory, reservations, suppliers, purchase orders, alternatives. |
-| WP-2.8 | Deterministic supply-risk engine | BOM explosion, inventory availability, reservations, incoming supply, need-date calculations and severity rules. |
-| WP-2.9 | Golden Scenario acceptance | Exactly RISK-001, RISK-002, RISK-003 with expected quantities and severity; automated AT-004 evidence. |
-| WP-2.10 | Phase 2 integration and closeout | Backend/integration preparation for AT-005, zero-LLM verification, smoke evidence and completion report. |
+**Date:** 2026-07-15
+**Status:** Accepted
+**Context:** `07_ROADMAP.md` Phase 1 deliverables include "basic login page." `04_ACCEPTANCE_TESTS.md` AT-002 (demo authentication) is mapped to Phase 1. The Phase 1 brief focuses on the Operations Control Plane.
+**Decision:** Defer all authentication to Phase 2. Phase 1 does not implement login, JWT, sessions, RBAC, or demo accounts.
+**Consequences:** `07_ROADMAP.md` Phase 1 deliverable "basic login page" is deferred to Phase 2. AT-002 moves to Phase 2. This is a scope change approved by the Product Owner.
+**Constraints (approved by Product Owner):**
+- Phase 1 must not be publicly deployed.
+- Phase 1 must not process real, sensitive, or production data.
+- Diagnostic endpoints must be documented as development/demo-only.
+**Affected documents/tests:** AT-002, `07_ROADMAP.md` Phase 1 deliverables, requirements_traceability_matrix.md.
 
-WP order reflects dependency chain. WP-2.1 (spec) is first — no code depends on it, all subsequent WPs do. WP-2.3 produces the Golden Dataset that WP-2.9 consumes. WP-2.5 depends on WP-2.2; WP-2.6 depends on WP-2.5. WP-2.7 is readable independently of WP-2.8/2.9 but integrates with them for end-to-end evidence. WP-2.10 closes the phase.
+**Resolution note (2026-07-17):** Phase 2 implements authentication and backend RBAC; full role-specific UI evidence for AT-002 is completed in Phase 3.
 
 ---
 
-*End of decision sheet.*
+## Resolution Summary (2026-07-17, Phase 2 planning review)
+
+All BLOCKING findings from the Phase 2 planning review have been resolved:
+
+### 1. RISK-003 source document — RESOLVED
+- **Finding:** Business model spec §7 RISK-003 derivation stated "Alternative candidate exists in component_alternatives (SENSOR-L9, status=PROPOSED)" but Source of Truth `02_SYSTEM_BEHAVIOR_AND_DATA.md` §4 RISK-003 said "Candidate alternative exists in draft document but is not approved" — implying document retrieval (Phase 4).
+- **Resolution:** `component_alternatives` is a deterministic business projection of an engineering alternative and its approval status (planning clarification derived from DEC-004 + Phase 2 zero-LLM constraint + Phase 4 RAG scope). Phase 2 risk engine reads only structured data. Phase 4 adds actual document entities and verifies the documentary evidence behind structural alternatives. The Phase 2 arithmetic is unchanged; Phase 4 enriches the data. Source of Truth `02_SYSTEM_BEHAVIOR_AND_DATA.md` is NOT modified — its RISK-003 description is the intended end-state description; Phase 2 implements the deterministic precursor.
+- **Files modified:** `docs/planning/phase_2_business_model_spec.md` §1.3, §7, §10; `docs/planning/phase_2_work_package_plan.md` WP-2.8 notes.
+
+### 2. Inventory reservation subtraction rule — RESOLVED
+- **Finding:** Business model spec §4 lines 189-195 contained contradictory statements: line 189 said "subtract ALL reservations", line 190-195 said "subtract only reservations for OTHER work orders".
+- **Resolution:** Business model spec §4 now states the canonical rule unambiguously: for WO-X, `available = on_hand − sum(reservations where po_id ≠ WO-X.id and parent_order.status in (PLANNED, RELEASED, IN_PROGRESS))`. The current WO's own reservation is NOT subtracted — the WO is the claimant of the available quantity.
+- **Files modified:** `docs/planning/phase_2_business_model_spec.md` §4.
+
+### 3. PO line late delivery semantics — RESOLVED
+- **Finding:** Business model spec §5 lines 200-204 were contradictory: lines 200-201 said PO line does NOT contribute if date > need_date, line 203 said PO line with date > need_date → HIGH severity.
+- **Resolution:** Business model spec §5 now clarifies:
+  - PO lines with `status ∈ {CONFIRMED, IN_TRANSIT, DELIVERED}` AND `expected_delivery_date ≤ need_date` contribute to `confirmed_early_supply` (reduces shortage).
+  - PO lines with `status ∈ {CONFIRMED, IN_TRANSIT}` AND `expected_delivery_date > need_date` do NOT reduce shortage but are recorded as `confirmed_late_supply` to trigger HIGH severity.
+  - PO lines with `status ∈ {PLACED, CANCELLED}` are excluded from all supply calculations.
+  - PO lines with `status in {RECEIVED, DELIVERED}` have their received quantities already reflected in `inventory_balances.quantity_on_hand` (no double counting).
+- **Files modified:** `docs/planning/phase_2_business_model_spec.md` §5.
+
+### 4. WP-2.7 atomicity — RESOLVED
+- **Finding:** WP-2.7 "Business read/CRUD APIs" delivered 10+ files (production_plans, production_orders, components, inventory, purchase_orders, suppliers + schemas + tests). Too large for atomic commit.
+- **Resolution:** WP-2.7 split into WP-2.7A (core: plans/orders/components/products) and WP-2.7B (supply: inventory/warehouses/purchase_orders/suppliers). Both are now atomic work packages with separate commits.
+- **Files modified:** `docs/planning/phase_2_work_package_plan.md` WP-2.7.
+
+### 5. AT-005 "preparation" ambiguity — RESOLVED
+- **Finding:** WP-2.10 line 454 said "AT-005 preparation" is vague. AT-005 requires UI (Phase 3).
+- **Resolution:** WP-2.10 now states: "AT-005 backend contract test proving API returns fresh results after seed change. Full AT-005 UI evidence deferred to Phase 3 (Core UI required)."
+- **Files modified:** `docs/planning/phase_2_work_package_plan.md` WP-2.10.
+
+### 6. LOW severity safety-margin threshold undefined — RESOLVED
+- **Finding:** Business model spec §8 line 262 defined LOW severity as "available − required < safety-margin threshold" but threshold was undefined.
+- **Resolution:** Business model spec §8 now clarifies: LOW severity is part of the domain vocabulary but is not exercised by the Phase 2 Golden Dataset. No Phase 2 acceptance criterion depends on producing a LOW risk. A precise LOW rule (e.g., threshold = 10% of required) may be approved later when a scenario requires it.
+- **Files modified:** `docs/planning/phase_2_business_model_spec.md` §8.
+
+### 7. AT-002 partial vs full evidence — RESOLVED
+- **Finding:** AT-002 requires "Dashboard per role" (UI, Phase 3), but WP-2.6 claimed "partial evidence".
+- **Resolution:** WP-2.6 now states: "AT-002 backend evidence only (login works, roles enforced) — full role-specific UI evidence deferred to Phase 3."
+- **Files modified:** `docs/planning/phase_2_work_package_plan.md` WP-2.6.
+
+---
+
+## Work-Package Plan Summary
+
+| WP ID | Name | Status | Dependencies | Notes |
+|-------|------|--------|--------------|-------|
+| WP-2.1 | Canonical business model spec | ✅ Complete | — | Accepted 2026-07-17 |
+| WP-2.2 | Business schema foundation | Pending | WP-2.1 | Phase 2 entities (no auth yet) |
+| WP-2.3 | Golden Dataset fixtures and seed generator | Pending | WP-2.2 | Deterministic seed (all entities incl. auth) |
+| WP-2.4 | Golden Dataset integrity | Pending | WP-2.3 | AT-003 |
+| WP-2.5 | Auth data foundation | Pending | WP-2.2, WP-2.3 | Users/roles/role mappings |
+| WP-2.6 | Auth and RBAC services | Pending | WP-2.5 | AT-002 backend |
+| WP-2.7A | Core production read APIs | Pending | WP-2.2, WP-2.5 | Production, orders, components |
+| WP-2.7B | Supply and inventory read APIs | Pending | WP-2.2, WP-2.5 | Inventory, suppliers, POs |
+| WP-2.8 | Deterministic supply-risk engine | Pending | WP-2.7A, WP-2.7B | BOM/inventory/PO/severity logic |
+| WP-2.9 | Golden Scenario acceptance | Pending | WP-2.8 | AT-004 |
+| WP-2.10 | Phase 2 integration and closeout | Pending | WP-2.1–WP-2.9 | AT-005 backend, completion report |
+
+**Execution order:** WP-2.1 → 2.2 → {2.3 → 2.4, 2.5 → 2.6} → {2.7A, 2.7B} → 2.8 → 2.9 → 2.10
+
+---
+
+**End of decision sheet.**

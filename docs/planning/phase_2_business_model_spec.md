@@ -52,6 +52,13 @@ Phase 2 implements the **Synthetic ERP Core** — every entity needed to compute
 
 `component_alternatives` is kept in Phase 2 because severity rules (`02 §5`) require existence of a candidate alternative to compute RISK-003 (MEDIUM) — this is a structural property of the component catalog, not of document retrieval.
 
+**Phase 2 boundary for `component_alternatives` (planning clarification, derived from DEC-004 + Phase 2 zero-LLM constraint + Phase 4 RAG scope):**
+
+- `component_alternatives` is a deterministic business projection of an engineering alternative and its approval status.
+- Phase 2 seed data contains an alternative candidate for `SENSOR-L9` with status `PROPOSED` (explicitly unapproved). This causes the relevant shortage risk to be `MEDIUM`.
+- The Phase 2 risk engine reads only deterministic structured data from relational tables. No document retrieval, chunks, embeddings, or RAG.
+- Phase 4 adds actual document entities (`documents`, `document_versions`, `document_permissions`, `knowledge_chunks`), document-level permissions, retrieval and citations. Phase 4 must verify the documentary evidence behind the structural alternative — it does not redefine the Phase 2 arithmetic.
+
 ---
 
 ## 2. Fields & data types (conceptual)
@@ -185,23 +192,79 @@ Phase 2 implements the **Synthetic ERP Core** — every entity needed to compute
 ## 4. Inventory & reservation semantics
 
 - `inventory_balances.quantity_on_hand` = what is physically in the warehouse.
-- `inventory_reservations.quantity` = what has been earmarked for an existing work order.
-- **Effective available** for a risk calculation = `quantity_on_hand − sum(reservations.quantity)` over the component/warehouse.
-- Reservations do not decrement on-hand. They are additive constraints consumed when computing available stock for a *new* or *different* order — but in Phase 2 the reservations for the current WO are derived from BOM explosion itself (the WO we are examining claims them).
-- Risk calculation rule:
+- `inventory_reservations.quantity` = what has been earmarked for a production order.
+- `inventory_reservations` carries no independent status field; reservation validity is derived from the parent production order's status (cancelled/released orders' reservations are inactive).
+
+**Reservation status derivation:**
+
+| Parent production order status | Reservation status | Effect on availability |
+|---|---|---|
+| `PLANNED`, `RELEASED`, `IN_PROGRESS` | active | reduces available for OTHER orders |
+| `COMPLETED`, `CANCELLED` | inactive | ignored in availability calculation |
+
+**Canonical availability rule (single source of truth):**
+
+For analysis of production order `WO-X` and component `C`:
+
+```text
+available_for_WO_X =
+    quantity_on_hand(C)
+    − sum(r.quantity for r in inventory_reservations
+          where r.component_id == C
+          and r.production_order_id != WO-X.id
+          and parent_order(r.production_order_id).status in (PLANNED, RELEASED, IN_PROGRESS))
 ```
-available_for_component = quantity_on_hand − sum(r.quantity where r is for OTHER work orders consuming the same component)
-```
-For simplicity in Golden Dataset, all reservations are assumed to cover the work orders under review.
+
+The current order's own reservation is NOT subtracted — the order being analysed is the one claiming this availability.
+
+**Unit-of-measure consistency:** All quantities referencing the same component must use the same unit (`components.unit`). Cross-unit reservations are rejected at the schema layer. The Golden Dataset uses only `PCS` for all three risk components.
+
+**No double subtraction:** The sum excludes the current WO's reservation to avoid counting the same demand twice.
 
 ## 5. Purchase-order delivery semantics
 
-A purchase-order line contributes to risk only if:
-1. `status ∈ {CONFIRMED, IN_TRANSIT, DELIVERED}`, AND
-2. `expected_delivery_date ≤ need_date` of the affected production order.
+### 5.1 Quantity calculation (shortage reduction)
 
-If status is `CONFIRMED` but date is after need_date → severity = HIGH (RISK-002).  
-If status is not confirmed → treated as zero incoming (RISK-001).
+For component `C` and work order `WO-X` with `need_date`:
+
+```text
+confirmed_early_supply =
+    sum(purchase_order_lines.ordered_quantity
+        where component_id == C
+        and purchase_order.status in (CONFIRMED, IN_TRANSIT)
+        and purchase_order_line.expected_delivery_date <= WO-X.need_date)
+
+available_supply = inventory_available_for_WO_X + confirmed_early_supply
+
+shortage = max(0, required_quantity - available_supply)
+```
+
+**Key rules:**
+- Only purchase-order lines with status `CONFIRMED` or `IN_TRANSIT` contribute to `confirmed_early_supply`.
+- The PO line must have `expected_delivery_date ≤ need_date` to reduce shortage.
+- Lines with status `PLACED`, `CANCELLED`, or `RECEIVED` do NOT reduce shortage:
+  - `PLACED`: not yet confirmed by supplier.
+  - `CANCELLED`: cancelled by either party.
+  - `RECEIVED`: already delivered — received quantity is reflected in `inventory_balances.quantity_on_hand` (no double counting).
+- Lines with status `DELIVERED` are treated as received and already in inventory (no separate contribution).
+
+### 5.2 Lateness indicator (evidence for severity)
+
+```text
+confirmed_late_supply =
+    sum(purchase_order_lines.ordered_quantity
+        where component_id == C
+        and purchase_order.status in (CONFIRMED, IN_TRANSIT)
+        and purchase_order_line.expected_delivery_date > WO-X.need_date)
+```
+
+This is NOT subtracted from the shortage but is recorded as evidence that confirmed supply exists but arrives after the need date.
+
+### 5.3 No double counting
+
+The same quantity must never be counted both as inventory and incoming supply:
+- If a PO line status is `RECEIVED` or `DELIVERED`, its `received_quantity` is already in `inventory_balances.quantity_on_hand`.
+- Only `CONFIRMED` and `IN_TRANSIT` lines (expected but not yet received) contribute to `confirmed_early_supply` or `confirmed_late_supply`.
 
 ## 6. Production plan → order → requirement relationships
 
@@ -254,12 +317,18 @@ Computation:
 
 ## 8. Severity rules (canonical)
 
+Severity classification is deterministic and computed purely from the shortage and supply evidence:
+
 | Severity | Condition (deterministic) |
 |---|---|
-| CRITICAL | shortage > 0 AND no approved alternative AND no confirmed early PO |
-| HIGH | shortage after need-date > 0 AND confirmed PO exists but arrives after need_date |
-| MEDIUM | shortage > 0 AND (proposed alternative exists OR mitigation draft exists) |
-| LOW | no shortage at need-date but available − required < safety-margin threshold |
+| CRITICAL | shortage > 0 AND no approved alternative exists AND no confirmed early supply (confirmed_early_supply = 0) |
+| HIGH | shortage > 0 AND confirmed_late_supply > 0 (confirmed PO exists but expected after need_date) |
+| MEDIUM | shortage > 0 AND (component_alternatives with status=PROPOSED exists for this component) |
+| LOW | Reserved for future use; not exercised by the Phase 2 Golden Dataset |
+
+**LOW severity note:** LOW severity is part of the domain vocabulary but is not required for the Phase 2 Golden Scenario. No Phase 2 acceptance criterion depends on producing a LOW risk. A precise LOW rule (e.g., safety-margin threshold) may be approved later when a scenario requires it. In Phase 2, LOW is documented but not computed.
+
+**Severity precedence:** If multiple conditions apply (e.g., shortage exists with both late confirmed supply AND proposed alternative), the implementation must define a deterministic precedence order. For the Golden Dataset, each risk has a single unambiguous severity.
 
 No LLM influence on severity — pure Python/SQL.
 
@@ -286,9 +355,13 @@ No LLM influence on severity — pure Python/SQL.
 - SQLAlchemy models, ORM mapping, or column lengths (Phase 2 WP-2.2).
 - Alembic migrations (WP-2.2).
 - Seed-generation strategy in detail (WP-2.3).
-- API contracts (WP-2.8).
-- Risk engine code (WP-2.7).
+- API contracts (WP-2.7A, WP-2.7B).
+- Risk engine code (WP-2.8).
 
 ---
 
-**Next step:** PO review of this spec. Upon approval, WP-2.2 translates it into SQLAlchemy 2 models and a single reversible Alembic migration.
+**Status after PO review resolutions (2026-07-17):**
+- All BLOCKING and MAJOR review findings resolved.
+- WP-2.7 split into WP-2.7A and WP-2.7B for atomicity.
+
+**Next step:** WP-2.2 translates this spec into SQLAlchemy 2 models and a single reversible Alembic migration.
