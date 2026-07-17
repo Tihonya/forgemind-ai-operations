@@ -57,13 +57,13 @@
 ## DEC-009 — Engineer RBAC role
 
 **Date:** 2026-07-15  
-**Status:** Proposed  
+**Status:** Accepted  
 **Context:** 01_PRODUCT_AND_MVP_SCOPE.md §5 lists five target users, but FR-01 lists four roles.  
-**Decision:** Engineer is a 5th distinct RBAC role with engineer.demo account.  
-**Reason:** Engineer has distinct behavior (views technical docs and alternatives).  
-**Consequences:** Affects auth middleware, seed data, demo accounts.  
+**Decision:** Engineer is a 5th distinct RBAC role with engineer.demo account. Engineer must not inherit Production Manager or AI Administrator privileges automatically.  
+**Reason:** Engineer has distinct behavior (views technical docs and alternatives) and warrants a separate RBAC identity.  
+**Consequences:** Affects auth middleware, seed data, demo accounts. Roles table contains 5 codes.  
 **Affected documents/tests:** FR-01, FR-02, AT-002  
-**Approved by:** Pending
+**Approved by:** Product Owner (2026-07-17)
 
 ## DEC-010 — Python version pin
 
@@ -154,6 +154,26 @@
 **Consequences:** Affects backend/app/core/correlation.py, all API responses, worker logs, and frontend display.  
 **Affected documents/tests:** backend/app/core/correlation.py, backend/tests/  
 **Approved by:** Product Owner (2026-07-15)
+
+## DEC-028 — Demo account ↔ role mapping
+
+**Date:** 2026-07-17  
+**Status:** Accepted  
+**Context:** DEC-009 approved the Engineer role; DEC-029 deferred authentication to Phase 2. Planning documents (docs/next_steps.md, docs/phase_1/phase_1_completion_report.md, docs/planning/product_owner_decision_sheet.md) consistently referenced DEC-028 as the identifier for demo account ↔ role mapping, but it was never formally recorded in this Decision Log. The mapping was required before auth middleware and seed data could be implemented.  
+**Numbering note:** This entry uses the identifier DEC-028, consistent with established references in planning documents since Phase 1 closeout.  
+**Decision:** One primary role per demo account in Phase 2. The `user_roles` data model supports multiple roles per user (for future phases), but each Golden Dataset demo account receives exactly one role.  
+**Account mapping:**
+- `manager.demo` → Production Manager (code: `PRODUCTION_MANAGER`)
+- `procurement.demo` → Procurement Specialist (code: `PROCUREMENT_SPECIALIST`)
+- `engineer.demo` → Engineer (code: `ENGINEER`)
+- `admin.demo` → AI Administrator (code: `AI_ADMINISTRATOR`)
+- `auditor.demo` → Auditor (code: `AUDITOR`)  
+**Constraints:**
+- Document-level authorization and RAG filtering deferred to Phase 4.
+- Phase 2 does not implement `document_permissions` or RAG-based access control.  
+**Consequences:** Roles table contains 5 initial rows. Users table contains 5 demo accounts. User_roles table contains 5 rows (one per user). Auth middleware and seed generator enforce this exact mapping.  
+**Affected documents/tests:** `users`, `roles`, `user_roles` tables; seed generator; auth middleware; AT-002.  
+**Approved by:** Product Owner (2026-07-17)
 
 ## DEC-029 — Phase 1 scope: authentication deferral
 
