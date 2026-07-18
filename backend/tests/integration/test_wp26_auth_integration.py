@@ -26,13 +26,16 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Generator
 
 import jwt
 import pytest
+from _pytest.logging import LogCaptureFixture
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
@@ -74,20 +77,6 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _get_sync_engine():
-    sync_url = _INTEGRATION_DB_URL
-    if "+asyncpg" in sync_url:
-        sync_url = sync_url.replace("+asyncpg", "+psycopg")
-    return create_engine(sync_url, echo=False, pool_pre_ping=True)
-
-
-def _get_async_engine():
-    async_url = _INTEGRATION_DB_URL
-    if "+psycopg" in async_url:
-        async_url = async_url.replace("+psycopg", "+asyncpg")
-    return create_async_engine(async_url, echo=False, pool_pre_ping=True)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -108,17 +97,23 @@ DEMO_PASSWORDS = {
     "auditor.demo": "AuditorPass123!",
 }
 
-USER_ROLE_MAP = {
-    "manager.demo": "PRODUCTION_MANAGER",
-    "procurement.demo": "PROCUREMENT_SPECIALIST",
-    "engineer.demo": "ENGINEER",
-    "admin.demo": "AI_ADMINISTRATOR",
-    "auditor.demo": "COMPLIANCE_AUDITOR",
-}
+
+def _get_sync_engine() -> Engine:
+    sync_url = _INTEGRATION_DB_URL
+    if "+asyncpg" in sync_url:
+        sync_url = sync_url.replace("+asyncpg", "+psycopg")
+    return create_engine(sync_url, echo=False, pool_pre_ping=True)
+
+
+def _get_async_engine() -> AsyncEngine:
+    async_url = _INTEGRATION_DB_URL
+    if "+psycopg" in async_url:
+        async_url = async_url.replace("+psycopg", "+asyncpg")
+    return create_async_engine(async_url, echo=False, pool_pre_ping=True)
 
 
 @pytest.fixture(scope="module")
-def sync_engine():
+def sync_engine() -> Generator[Engine, None, None]:
     eng = _get_sync_engine()
     yield eng
     eng.dispose()
@@ -466,7 +461,7 @@ class TestRBAC:
         @protected_app.get("/test/protected")
         async def protected_route(
             user: AuthenticatedUser = Depends(require_role({"ADMIN"})),
-        ):
+        ) -> dict[str, str]:
             return {"username": user.username}
 
         # Override the DB dependency to use our test session
@@ -476,7 +471,7 @@ class TestRBAC:
         async with AsyncClient(transport=transport, base_url="http://test") as test_client:
             # Login engineer.demo (role = ENGINEER)
             from app.core.security import create_access_token
-            from app.seed.generator.auth_dataset import generate_deterministic_uuid
+            from app.seed.generator.golden_dataset import generate_deterministic_uuid
 
             engineer_id = generate_deterministic_uuid("user:engineer.demo")
             token = create_access_token(subject=engineer_id, roles=["ENGINEER"])
@@ -558,7 +553,11 @@ class TestNoSensitiveDataLeakage:
     contents are returned in API responses or logged.
     """
 
-    async def test_login_response_no_sensitive_fields(self, client: AsyncClient, caplog) -> None:
+    async def test_login_response_no_sensitive_fields(
+        self,
+        client: AsyncClient,
+        caplog: LogCaptureFixture,
+    ) -> None:
         """Login response does not echo password or hash."""
         with caplog.at_level(logging.DEBUG, logger="app"):
             response = await client.post(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 import pytest
@@ -20,10 +20,11 @@ from app.services.auth_service import (
 
 
 def _make_mock_user(
-    user_id=None,
-    username="test_user",
-    is_active=True,
-    role_codes=None,
+    *,
+    user_id: UUID | None = None,
+    username: str = "test_user",
+    is_active: bool = True,
+    role_codes: list[str] | None = None,
 ) -> User:
     """Create a mock User with proper user_roles relationships."""
     user = MagicMock(spec=User)

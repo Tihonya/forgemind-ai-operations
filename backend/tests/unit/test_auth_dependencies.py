@@ -7,6 +7,7 @@ Tests the FastAPI dependency-injection layer:
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -19,6 +20,12 @@ from app.services.auth_service import (
     AuthenticationError,
     TokenError,
 )
+
+
+def _detail(exc: HTTPException) -> dict[str, Any]:
+    """Cast HTTPException.detail to dict for typed access in tests."""
+    assert isinstance(exc.detail, dict)
+    return exc.detail
 
 
 def _make_user(username: str, roles: set[str]) -> AuthenticatedUser:
@@ -46,7 +53,7 @@ class TestGetCurrentUser:
             await get_current_user(credentials=None, session=AsyncMock())
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "missing_authentication"
+        assert _detail(exc_info.value)["error"] == "missing_authentication"
 
     @pytest.mark.asyncio
     async def test_valid_token_returns_user(self) -> None:
@@ -84,8 +91,8 @@ class TestGetCurrentUser:
             await get_current_user(credentials=credentials, session=session)
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "invalid_token"
-        assert "expired" in exc_info.value.detail["message"].lower()
+        assert _detail(exc_info.value)["error"] == "invalid_token"
+        assert "expired" in _detail(exc_info.value)["message"].lower()
 
     @pytest.mark.asyncio
     async def test_malformed_token_raises_401_invalid_token(self) -> None:
@@ -105,7 +112,7 @@ class TestGetCurrentUser:
             await get_current_user(credentials=credentials, session=session)
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "invalid_token"
+        assert _detail(exc_info.value)["error"] == "invalid_token"
 
     @pytest.mark.asyncio
     async def test_wrong_signature_raises_401_invalid_token(self) -> None:
@@ -125,7 +132,7 @@ class TestGetCurrentUser:
             await get_current_user(credentials=credentials, session=session)
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "invalid_token"
+        assert _detail(exc_info.value)["error"] == "invalid_token"
 
     @pytest.mark.asyncio
     async def test_deleted_user_raises_401_user_unauthorized(self) -> None:
@@ -145,7 +152,7 @@ class TestGetCurrentUser:
             await get_current_user(credentials=credentials, session=session)
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "user_unauthorized"
+        assert _detail(exc_info.value)["error"] == "user_unauthorized"
 
     @pytest.mark.asyncio
     async def test_inactive_user_raises_401_user_unauthorized(self) -> None:
@@ -165,9 +172,9 @@ class TestGetCurrentUser:
             await get_current_user(credentials=credentials, session=session)
 
         assert exc_info.value.status_code == 401
-        assert exc_info.value.detail["error"] == "user_unauthorized"
+        assert _detail(exc_info.value)["error"] == "user_unauthorized"
         # The public message must NOT reveal "inactive"
-        assert "inactive" not in exc_info.value.detail["message"].lower()
+        assert "inactive" not in _detail(exc_info.value)["message"].lower()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,7 +203,7 @@ class TestRequireRole:
             await checker(current_user=user)
 
         assert exc_info.value.status_code == 403
-        assert exc_info.value.detail["error"] == "insufficient_permissions"
+        assert _detail(exc_info.value)["error"] == "insufficient_permissions"
 
     @pytest.mark.asyncio
     async def test_empty_user_roles_raises_403(self) -> None:
@@ -208,7 +215,7 @@ class TestRequireRole:
             await checker(current_user=user)
 
         assert exc_info.value.status_code == 403
-        assert exc_info.value.detail["error"] == "insufficient_permissions"
+        assert _detail(exc_info.value)["error"] == "insufficient_permissions"
 
     @pytest.mark.asyncio
     async def test_multiple_required_roles_any_match_passes(self) -> None:
@@ -228,4 +235,4 @@ class TestRequireRole:
             await checker(current_user=user)
 
         assert exc_info.value.status_code == 403
-        assert exc_info.value.detail["error"] == "insufficient_permissions"
+        assert _detail(exc_info.value)["error"] == "insufficient_permissions"
