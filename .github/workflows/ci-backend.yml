@@ -60,6 +60,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Run alembic migrations
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://forgemind:test_password@localhost:5432/forgemind_test
+        run: alembic upgrade head
+
       - name: Run Ruff linter
         working-directory: ./backend
         run: ruff check .
