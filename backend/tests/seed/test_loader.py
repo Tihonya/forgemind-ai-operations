@@ -41,7 +41,10 @@ def _can_connect_to_db() -> bool:
 # Skip all tests in this module if no integration DB
 pytestmark = pytest.mark.skipif(
     not _can_connect_to_db(),
-    reason="Integration database not available (TEST_DATABASE_URL or DATABASE_URL not set/unreachable)"
+    reason=(
+        "Integration database not available "
+        "(TEST_DATABASE_URL or DATABASE_URL not set/unreachable)"
+    )
 )
 
 
@@ -155,8 +158,13 @@ class TestTransactionRollback:
             session.close()
 
         # Verify no partial data was inserted (rollback worked)
-        # The TEST-CONFLICT row we inserted manually should still exist (we committed it before the conflict)
-        result = db_conn.execute(text("SELECT COUNT(*) FROM components WHERE code = 'TEST-CONFLICT'")).fetchone()
+        # The TEST-CONFLICT row we inserted manually should still exist
+        # (we committed it before the conflict)
+        sql = (
+            "SELECT COUNT(*) FROM components "
+            "WHERE code = 'TEST-CONFLICT'"
+        )
+        result = db_conn.execute(text(sql)).fetchone()
         count = result[0]
         assert count == 1  # Only the original row, no duplicate
 
@@ -350,7 +358,9 @@ class TestLivePostgreSQLValidation:
         assert "PIPE-P1" in components
 
         # Check production orders
-        result = db_conn.execute(text("SELECT code FROM production_orders ORDER BY code")).fetchall()
+        result = db_conn.execute(text(
+            "SELECT code FROM production_orders ORDER BY code"
+        )).fetchall()
         orders = [row[0] for row in result]
         assert "WO-2026-0142" in orders
         assert "WO-2026-0150" in orders
