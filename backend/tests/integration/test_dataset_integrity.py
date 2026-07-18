@@ -19,7 +19,12 @@ import os
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import Engine, create_engine, text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.dataset_metadata import EXPECTED_CHECKSUM
 from app.seed.generator.loader import (
