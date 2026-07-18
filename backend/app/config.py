@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -67,12 +67,31 @@ class Settings(BaseSettings):
     backend_port: int = Field(default=8000, ge=1, le=65535)
     backend_workers: int = Field(default=4, ge=1, le=32)
 
+    # Authentication (WP-2.6)
+    jwt_algorithm: Literal["HS256"] = "HS256"
+    jwt_expire_minutes: int = Field(default=30, ge=1, le=1440)
+    bcrypt_cost_factor: int = Field(default=12, ge=4, le=31)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
         """Parse CORS origins from comma-separated string or list."""
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_secret_key(cls, v: str, info: ValidationInfo) -> str:
+        """Reject insecure default secret in production/staging environments."""
+        import os
+
+        env = os.environ.get("ENVIRONMENT", "development")
+        insecure_default = "dev-secret-key-change-in-production-must-be-32-chars-min"
+        if env in ("production", "staging") and v == insecure_default:
+            raise ValueError(
+                "SECRET_KEY must not use the development default in production/staging"
+            )
         return v
 
     @property

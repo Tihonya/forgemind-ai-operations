@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import router as auth_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.config import settings
 from app.core.build_info import get_build_info
@@ -63,6 +64,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Authentication router (WP-2.6)
+app.include_router(auth_router, prefix=settings.api_v1_prefix)
+
 
 @app.get("/health", tags=["Health"])
 async def health_check() -> dict[str, Any]:
@@ -107,7 +111,7 @@ async def health_check() -> dict[str, Any]:
         elif check.name == "alembic":
             detail = check.detail or ""
             if check.status == "ok" and detail.startswith("revision "):
-                revision = detail[len("revision "):]
+                revision = detail[len("revision ") :]
                 checks[pk] = revision if revision else "unknown"
             else:
                 checks[pk] = "unknown"

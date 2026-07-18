@@ -86,13 +86,19 @@ class TestUserDefinitions:
             assert "username" in user
             assert "display_name" in user
             assert "is_active" in user
+            # WP-2.6 adds bcrypt precomputed hashes
+            assert "hashed_password" in user
 
-    def test_no_password_fields_in_users(self) -> None:
-        """WP-2.5 must NOT seed any credentials."""
+    def test_no_plaintext_credentials_in_users(self) -> None:
+        """WP-2.5/2.6 must NOT seed plaintext passwords or secrets.
+
+        hashed_password IS present (WP-2.6 bcrypt) but plaintext password is not.
+        """
         for user in DEMO_USERS:
             assert "password" not in user
-            assert "hashed_password" not in user
             assert "secret" not in user
+            # bcrypt hashes start with $2b$ or $2a$
+            assert user["hashed_password"].startswith("$2b$")
 
     def test_all_users_active(self) -> None:
         for user in DEMO_USERS:

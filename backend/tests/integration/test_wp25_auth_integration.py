@@ -237,11 +237,26 @@ class TestAuthSeedLive:
         """)).fetchall()
         assert len(result) == 0
 
-    def test_no_credentials_seeded(self, db_conn):
+    def test_bcrypt_hashes_seeded(self, db_conn):
+        """WP-2.6: all 5 demo users have precomputed bcrypt hashes seeded."""
+        sql = (
+            "SELECT COUNT(*) FROM users "
+            "WHERE hashed_password IS NOT NULL "
+            "AND hashed_password LIKE '$2b$%'"
+        )
+        result = db_conn.execute(text(sql)).fetchone()
+        assert result[0] == 5
+
+    def test_no_plaintext_password_column(self, db_conn):
+        """Verify the users table has no plaintext password column."""
         result = db_conn.execute(
-            text("SELECT COUNT(*) FROM users WHERE hashed_password IS NOT NULL")
-        ).fetchone()
-        assert result[0] == 0
+            text("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'")
+        ).fetchall()
+        column_names = [r[0] for r in result]
+        assert "password" not in column_names
+        assert "plain_password" not in column_names
+        # hashed_password exists (bcrypt)
+        assert "hashed_password" in column_names
 
     def test_all_seeded_users_are_active(self, db_conn):
         result = db_conn.execute(
