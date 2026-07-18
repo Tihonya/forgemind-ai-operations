@@ -309,6 +309,9 @@ class TestLivePostgreSQLValidation:
     def test_entity_counts_match_expectations(self, db_conn):
         """Verify database contains expected entity counts."""
         expected_counts = {
+            "roles": 5,
+            "users": 5,
+            "user_roles": 5,
             "products": 1,
             "product_versions": 3,
             "components": 5,

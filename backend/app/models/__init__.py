@@ -22,6 +22,7 @@ from app.models.production import (
     ProductionPlan,
 )
 from app.models.supplier import PurchaseOrder, PurchaseOrderLine, Supplier
+from app.models.user import Role, User, UserRole
 from app.models.warehouse import InventoryBalance, InventoryReservation, Warehouse
 
 __all__ = [
@@ -53,4 +54,8 @@ __all__ = [
     "ProductionOrder",
     "ProductionOrderStatus",
     "ProductionOrderRequirement",
+    # Authentication (WP-2.5)
+    "Role",
+    "User",
+    "UserRole",
 ]
