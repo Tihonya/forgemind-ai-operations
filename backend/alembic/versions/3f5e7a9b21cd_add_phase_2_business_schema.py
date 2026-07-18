@@ -19,7 +19,6 @@ No seed data. No auth entities (deferred to WP-2.5).
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
@@ -38,7 +37,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'products',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('code', sa.String(100), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
         sa.Column('description', sa.Text(), nullable=True),
@@ -52,12 +53,20 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'product_versions',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('product_id', sa.UUID(), nullable=False),
         sa.Column('version', sa.String(50), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'DRAFT'")),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'DRAFT'"),
+        ),
         sa.PrimaryKeyConstraint('id'),
-        sa.ForeignKeyConstraint(['product_id'], ['products.id'], ondelete='CASCADE', name='fk_product_versions_product_id'),
+        sa.ForeignKeyConstraint(
+            ['product_id'], ['products.id'],
+            ondelete='CASCADE', name='fk_product_versions_product_id',
+        ),
     )
     op.create_index(
         'idx_product_versions_product_id_version',
@@ -71,7 +80,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'components',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('code', sa.String(100), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
         sa.Column('unit', sa.String(10), nullable=False),
@@ -86,7 +97,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'bom_items',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('product_version_id', sa.UUID(), nullable=False),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('quantity_per_unit', sa.Numeric(18, 4), nullable=False),
@@ -112,7 +125,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'warehouses',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
         sa.PrimaryKeyConstraint('id'),
@@ -125,30 +140,49 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'production_plans',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('code', sa.String(50), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'DRAFT'")),
-        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'DRAFT'"),
+        ),
+        sa.Column(
+            'created_at', sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.Column('period_start', sa.Date(), nullable=False),
         sa.Column('period_end', sa.Date(), nullable=False),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('code', name='uq_production_plans_code'),
     )
-    op.create_index('idx_production_plans_code', 'production_plans', ['code'], unique=True)
-    op.create_index('idx_production_plans_period', 'production_plans', ['period_start', 'period_end'])
+    op.create_index(
+        'idx_production_plans_code', 'production_plans', ['code'], unique=True,
+    )
+    op.create_index(
+        'idx_production_plans_period',
+        'production_plans',
+        ['period_start', 'period_end'],
+    )
 
     # ──────────────────────────────────────────────────────────
     # production_orders — work orders under a plan
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'production_orders',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('production_plan_id', sa.UUID(), nullable=False),
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('product_version_id', sa.UUID(), nullable=False),
         sa.Column('quantity', sa.Numeric(18, 4), nullable=False),
         sa.Column('need_date', sa.Date(), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'PLANNED'")),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'PLANNED'"),
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('code', name='uq_production_orders_code'),
         sa.ForeignKeyConstraint(
@@ -160,20 +194,36 @@ def upgrade() -> None:
             ondelete='CASCADE', name='fk_production_orders_product_version_id',
         ),
     )
-    op.create_index('idx_production_orders_code', 'production_orders', ['code'], unique=True)
-    op.create_index('idx_production_orders_plan_id', 'production_orders', ['production_plan_id'])
-    op.create_index('idx_production_orders_product_version_id', 'production_orders', ['product_version_id'])
-    op.create_index('idx_production_orders_need_date', 'production_orders', ['need_date'])
+    op.create_index(
+        'idx_production_orders_code', 'production_orders', ['code'], unique=True,
+    )
+    op.create_index(
+        'idx_production_orders_plan_id',
+        'production_orders', ['production_plan_id'],
+    )
+    op.create_index(
+        'idx_production_orders_product_version_id',
+        'production_orders', ['product_version_id'],
+    )
+    op.create_index(
+        'idx_production_orders_need_date',
+        'production_orders', ['need_date'],
+    )
 
     # ──────────────────────────────────────────────────────────
     # inventory_balances — per (component, warehouse) on-hand
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'inventory_balances',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('warehouse_id', sa.UUID(), nullable=False),
-        sa.Column('quantity_on_hand', sa.Numeric(18, 4), nullable=False, server_default=sa.literal_column('0')),
+        sa.Column(
+            'quantity_on_hand', sa.Numeric(18, 4), nullable=False,
+            server_default=sa.literal_column('0'),
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(
             ['component_id'], ['components.id'],
@@ -196,7 +246,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'inventory_reservations',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('warehouse_id', sa.UUID(), nullable=False),
         sa.Column('production_order_id', sa.UUID(), nullable=False),
@@ -212,7 +264,8 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ['production_order_id'], ['production_orders.id'],
-            ondelete='CASCADE', name='fk_inventory_reservations_production_order_id',
+            ondelete='CASCADE',
+            name='fk_inventory_reservations_production_order_id',
         ),
     )
     op.create_index(
@@ -226,7 +279,9 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'suppliers',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('code', sa.String(50), nullable=False),
         sa.Column('name', sa.String(200), nullable=False),
         sa.PrimaryKeyConstraint('id'),
@@ -239,11 +294,19 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'purchase_orders',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('supplier_id', sa.UUID(), nullable=False),
         sa.Column('po_number', sa.String(50), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'PLACED'")),
-        sa.Column('placed_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'PLACED'"),
+        ),
+        sa.Column(
+            'placed_at', sa.DateTime(timezone=True), nullable=False,
+            server_default=sa.func.now(),
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.UniqueConstraint('po_number', name='uq_purchase_orders_po_number'),
         sa.ForeignKeyConstraint(
@@ -251,22 +314,36 @@ def upgrade() -> None:
             ondelete='CASCADE', name='fk_purchase_orders_supplier_id',
         ),
     )
-    op.create_index('idx_purchase_orders_po_number', 'purchase_orders', ['po_number'], unique=True)
-    op.create_index('idx_purchase_orders_supplier_id', 'purchase_orders', ['supplier_id'])
-    op.create_index('idx_purchase_orders_placed_at', 'purchase_orders', ['placed_at'])
+    op.create_index(
+        'idx_purchase_orders_po_number', 'purchase_orders', ['po_number'], unique=True,
+    )
+    op.create_index(
+        'idx_purchase_orders_supplier_id', 'purchase_orders', ['supplier_id'],
+    )
+    op.create_index(
+        'idx_purchase_orders_placed_at', 'purchase_orders', ['placed_at'],
+    )
 
     # ──────────────────────────────────────────────────────────
     # purchase_order_lines — line level (DELIVERED allowed, not RECEIVED)
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'purchase_order_lines',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('purchase_order_id', sa.UUID(), nullable=False),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('ordered_quantity', sa.Numeric(18, 4), nullable=False),
-        sa.Column('received_quantity', sa.Numeric(18, 4), nullable=False, server_default=sa.literal_column('0')),
+        sa.Column(
+            'received_quantity', sa.Numeric(18, 4), nullable=False,
+            server_default=sa.literal_column('0'),
+        ),
         sa.Column('expected_delivery_date', sa.Date(), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'PENDING'")),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'PENDING'"),
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(
             ['purchase_order_id'], ['purchase_orders.id'],
@@ -277,8 +354,14 @@ def upgrade() -> None:
             ondelete='CASCADE', name='fk_purchase_order_lines_component_id',
         ),
     )
-    op.create_index('idx_purchase_order_lines_po_id', 'purchase_order_lines', ['purchase_order_id'])
-    op.create_index('idx_purchase_order_lines_component_id', 'purchase_order_lines', ['component_id'])
+    op.create_index(
+        'idx_purchase_order_lines_po_id',
+        'purchase_order_lines', ['purchase_order_id'],
+    )
+    op.create_index(
+        'idx_purchase_order_lines_component_id',
+        'purchase_order_lines', ['component_id'],
+    )
     op.create_index(
         'idx_purchase_order_lines_expected_delivery_date',
         'purchase_order_lines',
@@ -286,15 +369,20 @@ def upgrade() -> None:
     )
 
     # ──────────────────────────────────────────────────────────
-    # production_order_requirements — demand lines (denormalized BOM × WO.qty)
+    # production_order_requirements — demand lines (BOM x WO.qty)
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'production_order_requirements',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('production_order_id', sa.UUID(), nullable=False),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('required_quantity', sa.Numeric(18, 4), nullable=False),
-        sa.Column('reserved_quantity', sa.Numeric(18, 4), nullable=False, server_default=sa.literal_column('0')),
+        sa.Column(
+            'reserved_quantity', sa.Numeric(18, 4), nullable=False,
+            server_default=sa.literal_column('0'),
+        ),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(
             ['production_order_id'], ['production_orders.id'],
@@ -302,7 +390,8 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(
             ['component_id'], ['components.id'],
-            ondelete='CASCADE', name='fk_production_order_requirements_component_id',
+            ondelete='CASCADE',
+            name='fk_production_order_requirements_component_id',
         ),
     )
     op.create_index(
@@ -321,10 +410,15 @@ def upgrade() -> None:
     # ──────────────────────────────────────────────────────────
     op.create_table(
         'component_alternatives',
-        sa.Column('id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False),
+        sa.Column(
+            'id', sa.UUID(), server_default=sa.func.gen_random_uuid(), nullable=False,
+        ),
         sa.Column('component_id', sa.UUID(), nullable=False),
         sa.Column('alternative_component_id', sa.UUID(), nullable=False),
-        sa.Column('status', sa.String(20), nullable=False, server_default=sa.literal_column("'PROPOSED'")),
+        sa.Column(
+            'status', sa.String(20), nullable=False,
+            server_default=sa.literal_column("'PROPOSED'"),
+        ),
         sa.Column('rationale', sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint('id'),
         sa.ForeignKeyConstraint(
@@ -348,24 +442,46 @@ def downgrade() -> None:
     """Remove all 14 Phase 2 business tables in reverse dependency order."""
 
     # component_alternatives (depends on components)
-    op.drop_index('idx_component_alternatives_comp_alt', table_name='component_alternatives')
+    op.drop_index(
+        'idx_component_alternatives_comp_alt', table_name='component_alternatives',
+    )
     op.drop_table('component_alternatives')
 
     # production_order_requirements (depends on production_orders, components)
-    op.drop_index('idx_production_order_requirements_component_id', table_name='production_order_requirements')
-    op.drop_index('idx_production_order_requirements_order_id', table_name='production_order_requirements')
+    op.drop_index(
+        'idx_production_order_requirements_component_id',
+        table_name='production_order_requirements',
+    )
+    op.drop_index(
+        'idx_production_order_requirements_order_id',
+        table_name='production_order_requirements',
+    )
     op.drop_table('production_order_requirements')
 
     # purchase_order_lines (depends on purchase_orders, components)
-    op.drop_index('idx_purchase_order_lines_expected_delivery_date', table_name='purchase_order_lines')
-    op.drop_index('idx_purchase_order_lines_component_id', table_name='purchase_order_lines')
-    op.drop_index('idx_purchase_order_lines_po_id', table_name='purchase_order_lines')
+    op.drop_index(
+        'idx_purchase_order_lines_expected_delivery_date',
+        table_name='purchase_order_lines',
+    )
+    op.drop_index(
+        'idx_purchase_order_lines_component_id',
+        table_name='purchase_order_lines',
+    )
+    op.drop_index(
+        'idx_purchase_order_lines_po_id', table_name='purchase_order_lines',
+    )
     op.drop_table('purchase_order_lines')
 
     # purchase_orders (depends on suppliers)
-    op.drop_index('idx_purchase_orders_placed_at', table_name='purchase_orders')
-    op.drop_index('idx_purchase_orders_supplier_id', table_name='purchase_orders')
-    op.drop_index('idx_purchase_orders_po_number', table_name='purchase_orders')
+    op.drop_index(
+        'idx_purchase_orders_placed_at', table_name='purchase_orders',
+    )
+    op.drop_index(
+        'idx_purchase_orders_supplier_id', table_name='purchase_orders',
+    )
+    op.drop_index(
+        'idx_purchase_orders_po_number', table_name='purchase_orders',
+    )
     op.drop_table('purchase_orders')
 
     # suppliers
@@ -373,22 +489,35 @@ def downgrade() -> None:
     op.drop_table('suppliers')
 
     # inventory_reservations (depends on components, warehouses, production_orders)
-    op.drop_index('idx_inventory_reservations_comp_wo', table_name='inventory_reservations')
+    op.drop_index(
+        'idx_inventory_reservations_comp_wo',
+        table_name='inventory_reservations',
+    )
     op.drop_table('inventory_reservations')
 
     # inventory_balances (depends on components, warehouses)
-    op.drop_index('idx_inventory_balances_comp_wh', table_name='inventory_balances')
+    op.drop_index(
+        'idx_inventory_balances_comp_wh', table_name='inventory_balances',
+    )
     op.drop_table('inventory_balances')
 
     # production_orders (depends on production_plans, product_versions)
-    op.drop_index('idx_production_orders_need_date', table_name='production_orders')
-    op.drop_index('idx_production_orders_product_version_id', table_name='production_orders')
-    op.drop_index('idx_production_orders_plan_id', table_name='production_orders')
+    op.drop_index(
+        'idx_production_orders_need_date', table_name='production_orders',
+    )
+    op.drop_index(
+        'idx_production_orders_product_version_id', table_name='production_orders',
+    )
+    op.drop_index(
+        'idx_production_orders_plan_id', table_name='production_orders',
+    )
     op.drop_index('idx_production_orders_code', table_name='production_orders')
     op.drop_table('production_orders')
 
     # production_plans
-    op.drop_index('idx_production_plans_period', table_name='production_plans')
+    op.drop_index(
+        'idx_production_plans_period', table_name='production_plans',
+    )
     op.drop_index('idx_production_plans_code', table_name='production_plans')
     op.drop_table('production_plans')
 
@@ -397,7 +526,9 @@ def downgrade() -> None:
     op.drop_table('warehouses')
 
     # bom_items (depends on product_versions, components)
-    op.drop_index('idx_bom_items_product_version_id_component_id', table_name='bom_items')
+    op.drop_index(
+        'idx_bom_items_product_version_id_component_id', table_name='bom_items',
+    )
     op.drop_table('bom_items')
 
     # components
@@ -405,7 +536,9 @@ def downgrade() -> None:
     op.drop_table('components')
 
     # product_versions (depends on products)
-    op.drop_index('idx_product_versions_product_id_version', table_name='product_versions')
+    op.drop_index(
+        'idx_product_versions_product_id_version', table_name='product_versions',
+    )
     op.drop_table('product_versions')
 
     # products
