@@ -4,6 +4,10 @@ Verifies that all 14 business models are correctly defined and that
 the Alembic migration contains proper table definitions.
 """
 
+from typing import Any, cast
+
+from sqlalchemy import Table
+
 from app.database import Base
 from app.models import (
     BomItem,
@@ -245,41 +249,37 @@ class TestModelConstraints:
 
     def test_bom_item_unique_constraint(self) -> None:
         """BOM items: unique on (product_version_id, component_id)."""
-        idx_names = {idx.name for idx in BomItem.__table__.indexes}
+        tbl = cast(Table, BomItem.__table__)
+        idx_names = {idx.name for idx in tbl.indexes}
         expected = "idx_bom_items_product_version_id_component_id"
         assert expected in idx_names
 
     def test_inventory_balance_unique_constraint(self) -> None:
         """Inventory balances: unique on (component_id, warehouse_id)."""
-        idx_names = {
-            idx.name for idx in InventoryBalance.__table__.indexes
-        }
+        tbl = cast(Table, InventoryBalance.__table__)
+        idx_names = {idx.name for idx in tbl.indexes}
         assert "idx_inventory_balances_comp_wh" in idx_names
 
     def test_component_alternative_unique_constraint(self) -> None:
         """Alt: unique on (component_id, alternative_component_id)."""
-        idx_names = {
-            idx.name
-            for idx in ComponentAlternative.__table__.indexes
-        }
+        tbl = cast(Table, ComponentAlternative.__table__)
+        idx_names = {idx.name for idx in tbl.indexes}
         assert "idx_component_alternatives_comp_alt" in idx_names
 
     def test_purchase_order_po_number_index(self) -> None:
         """Purchase orders: unique index on po_number."""
-        idx_names = {
-            idx.name for idx in PurchaseOrder.__table__.indexes
-        }
+        tbl = cast(Table, PurchaseOrder.__table__)
+        idx_names = {idx.name for idx in tbl.indexes}
         assert "idx_purchase_orders_po_number" in idx_names
 
     def test_production_order_code_index(self) -> None:
         """Production orders: unique index on code."""
-        idx_names = {
-            idx.name for idx in ProductionOrder.__table__.indexes
-        }
+        tbl = cast(Table, ProductionOrder.__table__)
+        idx_names = {idx.name for idx in tbl.indexes}
         assert "idx_production_orders_code" in idx_names
 
 
-def _fk_targets(columns, *col_names):
+def _fk_targets(columns: Any, *col_names: str) -> set[str]:
     """Collect FK target table names for given column names."""
     targets = set()
     for col_name in col_names:

@@ -6,6 +6,7 @@ Phase 1 diagnostic_jobs table.
 """
 
 import re
+from pathlib import Path
 
 import pytest
 
@@ -14,7 +15,7 @@ _MIGRATION_REL = (
     "alembic/versions/"
     "3f5e7a9b21cd_add_phase_2_business_schema.py"
 )
-_MIGRATION_PATH = (
+_MIGRATION_PATH: Path = (
     __import__("pathlib", fromlist=["Path"]).Path(__file__)
     .parents[2]
     / _MIGRATION_REL
@@ -25,25 +26,24 @@ class TestMigrationFileStructure:
     """Test that the migration file has correct structure and metadata."""
 
     @pytest.fixture
-    def migration_file(self):
+    def migration_file(self, request: pytest.FixtureRequest) -> Path:
         """Path to the Phase 2 business schema migration file."""
         return _MIGRATION_PATH
 
-    def test_migration_file_exists(self, migration_file) -> None:
-        """Migration file should exist at expected location."""
+    def test_migration_file_exists(self, migration_file: Path) -> None:
         assert migration_file.exists(), (
             f"Migration file not found: {migration_file}"
         )
 
     def test_migration_has_correct_revision_id(
-        self, migration_file
+        self, migration_file: Path
     ) -> None:
         """Migration should have the expected revision ID."""
         content = migration_file.read_text()
         assert "revision: str = '3f5e7a9b21cd'" in content
 
     def test_migration_has_correct_down_revision(
-        self, migration_file
+        self, migration_file: Path
     ) -> None:
         """Migration should chain from Phase 1 diagnostic migration."""
         content = migration_file.read_text()
@@ -52,14 +52,14 @@ class TestMigrationFileStructure:
         assert "'129270172ebc'" in content
 
     def test_migration_has_upgrade_function(
-        self, migration_file
+        self, migration_file: Path
     ) -> None:
         """Migration should define an upgrade() function."""
         content = migration_file.read_text()
         assert "def upgrade() -> None:" in content
 
     def test_migration_has_downgrade_function(
-        self, migration_file
+        self, migration_file: Path
     ) -> None:
         """Migration should define a downgrade() function."""
         content = migration_file.read_text()
@@ -67,7 +67,9 @@ class TestMigrationFileStructure:
 
 
 def _read_migration() -> str:
-    return _MIGRATION_PATH.read_text()
+    result = _MIGRATION_PATH.read_text()
+    assert isinstance(result, str)
+    return result
 
 
 class TestMigrationUpgrade:
