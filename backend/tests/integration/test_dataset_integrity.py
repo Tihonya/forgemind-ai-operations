@@ -15,10 +15,12 @@ Skips cleanly if the database is unavailable.
 """
 
 import os
+from collections.abc import AsyncIterator, Generator, Iterator
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import Engine, create_engine, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -84,21 +86,21 @@ def _get_async_engine() -> AsyncEngine:
     return create_async_engine(async_url, echo=False, pool_pre_ping=True)
 
 
-@pytest.fixture(scope="module")  # type: ignore[misc]
-def sync_engine():
+@pytest.fixture(scope="module")
+def sync_engine() -> Generator[Engine, None, None]:
     engine = _get_sync_engine()
     yield engine
     engine.dispose()
 
 
-@pytest.fixture  # type: ignore[misc]
-def db_conn(sync_engine: Engine):
+@pytest.fixture
+def db_conn(sync_engine: Engine) -> Iterator[Connection]:
     with sync_engine.connect() as conn:
         yield conn
 
 
-@pytest.fixture(autouse=True)  # type: ignore[misc]
-def clean_database(db_conn):
+@pytest.fixture(autouse=True)
+def clean_database(db_conn: Connection) -> Generator[None, None, None]:
     """Ensure clean state before and after each test."""
     session = _SessionFactory()
     try:
@@ -115,15 +117,15 @@ def clean_database(db_conn):
         session.close()
 
 
-@pytest.fixture  # type: ignore[misc]
-async def async_session():
+@pytest.fixture
+async def async_session() -> AsyncIterator[AsyncSession]:
     engine = _get_async_engine()
-    session_factory = async_sessionmaker(
-        bind=engine, class_=AsyncSession, expire_on_commit=False
+    session_factory = async_sessionmaker[AsyncSession](
+        bind=engine, expire_on_commit=False
     )
     async with session_factory() as session:
         yield session
-    await engine.dispose()  # type: ignore[attr-defined]
+    await engine.dispose()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,7 +160,7 @@ class TestDatasetStatusEndpoint:
         assert data["actual_checksum"] == EXPECTED_CHECKSUM
 
     async def test_tampered_quantity_returns_invalid(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """Modifying a business quantity makes the checksum mismatch."""
         load_golden_dataset()
@@ -175,7 +177,7 @@ class TestDatasetStatusEndpoint:
         assert data["actual_checksum"] != EXPECTED_CHECKSUM
 
     async def test_deleted_row_returns_invalid(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """Deleting a row makes the checksum mismatch."""
         load_golden_dataset()
@@ -191,7 +193,7 @@ class TestDatasetStatusEndpoint:
         assert data["status"] == "invalid"
 
     async def test_added_row_returns_invalid(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """Adding an extra row makes the checksum mismatch."""
         load_golden_dataset()
@@ -207,7 +209,7 @@ class TestDatasetStatusEndpoint:
         assert data["status"] == "invalid"
 
     async def test_changed_relationship_returns_invalid(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """Moving a BOM item to a different product version changes the checksum."""
         load_golden_dataset()
@@ -252,7 +254,7 @@ class TestDatasetStatusEndpoint:
         assert data["actual_checksum"] == EXPECTED_CHECKSUM
 
     async def test_diagnostic_jobs_do_not_affect_checksum(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """Inserting into diagnostic_jobs does not change the checksum."""
         load_golden_dataset()
@@ -273,7 +275,7 @@ class TestDatasetStatusEndpoint:
         assert response_after.json()["status"] == "valid"
 
     async def test_partial_fixture_returns_invalid(
-        self, client: AsyncClient, db_conn
+        self, client: AsyncClient, db_conn: Connection
     ) -> None:
         """When only some tables are populated, endpoint returns invalid."""
         db_conn.execute(text(
