@@ -2,18 +2,23 @@
 
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.middleware.correlation import CorrelationIdMiddleware
 from app.config import settings
 from app.core.build_info import get_build_info
 from app.core.context import get_correlation_id
+from app.core.dataset_metadata import CHECKSUM_ALGORITHM, DATASET_VERSION, EXPECTED_CHECKSUM
 from app.core.logging import configure_logging, get_logger
+from app.database import get_async_session
+from app.schemas.dataset import DatasetStatusResponse
 from app.schemas.diagnostic import DiagnosticCreateResponse, DiagnosticJobResponse
+from app.services.dataset_integrity import DatasetIntegrityService
 from app.services.dependency_health import check_all_dependencies
 from app.services.diagnostic_jobs import enqueue_diagnostic_job, get_diagnostic_job
 
@@ -100,11 +105,6 @@ async def health_check() -> dict[str, Any]:
             checks[pk] = "ok" if check.status == "ok" else "unavailable"
 
         elif check.name == "alembic":
-            # alembic_revision: extract revision hash from detail on success.
-            # The dependency service produces detail exactly as
-            # "revision {hash}" (dependency_health.py:141). Only accept the
-            # revision when the detail actually starts with that prefix —
-            # do not silently strip arbitrary occurrences inside the string.
             detail = check.detail or ""
             if check.status == "ok" and detail.startswith("revision "):
                 revision = detail[len("revision "):]
@@ -113,17 +113,13 @@ async def health_check() -> dict[str, Any]:
                 checks[pk] = "unknown"
 
         elif check.name in ("postgresql", "redis"):
-            # postgresql/redis: ok → "ok", error → "error: <sanitized detail>"
             if check.status == "ok":
                 checks[pk] = "ok"
             else:
-                # Use already-sanitized detail from DependencyCheck
-                # Fallback to "unavailable" when detail is missing
                 detail = check.detail if check.detail else "unavailable"
                 checks[pk] = f"error: {detail}"
 
         else:
-            # Fallback for any future checks: preserve status as-is
             checks[pk] = check.status
 
     return {
@@ -141,26 +137,8 @@ async def health_check() -> dict[str, Any]:
     tags=["System"],
 )
 async def enqueue_diagnostic() -> DiagnosticCreateResponse:
-    """Enqueue a diagnostic background job.
-
-    Approved public contract (plan §11.1):
-
-        POST /api/v1/system/diagnostics → HTTP 202
-        {
-            "job_id":         "<uuid>",
-            "correlation_id": "<uuid-v4>",
-            "status":         "pending"
-        }
-
-    The correlation_id is inherited from ``CorrelationIdMiddleware``
-    (already bound to the current request context). The service creates a
-    pending ``DiagnosticJob`` row, commits it, then enqueues the ARQ task
-    in a fresh Redis pool. If enqueue fails, the row is transitioned to
-    ``failed`` with a safe bounded error message and HTTP 503 is returned.
-    """
+    """Enqueue a diagnostic background job."""
     correlation_id = get_correlation_id()
-    # Middleware is guaranteed to have bound a canonical UUID-v4.
-    # Defensive: fail loudly if middleware behaviour regresses.
     if correlation_id is None:  # pragma: no cover - middleware invariant
         raise RuntimeError("Correlation ID is not bound in request context")
     return await enqueue_diagnostic_job(correlation_id=correlation_id)
@@ -173,28 +151,7 @@ async def enqueue_diagnostic() -> DiagnosticCreateResponse:
     tags=["System"],
 )
 async def get_diagnostic_status(job_id: UUID) -> DiagnosticJobResponse:
-    """Retrieve diagnostic job status and results.
-
-    Approved public contract (plan §11.1):
-
-        GET /api/v1/system/diagnostics/{job_id} → HTTP 200
-        {
-            "id":             "<uuid>",
-            "correlation_id": "<uuid-v4>",
-            "status":         "pending" | "running" | "completed" | "failed",
-            "checks":         {...} | null,
-            "error_message":  null | "...",
-            "started_at":     "ISO-8601" | null,
-            "completed_at":   "ISO-8601" | null,
-            "duration_ms":    150 | null,
-            "created_at":     "ISO-8601"
-        }
-
-    Read-only: no enqueue, no row modification, no Redis.
-    Returns HTTP 404 with safe error contract when job not found.
-    """
-    from fastapi import HTTPException
-
+    """Retrieve diagnostic job status and results."""
     result = await get_diagnostic_job(job_id)
     if result is None:
         raise HTTPException(
@@ -207,13 +164,69 @@ async def get_diagnostic_status(job_id: UUID) -> DiagnosticJobResponse:
     return result
 
 
+@app.get(
+    f"{settings.api_v1_prefix}/system/dataset/status",
+    response_model=DatasetStatusResponse,
+    status_code=200,
+    tags=["System"],
+)
+async def get_dataset_status(
+    session: AsyncSession = Depends(get_async_session),  # noqa: B008
+) -> DatasetStatusResponse:
+    """Verify Golden Dataset integrity.
+
+    Computes a semantic checksum of the current database state and compares it
+    against the expected checksum for the approved Golden Dataset fixture.
+
+    Status semantics:
+    - ``valid``: all collections match the approved fixture exactly
+    - ``invalid``: dataset exists but differs semantically
+    - ``not_loaded``: all Golden Dataset business tables are empty
+
+    Infrastructure failures return HTTP 500 (not ``not_loaded``).
+    """
+    try:
+        service = DatasetIntegrityService(session)
+        counts = await service.get_entity_counts()
+        all_zero = all(count == 0 for count in counts.values())
+
+        if all_zero:
+            return DatasetStatusResponse(
+                status="not_loaded",
+                dataset_version=DATASET_VERSION,
+                checksum_algorithm=CHECKSUM_ALGORITHM,
+                expected_checksum=EXPECTED_CHECKSUM,
+                actual_checksum=None,
+            )
+
+        actual_checksum = await service.compute_actual_checksum()
+        status: Literal["valid", "invalid"] = (
+            "valid" if actual_checksum == EXPECTED_CHECKSUM else "invalid"
+        )
+
+        return DatasetStatusResponse(
+            status=status,
+            dataset_version=DATASET_VERSION,
+            checksum_algorithm=CHECKSUM_ALGORITHM,
+            expected_checksum=EXPECTED_CHECKSUM,
+            actual_checksum=actual_checksum,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "error": "dataset_integrity_verification_failed",
+                "message": "Dataset integrity verification failed due to an internal error.",
+            },
+        ) from e
+
+
 @app.get("/")
 async def root() -> dict[str, str]:
-    """Root endpoint providing API information.
-
-    Returns:
-        dict: API metadata including name and version.
-    """
+    """Root endpoint providing API information."""
     return {
         "name": "ForgeMind AI Operations",
         "version": app.version,
