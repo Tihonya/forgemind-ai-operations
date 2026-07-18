@@ -25,7 +25,9 @@ from app.models.production import (
     ProductionPlan,
 )
 from app.models.supplier import PurchaseOrder, PurchaseOrderLine, Supplier
+from app.models.user import Role, User, UserRole
 from app.models.warehouse import InventoryBalance, InventoryReservation, Warehouse
+from app.seed.generator.auth_dataset import generate_auth_dataset
 from app.seed.generator.golden_dataset import (
     ANCHOR_DATE,
     DATASET_VERSION,
@@ -35,8 +37,8 @@ from app.seed.generator.golden_dataset import (
 
 logger = logging.getLogger(__name__)
 
-# Expected Alembic revision after WP-2.2 migration
-EXPECTED_ALEMBIC_HEAD = "3f5e7a9b21cd"
+# Expected Alembic revision after WP-2.5 auth tables migration
+EXPECTED_ALEMBIC_HEAD = "b4c5a6b7c8d9"
 
 
 def _get_sync_engine() -> Engine:
@@ -149,6 +151,26 @@ def _delete_existing_business_data(session: Session) -> int:
     total_deleted += session.query(Component).delete()
 
     logger.info(f"Deleted {total_deleted} existing business records")
+    return total_deleted
+
+
+def _delete_existing_auth_data(session: Session) -> int:
+    """Delete existing auth data in correct dependency order.
+
+    Returns:
+        Number of records deleted
+
+    Raises:
+        Exception: If deletion fails
+    """
+    total_deleted = 0
+
+    # Delete user_roles first (depends on users and roles)
+    total_deleted += session.query(UserRole).delete()
+    total_deleted += session.query(User).delete()
+    total_deleted += session.query(Role).delete()
+
+    logger.info(f"Deleted {total_deleted} existing auth records")
     return total_deleted
 
 
@@ -268,13 +290,41 @@ def _insert_production_order_requirements(
         session.add(requirement)
 
 
+def _insert_roles(session: Session, roles: list[dict[str, Any]]) -> None:
+    """Insert roles into database."""
+    for role_data in roles:
+        role = Role(**role_data)
+        session.add(role)
+
+
+def _insert_users(session: Session, users: list[dict[str, Any]]) -> None:
+    """Insert users into database."""
+    for user_data in users:
+        user = User(**user_data)
+        session.add(user)
+
+
+def _insert_user_roles(
+    session: Session, user_roles: list[dict[str, Any]]
+) -> None:
+    """Insert user-role mappings into database.
+
+    Args:
+        user_roles: List of dicts with id, user_id, role_id (all UUIDs)
+    """
+    for ur_data in user_roles:
+        user_role = UserRole(**ur_data)
+        session.add(user_role)
+
+
 def load_golden_dataset() -> dict[str, int]:
     """Load the Golden Dataset into PostgreSQL with transaction safety.
 
     Implements:
     - Alembic head verification
+    - Delete existing auth data (preserves business data)
     - Delete existing business data (preserves diagnostic_jobs)
-    - Insert all entities in dependency order
+    - Insert all entities in dependency order (auth + business)
     - Commit transaction or rollback on failure
 
     Returns:
@@ -293,17 +343,26 @@ def load_golden_dataset() -> dict[str, int]:
     # Verify Alembic head
     _verify_alembic_head()
 
-    # Generate dataset
+    # Generate datasets
     dataset = generate_golden_dataset()
+    auth_data = generate_auth_dataset()
 
     # Create session and begin transaction
     session = _SessionFactory()
 
     try:
+        # Delete existing auth data
+        _delete_existing_auth_data(session)
+
         # Delete existing business data
         deleted_count = _delete_existing_business_data(session)
 
-        # Insert in dependency order
+        # Insert auth data first (roles needed before user_roles FK)
+        _insert_roles(session, auth_data["roles"])
+        _insert_users(session, auth_data["users"])
+        _insert_user_roles(session, auth_data["user_roles"])
+
+        # Insert business data in dependency order
         _insert_products(session, dataset["products"])
         _insert_product_versions(session, dataset["product_versions"])
         _insert_components(session, dataset["components"])
@@ -329,6 +388,9 @@ def load_golden_dataset() -> dict[str, int]:
 
         # Return counts
         return {
+            "roles": len(auth_data["roles"]),
+            "users": len(auth_data["users"]),
+            "user_roles": len(auth_data["user_roles"]),
             "products": len(dataset["products"]),
             "product_versions": len(dataset["product_versions"]),
             "components": len(dataset["components"]),
