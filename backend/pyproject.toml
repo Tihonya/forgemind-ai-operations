@@ -86,8 +86,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["S101", "S105", "S106"]
-"backend/tests/**/*.py" = ["S101", "S105", "S106"]
+"tests/**/*.py" = ["S101", "S105", "S106", "S608"]
+"backend/tests/**/*.py" = ["S101", "S105", "S106", "S608"]
+"tests/seed/_verify_risk_facts.py" = ["T201", "E501"]  # Verification script output, long SQL column references
+"tests/seed/test_loader.py" = ["E501", "E402"]  # Long SQL queries; import after skipif guard
+"tests/seed/test_golden_dataset.py" = ["E501"]  # Long SQL queries
 
 [tool.mypy]
 python_version = "3.12"

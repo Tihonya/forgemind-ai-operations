@@ -23,11 +23,11 @@ lint: ## Run all linters
 
 seed: ## Seed the database with golden dataset (Phase 1+)
 	@echo "Seeding database..."
-	@if [ ! -d "seed/generator" ]; then \
-		echo "⚠️  Seed module not yet implemented (deferred to Phase 1)"; \
-		exit 0; \
+	@if [ ! -d "backend/app/seed" ]; then \
+		echo "⚠️  Seed module not found at backend/app/seed"; \
+		exit 1; \
 	fi
-	docker compose exec backend python -m seed.generator.main
+	docker compose exec backend python -m app.seed.generator.main
 	@echo "Seed complete."
 
 reset: ## Reset demo data (admin only) (Phase 1+)
