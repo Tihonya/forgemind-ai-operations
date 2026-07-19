@@ -345,18 +345,40 @@ Computation:
 
 ## 8. Severity rules (canonical)
 
-Severity classification is deterministic and computed purely from the shortage and supply evidence:
+Severity classification is deterministic, computed purely from the shortage and supply evidence, and evaluated by strict precedence (first rule that matches wins).
 
-| Severity | Condition (deterministic) |
-|---|---|
-| CRITICAL | shortage > 0 AND no approved alternative exists AND no confirmed early supply (confirmed_early_supply = 0) |
-| HIGH | shortage > 0 AND confirmed_late_supply > 0 (confirmed PO exists but expected after need_date) |
-| MEDIUM | shortage > 0 AND (component_alternatives with status=PROPOSED exists for this component) |
-| LOW | Reserved for future use; not exercised by the Phase 2 Golden Dataset |
+### 8.1 Severity precedence (deterministic, ordered)
 
-**LOW severity note:** LOW severity is part of the domain vocabulary but is not required for the Phase 2 Golden Scenario. No Phase 2 acceptance criterion depends on producing a LOW risk. A precise LOW rule (e.g., safety-margin threshold) may be approved later when a scenario requires it. In Phase 2, LOW is documented but not computed.
+| Priority | Condition | Severity |
+|----------|-----------|----------|
+| 1 | shortage <= 0 | (no risk emitted) |
+| 2 | shortage > 0 AND `component_alternatives` with `status=PROPOSED` exists for this component | MEDIUM |
+| 3 | shortage > 0 AND `confirmed_late_supply > 0` | HIGH |
+| 4 | shortage > 0 AND no `component_alternatives` with `status=APPROVED` exists for this component | CRITICAL |
+| 5 | shortage > 0 AND `component_alternatives` with `status=APPROVED` exists for this component | LOW |
 
-**Severity precedence:** If multiple conditions apply (e.g., shortage exists with both late confirmed supply AND proposed alternative), the implementation must define a deterministic precedence order. For the Golden Dataset, each risk has a single unambiguous severity.
+### 8.2 LOW severity behavior (approved)
+
+LOW severity is a fully exercised severity level in Phase 2:
+
+- LOW is **emitted, not discarded**.
+- A LOW risk is reported when the shortage is real but the component has an approved alternative on record.
+- LOW indicates "mitigated but visible" — the shortage exists, the system has a known substitute, but the shortage is still recorded for governance and trace completeness.
+
+### 8.3 Alternative-component role in severity (clarification)
+
+Within Phase 2, `component_alternatives` is a **severity-only modifier**:
+
+- An `APPROVED` alternative:
+  - satisfies severity rule 5 (mitigates CRITICAL → LOW);
+  - **does not** add the alternative component's inventory to `available`;
+  - **does not** participate in shortage calculation;
+  - substitution logic (e.g., consuming alternative stock instead of primary stock) is out of scope in Phase 2.
+- A `PROPOSED` alternative:
+  - satisfies severity rule 2 (MEDIUM);
+  - otherwise has no arithmetic effect.
+- A `REJECTED` alternative:
+  - has no effect on severity or calculations (ignored).
 
 No LLM influence on severity — pure Python/SQL.
 

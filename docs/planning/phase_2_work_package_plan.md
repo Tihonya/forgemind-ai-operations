@@ -419,8 +419,29 @@ feat(api): implement supply and inventory read APIs (warehouses, inventory, supp
 - Inventory availability calculation (on_hand − reservations for OTHER work orders)
 - Incoming supply calculation (confirmed PO lines arriving before need_date)
 - Need-date comparison (expected_delivery_date vs production_order.need_date)
-- Severity rule engine (CRITICAL, HIGH, MEDIUM) per §8. LOW is documented in spec but not exercised by the Golden Dataset; no Phase 2 acceptance test depends on LOW
-- Output: list of risk objects with component, required, available, shortage, severity, affected_wo
+- Severity rule engine per `phase_2_business_model_spec.md` §8 with ordered precedence (first match wins):
+  1. shortage <= 0 → no risk emitted
+  2. shortage > 0 AND `PROPOSED` alternative exists → MEDIUM
+  3. shortage > 0 AND `confirmed_late_supply > 0` → HIGH
+  4. shortage > 0 AND no `APPROVED` alternative exists → CRITICAL
+  5. shortage > 0 AND `APPROVED` alternative exists → LOW (emitted, not discarded)
+- Output: list of risk objects with no `risk_id`; each record carries
+  `component_code`, `component_name`, `affected_wo_code`,
+  `required`, `available`, `confirmed_early`, `confirmed_late`, `shortage`,
+  `severity`, `has_approved_alternative`, `has_proposed_alternative`,
+  `need_date`, `plan_code`.
+- Deterministic result ordering (mandatory): sort by
+  (`component_code` ASC, `affected_wo_code` ASC).
+- `risk_id` (RISK-001, RISK-002, …) is **not** assigned in WP-2.8;
+  WP-2.9 preserves the WP-2.8 sort order and assigns `risk_id` by position.
+- `APPROVED` alternatives mitigate severity only (rule 4 → rule 5 boundary);
+  alternative-component inventory is **never** added to `available`;
+  no substitution calculation exists in Phase 2.
+- `REJECTED` alternatives have no effect on severity or calculations.
+- Golden Dataset expected order (after sort):
+  1. CTRL-X4   / WO-2026-0142 / CRITICAL / shortage 8
+  2. MOTOR-M2  / WO-2026-0150 / HIGH     / shortage 6
+  3. SENSOR-L9 / WO-2026-0156 / MEDIUM   / shortage 5
 
 **Excluded scope:**
 - API endpoint (WP-2.9 will expose)
