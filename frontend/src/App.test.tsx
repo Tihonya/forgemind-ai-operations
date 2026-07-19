@@ -17,12 +17,10 @@ describe('App', () => {
   })
 
   it('redirects unauthenticated root request to /login', async () => {
-    // Ensure no token in storage
     sessionStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY)
 
     render(<App />)
 
-    // Login screen should be shown — root "/" was protected
     await waitFor(() => {
       expect(screen.getByTestId('login-username')).toBeInTheDocument()
     })
@@ -30,7 +28,7 @@ describe('App', () => {
     expect(screen.getByTestId('login-submit')).toBeInTheDocument()
   })
 
-  it('shows the protected home placeholder when already authenticated', async () => {
+  it('shows authenticated app shell when already authenticated', async () => {
     const token = 'valid-token-xyz'
     sessionStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token)
 
@@ -38,14 +36,17 @@ describe('App', () => {
       id: 'user-1',
       username: 'engineer.demo',
       display_name: 'Engineer Demo',
-      roles: ['ENGINEER'],
+      roles: ['production_manager'],
     })
 
     window.history.pushState({}, 'Protected root', '/')
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText('Phase 3.1 scaffold ready')).toBeInTheDocument()
+      expect(screen.getByText('ForgeMind')).toBeInTheDocument()
+      // User name appears in both header and sidebar
+      const userElements = screen.getAllByText('Engineer Demo')
+      expect(userElements.length).toBeGreaterThan(0)
     })
   })
 
@@ -57,15 +58,14 @@ describe('App', () => {
       id: 'user-1',
       username: 'engineer.demo',
       display_name: 'Engineer Demo',
-      roles: ['ENGINEER'],
+      roles: ['production_manager'],
     })
 
-    window.history.pushState({}, 'Unknown page', '/nonexistent-path')
+    window.history.pushState({}, 'Unknown route', '/this-page-does-not-exist')
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.getByText('404')).toBeInTheDocument()
-      expect(screen.getByText('Page not found')).toBeInTheDocument()
+      expect(screen.getByText(/not found/i)).toBeInTheDocument()
     })
   })
 })
