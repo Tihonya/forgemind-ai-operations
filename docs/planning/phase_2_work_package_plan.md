@@ -433,7 +433,9 @@ feat(api): implement supply and inventory read APIs (warehouses, inventory, supp
 - Deterministic result ordering (mandatory): sort by
   (`component_code` ASC, `affected_wo_code` ASC).
 - `risk_id` (RISK-001, RISK-002, …) is **not** assigned in WP-2.8;
-  WP-2.9 preserves the WP-2.8 sort order and assigns `risk_id` by position.
+  WP-2.9 assigns `risk_id` by position (1-indexed, zero-padded 3 digits)
+  over the preserved WP-2.8 sort. The `risk_id` is per-response only:
+  regenerated on every request, not persisted, and not accepted as input.
 - `APPROVED` alternatives mitigate severity only (rule 4 → rule 5 boundary);
   alternative-component inventory is **never** added to `available`;
   no substitution calculation exists in Phase 2.
@@ -488,17 +490,122 @@ feat(risk): implement deterministic supply-risk engine (BOM, inventory, severity
 
 **Included scope:**
 - `GET /api/v1/production-plans/{plan_code}/risks` (returns list of risks for a plan)
-- `GET /api/v1/risks/{risk_id}` (returns single risk with full derivation)
+- Response schema with `risk_id` assigned per response (1-indexed, zero-padded 3 digits: RISK-001, RISK-002, RISK-003)
+- All Decimal fields serialized as JSON strings (required, available, confirmed_early, confirmed_late, shortage)
+- Authentication required (any authenticated user, no role restriction in Phase 2)
 - Automated AT-004 test querying `/api/v1/production-plans/PLAN-2026-W31/risks`
-- Test asserts exactly 3 risks returned with:
-  - RISK-001: CTRL-X4, shortage=8, severity=CRITICAL, affected_wo=WO-2026-0142
-  - RISK-002: MOTOR-M2, shortage=6, severity=HIGH, affected_wo=WO-2026-0150
-  - RISK-003: SENSOR-L9, shortage=5, severity=MEDIUM, affected_wo=WO-2026-0156
 
-**Excluded scope:**
+**Endpoint contract:**
+```
+GET /api/v1/production-plans/{plan_code}/risks
+
+Path parameters:
+  plan_code (string): Natural code of the production plan (e.g., PLAN-2026-W31)
+
+Request parameters: none
+
+Response (200 OK):
+  list[RiskRecordWithId] — ordered by (component_code ASC, affected_wo_code ASC)
+
+Response schema:
+  risk_id: string (format: RISK-NNN, e.g., RISK-001)
+  component_code: string
+  component_name: string
+  affected_wo_code: string
+  required: string (Decimal serialized as string)
+  available: string (Decimal serialized as string)
+  confirmed_early: string (Decimal serialized as string)
+  confirmed_late: string (Decimal serialized as string)
+  shortage: string (Decimal serialized as string)
+  severity: string (enum: CRITICAL, HIGH, MEDIUM, LOW)
+  has_approved_alternative: boolean
+  has_proposed_alternative: boolean
+  need_date: date (ISO format: YYYY-MM-DD)
+  plan_code: string
+
+Error responses:
+  404 Not Found: {"detail": "Production plan '<code>' not found"}
+  401 Unauthorized: existing canonical authentication error from WP-2.6
+```
+
+**risk_id assignment rules:**
+- Assigned per response after WP-2.8 deterministic sorting
+- Format: RISK-001, RISK-002, RISK-003 (1-indexed, zero-padded 3 digits)
+- NOT persisted in database
+- NOT stored in any table
+- NOT accepted as input parameter
+- Deterministic within the response (same request → same risk_id)
+- Regenerated on every request
+
+**Golden Dataset expected response:**
+```json
+[
+  {
+    "risk_id": "RISK-001",
+    "component_code": "CTRL-X4",
+    "component_name": "Control Unit X4",
+    "affected_wo_code": "WO-2026-0142",
+    "required": "20.0000",
+    "available": "12.0000",
+    "confirmed_early": "0.0000",
+    "confirmed_late": "0.0000",
+    "shortage": "8.0000",
+    "severity": "CRITICAL",
+    "has_approved_alternative": false,
+    "has_proposed_alternative": false,
+    "need_date": "2026-08-03",
+    "plan_code": "PLAN-2026-W31"
+  },
+  {
+    "risk_id": "RISK-002",
+    "component_code": "MOTOR-M2",
+    "component_name": "Motor M2",
+    "affected_wo_code": "WO-2026-0150",
+    "required": "16.0000",
+    "available": "10.0000",
+    "confirmed_early": "0.0000",
+    "confirmed_late": "10.0000",
+    "shortage": "6.0000",
+    "severity": "HIGH",
+    "has_approved_alternative": false,
+    "has_proposed_alternative": false,
+    "need_date": "2026-08-03",
+    "plan_code": "PLAN-2026-W31"
+  },
+  {
+    "risk_id": "RISK-003",
+    "component_code": "SENSOR-L9",
+    "component_name": "Sensor L9",
+    "affected_wo_code": "WO-2026-0156",
+    "required": "12.0000",
+    "available": "7.0000",
+    "confirmed_early": "0.0000",
+    "confirmed_late": "0.0000",
+    "shortage": "5.0000",
+    "severity": "MEDIUM",
+    "has_approved_alternative": false,
+    "has_proposed_alternative": true,
+    "need_date": "2026-08-05",
+    "plan_code": "PLAN-2026-W31"
+  }
+]
+```
+
+**Note:** Decimal values use 4 decimal places as stored in database (WP-2.8 CI-verified).
+
+**Excluded scope (absolute):**
+- `GET /api/v1/risks` (list all risks across plans)
+- `GET /api/v1/risks/{risk_id}` (single risk by ID)
+- `GET /api/v1/production-plans/{plan_code}/risks/{risk_id}` (single risk within plan)
+- POST endpoints (no write operations)
 - Risk remediation actions (Phase 6 approval flow)
 - LLM explanation (Phase 5)
 - UI rendering (Phase 3)
+- Database persistence of risk_id
+- Modification to risk_engine.py sorting or calculation rules
+- Modification to database models or migrations
+- Modification to authentication behavior
+- Modification to WP-2.8 tests
 
 **Dependencies:**
 - WP-2.7A (core production API infrastructure)
@@ -506,28 +613,49 @@ feat(risk): implement deterministic supply-risk engine (BOM, inventory, severity
 - WP-2.8 (risk engine)
 
 **Expected files:**
-- `backend/app/api/risks.py` (risk endpoints)
-- `backend/app/schemas/risk.py` (Pydantic response schema)
-- `backend/tests/acceptance/test_at004_golden_scenario.py` (AT-004 evidence)
+- `backend/app/api/risks.py` (risk endpoint)
+- `backend/app/schemas/risk_response.py` (Pydantic response schema with risk_id and Decimal-as-string)
+- `backend/tests/integration/test_api_risks.py` (integration tests)
+- `backend/tests/integration/test_risk_endpoint_at004.py` (AT-004 exact assertions)
+- `backend/app/main.py` (router registration)
+
+**Implementation approach:**
+- Create `RiskRecordWithId` schema extending existing `RiskRecord` with `risk_id` field
+- Use explicit Pydantic `PlainSerializer(str, return_type=str)` for Decimal fields (same pattern as WP-2.7A/2.7B)
+- Call existing `analyze_plan()` service from WP-2.8
+- Assign risk_id by enumeration: `f"RISK-{idx+1:03d}"` for idx, record in enumerate(risks)
+- Raise HTTPException(404) if plan_code not found (ValueError from analyze_plan)
+- Use existing `get_current_user` dependency for authentication
+- Register router in main.py with same pattern as WP-2.7A/2.7B routers
 
 **Tests/checks:**
 - AT-004 acceptance test passes (automated)
-- Risk endpoint returns correct JSON structure
-- Risk derivation trace visible in response (component, required, available, shortage, severity, affected_wo)
-- Integration with seed data produces expected output
+- Integration test: 200 response with 3 risks, correct JSON shape
+- Integration test: 404 response for unknown plan_code
+- Integration test: Decimal fields serialized as strings with 4 decimal places
+- Integration test: risk_id format RISK-NNN
+- Integration test: ordering matches WP-2.8 sort (component_code, affected_wo_code)
+- Integration test: authentication required (401 without token)
+- `ruff check` passes
+- `mypy --strict` passes
+- All unit and integration tests pass
 
 **Acceptance evidence:**
-- `pytest tests/acceptance/test_at004_golden_scenario.py` passes
+- `pytest backend/tests/integration/test_risk_endpoint_at004.py` passes
 - API response matches Golden Dataset specification exactly
-- No hardcoded values in endpoint code
+- No hardcoded values in endpoint code (calls analyze_plan dynamically)
+- No database writes (read-only endpoint)
+- No risk_id persistence
 
 **Completion criteria:**
 - AT-004 automated evidence exists
 - Risk API functional and tested
+- All CI gates pass
+- Zero modification to WP-2.8 code
 
 **Proposed atomic commit:**
 ```text
-feat(risk): expose risk API and implement AT-004 Golden Scenario acceptance test
+feat(risk): expose risk API endpoint and implement AT-004 Golden Scenario acceptance test
 ```
 
 ---
