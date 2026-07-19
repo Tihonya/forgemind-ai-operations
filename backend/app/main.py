@@ -10,7 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import router as auth_router
+from app.api.components import router as components_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
+from app.api.production_orders import router as production_orders_router
+from app.api.production_plans import router as production_plans_router
+from app.api.products import router as products_router
 from app.config import settings
 from app.core.build_info import get_build_info
 from app.core.context import get_correlation_id
@@ -66,6 +70,12 @@ app.add_middleware(
 
 # Authentication router (WP-2.6)
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
+
+# Core production read APIs (WP-2.7A)
+app.include_router(products_router, prefix=settings.api_v1_prefix)
+app.include_router(components_router, prefix=settings.api_v1_prefix)
+app.include_router(production_plans_router, prefix=settings.api_v1_prefix)
+app.include_router(production_orders_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
