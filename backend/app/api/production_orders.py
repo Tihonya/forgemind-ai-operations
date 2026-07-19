@@ -8,8 +8,8 @@ Endpoints:
 Notes:
 - Orders list ordering: by ``need_date`` ascending then ``code`` ascending.
 - Orders detail ``requirements`` ordering: by ``component.code`` ascending.
-- Requirements list ordering: by ``order_code`` ascending then
-  ``component_code`` ascending.
+- Requirements list ordering: by ``component_code`` ascending
+  (natural business key, independent of UUID ordering).
 - Filter ``plan_code`` on orders list is optional.
 - Filter ``order_code`` on requirements list is required.
 
@@ -178,7 +178,7 @@ async def list_production_order_requirements(
     total = (await session.execute(count_stmt)).scalar_one()
     stmt = (
         base_stmt.join(Component)
-        .order_by(ProductionOrderRequirement.component_id.asc())
+        .order_by(Component.code.asc())
         .limit(limit)
         .offset(offset)
     )

@@ -206,6 +206,12 @@ class TestProductionOrderRequirements:
         assert data["total"] == 3
         assert len(data["items"]) == 3
 
+        # Requirements ordered by component code asc (natural business key,
+        # independent of UUID ordering in the database)
+        codes = [item["component_code"] for item in data["items"]]
+        assert codes == sorted(codes), f"requirements must be ordered by component code: {codes}"
+        assert codes == ["CTRL-X4", "PIPE-P1", "VALVE-V3"]
+
         for item in data["items"]:
             assert item["order_code"] == "WO-2026-0142"
             assert "component_code" in item
