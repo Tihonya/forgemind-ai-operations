@@ -18,6 +18,7 @@ from app.api.production_orders import router as production_orders_router
 from app.api.production_plans import router as production_plans_router
 from app.api.products import router as products_router
 from app.api.purchase_orders import router as purchase_orders_router
+from app.api.risks import router as risks_router
 from app.api.suppliers import router as suppliers_router
 from app.api.warehouses import router as warehouses_router
 from app.config import settings
@@ -88,6 +89,9 @@ app.include_router(inventory_router, prefix=settings.api_v1_prefix)
 app.include_router(inventory_reservations_router, prefix=settings.api_v1_prefix)
 app.include_router(suppliers_router, prefix=settings.api_v1_prefix)
 app.include_router(purchase_orders_router, prefix=settings.api_v1_prefix)
+
+# Production plan risks endpoint (WP-2.9)
+app.include_router(risks_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
