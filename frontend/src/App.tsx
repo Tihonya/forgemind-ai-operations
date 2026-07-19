@@ -1,6 +1,8 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import RootLayout from './routes/root'
 import NotFound from './routes/not-found'
+import Login from './routes/login'
+import ProtectedRoute from './routes/protected'
 import { AuthProvider } from './contexts/auth.context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -17,16 +19,22 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
+      <BrowserRouter>
+        <AuthProvider>
           <Routes>
-            <Route element={<RootLayout />}>
-              <Route index element={<HomePlaceholder />} />
-              <Route path="*" element={<NotFound />} />
+            {/* Login is outside ProtectedRoute — unauthenticated access */}
+            <Route path="/login" element={<Login />} />
+
+            {/* All other routes require authentication */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<RootLayout />}>
+                <Route index element={<HomePlaceholder />} />
+                <Route path="*" element={<NotFound />} />
+              </Route>
             </Route>
           </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   )
 }
