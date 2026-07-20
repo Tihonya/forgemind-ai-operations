@@ -5,6 +5,7 @@
  * No row navigation, no clickable rows, no sortable headers.
  */
 
+import { Link } from 'react-router-dom';
 import { AlertTriangle, Package } from 'lucide-react';
 
 import { SeverityBadge } from './SeverityBadge';
@@ -16,6 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { RiskRecordWithId } from '@/lib/risks-api';
 import { formatQuantity } from '@/lib/utils';
@@ -138,6 +140,7 @@ export function RiskList({
               <TableHead className="text-right">Shortage</TableHead>
               <TableHead className="text-right">Available</TableHead>
               <TableHead className="text-right">Required</TableHead>
+              <TableHead>View</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -163,6 +166,13 @@ export function RiskList({
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm text-steel-200">
                   {formatQuantity(risk.required)}
+                </TableCell>
+                <TableCell>
+                  <Link to={`/supply-risk/${risk.risk_id}`}>
+                    <Button variant="ghost" size="sm" aria-label={`View ${risk.risk_id}`}>
+                      View
+                    </Button>
+                  </Link>
                 </TableCell>
               </TableRow>
             ))}
