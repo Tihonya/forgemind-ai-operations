@@ -28,7 +28,7 @@ describe('HealthWidget', () => {
       isLoading: true,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useHealth>);
 
     renderWithQuery(<HealthWidget />);
     expect(screen.getByTestId('health-widget')).toBeInTheDocument();
@@ -41,7 +41,7 @@ describe('HealthWidget', () => {
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
-    });
+    } as ReturnType<typeof useHealth>);
 
     renderWithQuery(<HealthWidget />);
     expect(screen.getByTestId('health-error')).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe('HealthWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useHealth>);
 
     renderWithQuery(<HealthWidget />);
     expect(screen.getByTestId('health-content')).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('HealthWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useHealth>);
 
     renderWithQuery(<HealthWidget />);
     expect(screen.getByText('Degraded')).toBeInTheDocument();
@@ -114,7 +114,7 @@ describe('HealthWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as unknown as ReturnType<typeof useHealth>);
 
     renderWithQuery(<HealthWidget />);
     expect(screen.getByText('Unhealthy')).toBeInTheDocument();

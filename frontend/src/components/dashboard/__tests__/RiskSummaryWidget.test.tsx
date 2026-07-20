@@ -24,11 +24,12 @@ describe('RiskSummaryWidget', () => {
 
   it('renders loading state', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
       isLoading: true,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
     expect(screen.getByTestId('risk-summary-widget')).toBeInTheDocument();
@@ -37,11 +38,12 @@ describe('RiskSummaryWidget', () => {
 
   it('renders error state', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
-    });
+    } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
     expect(screen.getByTestId('risk-summary-error')).toBeInTheDocument();
@@ -50,11 +52,12 @@ describe('RiskSummaryWidget', () => {
 
   it('renders no risks state', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
     expect(screen.getByText('No active risks for this plan')).toBeInTheDocument();
@@ -62,15 +65,16 @@ describe('RiskSummaryWidget', () => {
 
   it('renders risk summary with severities', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
       summary: { total: 5, critical: 2, high: 1, medium: 1, low: 1 },
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
     expect(screen.getByTestId('risk-summary-content')).toBeInTheDocument();
-    expect(screen.getByText('5')).toBeInTheDocument(); // total
+    expect(screen.getByText('5')).toBeInTheDocument();
     expect(screen.getByTestId('severity-critical-count')).toHaveTextContent('2');
     expect(screen.getByTestId('severity-high-count')).toHaveTextContent('1');
     expect(screen.getByTestId('severity-medium-count')).toHaveTextContent('1');
@@ -79,11 +83,12 @@ describe('RiskSummaryWidget', () => {
 
   it('does not fetch risks when planCode is null', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode={null} />);
     expect(useRiskSummary).toHaveBeenCalledWith(null);

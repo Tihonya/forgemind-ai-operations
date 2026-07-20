@@ -28,7 +28,7 @@ describe('DatasetStatusWidget', () => {
       isLoading: true,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByTestId('dataset-status-widget')).toBeInTheDocument();
@@ -41,14 +41,14 @@ describe('DatasetStatusWidget', () => {
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
-    });
+    } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByTestId('dataset-status-error')).toBeInTheDocument();
     expect(screen.getByText('Dataset status unavailable')).toBeInTheDocument();
   });
 
-  it('renders valid dataset status', () => {
+  it('renders valid status', () => {
     vi.mocked(useDatasetStatus).mockReturnValue({
       data: {
         status: 'valid',
@@ -60,7 +60,7 @@ describe('DatasetStatusWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByTestId('dataset-content')).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe('DatasetStatusWidget', () => {
     expect(screen.getByTestId('dataset-status-valid')).toBeInTheDocument();
   });
 
-  it('renders invalid dataset status', () => {
+  it('renders invalid status', () => {
     vi.mocked(useDatasetStatus).mockReturnValue({
       data: {
         status: 'invalid',
@@ -80,14 +80,14 @@ describe('DatasetStatusWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByText('Invalid')).toBeInTheDocument();
     expect(screen.getByTestId('dataset-status-invalid')).toBeInTheDocument();
   });
 
-  it('renders not_loaded dataset status', () => {
+  it('renders not_loaded status', () => {
     vi.mocked(useDatasetStatus).mockReturnValue({
       data: {
         status: 'not_loaded',
@@ -99,7 +99,7 @@ describe('DatasetStatusWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
-    });
+    } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByText('Not Loaded')).toBeInTheDocument();

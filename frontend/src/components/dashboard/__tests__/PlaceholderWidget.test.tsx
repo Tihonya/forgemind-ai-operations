@@ -1,16 +1,15 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import PlaceholderWidget from '../PlaceholderWidget';
 
 describe('PlaceholderWidget', () => {
-  it('renders placeholder with title and message', () => {
+  it('renders with title and message', () => {
     render(
       <PlaceholderWidget
         title="Future Feature"
         message="Coming in Phase 5"
       />
     );
-
     expect(screen.getByText('Future Feature')).toBeInTheDocument();
     expect(screen.getByText('Coming in Phase 5')).toBeInTheDocument();
   });
@@ -22,7 +21,6 @@ describe('PlaceholderWidget', () => {
         message="Test message"
       />
     );
-
     const widget = screen.getByTestId('placeholder-widget');
     expect(widget).toBeInTheDocument();
     expect(widget).toHaveClass('opacity-60');
@@ -30,7 +28,6 @@ describe('PlaceholderWidget', () => {
 
   it('renders custom icon when provided', () => {
     const CustomIcon = () => <span data-testid="custom-icon">Icon</span>;
-
     render(
       <PlaceholderWidget
         title="Test"
@@ -38,20 +35,18 @@ describe('PlaceholderWidget', () => {
         icon={<CustomIcon />}
       />
     );
-
     expect(screen.getByTestId('custom-icon')).toBeInTheDocument();
+    expect(screen.getByTestId('placeholder-widget')).toBeInTheDocument();
   });
 
   it('does not make any network calls', () => {
     const fetchSpy = vi.spyOn(global, 'fetch');
-
     render(
       <PlaceholderWidget
         title="Test"
         message="Test message"
       />
     );
-
     expect(fetchSpy).not.toHaveBeenCalled();
     fetchSpy.mockRestore();
   });
