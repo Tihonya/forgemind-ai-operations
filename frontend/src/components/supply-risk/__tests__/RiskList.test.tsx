@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
 import { RiskList } from '../RiskList';
@@ -49,14 +50,18 @@ const defaultProps = {
   visibleCount: 2,
 };
 
+function renderWithRouter(ui: React.ReactElement) {
+  return render(ui, { wrapper: MemoryRouter });
+}
+
 describe('RiskList', () => {
   it('renders risk count', () => {
-    render(<RiskList {...defaultProps} />);
+    renderWithRouter(<RiskList {...defaultProps} />);
     expect(screen.getByTestId('risk-count')).toHaveTextContent('Showing 2 of 2 risks');
   });
 
   it('renders all risk rows', () => {
-    render(<RiskList {...defaultProps} />);
+    renderWithRouter(<RiskList {...defaultProps} />);
     expect(screen.getByText('RISK-001')).toBeInTheDocument();
     expect(screen.getByText('RISK-002')).toBeInTheDocument();
     expect(screen.getByText('CTRL-X4')).toBeInTheDocument();
@@ -64,7 +69,7 @@ describe('RiskList', () => {
   });
 
   it('renders severity badges', () => {
-    render(<RiskList {...defaultProps} />);
+    renderWithRouter(<RiskList {...defaultProps} />);
     const badges = screen.getAllByTestId('severity-badge');
     expect(badges).toHaveLength(2);
     expect(badges[0]).toHaveTextContent('CRITICAL');
@@ -72,31 +77,31 @@ describe('RiskList', () => {
   });
 
   it('shows loading skeletons when isLoading', () => {
-    render(<RiskList {...defaultProps} isLoading={true} />);
+    renderWithRouter(<RiskList {...defaultProps} isLoading={true} />);
     expect(screen.getByTestId('risk-list-loading')).toBeInTheDocument();
   });
 
   it('shows error state with retry button when isError', () => {
-    render(<RiskList {...defaultProps} isError={true} error={new Error('Network error')} />);
+    renderWithRouter(<RiskList {...defaultProps} isError={true} error={new Error('Network error')} />);
     expect(screen.getByTestId('risk-list-error')).toBeInTheDocument();
     expect(screen.getByTestId('retry-risks')).toBeInTheDocument();
     expect(screen.getByText('Network error')).toBeInTheDocument();
   });
 
   it('shows empty state when totalCount is 0', () => {
-    render(<RiskList {...defaultProps} risks={[]} totalCount={0} visibleCount={0} />);
+    renderWithRouter(<RiskList {...defaultProps} risks={[]} totalCount={0} visibleCount={0} />);
     expect(screen.getByTestId('risk-list-empty')).toBeInTheDocument();
     expect(screen.getByText('No risks calculated')).toBeInTheDocument();
   });
 
   it('shows filtered-empty state when visibleCount is 0 but totalCount > 0', () => {
-    render(<RiskList {...defaultProps} risks={[]} totalCount={5} visibleCount={0} />);
+    renderWithRouter(<RiskList {...defaultProps} risks={[]} totalCount={5} visibleCount={0} />);
     expect(screen.getByTestId('risk-list-filtered-empty')).toBeInTheDocument();
     expect(screen.getByText('No risks match the selected filters')).toBeInTheDocument();
   });
 
   it('renders table headers', () => {
-    render(<RiskList {...defaultProps} />);
+    renderWithRouter(<RiskList {...defaultProps} />);
     expect(screen.getByText('Severity')).toBeInTheDocument();
     expect(screen.getByText('Risk ID')).toBeInTheDocument();
     expect(screen.getByText('Component Code')).toBeInTheDocument();
@@ -126,7 +131,7 @@ describe('RiskList', () => {
       },
     ];
 
-    render(
+    renderWithRouter(
       <RiskList
         risks={risksWithDecimals}
         isLoading={false}

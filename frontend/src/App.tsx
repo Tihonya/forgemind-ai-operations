@@ -3,6 +3,7 @@ import NotFound from './routes/not-found'
 import Login from './routes/login'
 import Dashboard from './routes/dashboard'
 import SupplyRisk from './routes/supply-risk'
+import SupplyRiskDetail from './routes/supply-risk-detail'
 import ProtectedRoute from './routes/protected'
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout'
 import { AuthProvider } from './contexts/auth.context'
@@ -32,6 +33,7 @@ function App() {
               <Route element={<AuthenticatedLayout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="supply-risk" element={<SupplyRisk />} />
+                <Route path="supply-risk/:riskId" element={<SupplyRiskDetail />} />
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Route>
