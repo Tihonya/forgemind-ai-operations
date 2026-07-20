@@ -105,4 +105,42 @@ describe('RiskList', () => {
     expect(screen.getByText('Available')).toBeInTheDocument();
     expect(screen.getByText('Required')).toBeInTheDocument();
   });
+
+  it('formats quantity values using formatQuantity', () => {
+    const risksWithDecimals: RiskRecordWithId[] = [
+      {
+        risk_id: 'RISK-001',
+        component_code: 'TEST-01',
+        component_name: 'Test Component',
+        affected_wo_code: 'WO-001',
+        required: '1234567.8900',
+        available: '100.0000',
+        confirmed_early: '0.0000',
+        confirmed_late: '0.0000',
+        shortage: '45.6789',
+        severity: 'CRITICAL',
+        has_approved_alternative: false,
+        has_proposed_alternative: false,
+        need_date: '2026-07-28',
+        plan_code: 'PLAN-2026-W31',
+      },
+    ];
+
+    render(
+      <RiskList
+        risks={risksWithDecimals}
+        isLoading={false}
+        isError={false}
+        error={null}
+        onRetry={() => {}}
+        totalCount={1}
+        visibleCount={1}
+      />
+    );
+
+    // Verify formatQuantity is applied to all three quantity columns
+    expect(screen.getByText('1,234,567.89')).toBeInTheDocument(); // required
+    expect(screen.getByText('100')).toBeInTheDocument(); // available
+    expect(screen.getByText('45.68')).toBeInTheDocument(); // shortage
+  });
 });

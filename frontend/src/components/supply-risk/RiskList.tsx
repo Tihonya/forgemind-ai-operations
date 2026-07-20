@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import type { RiskRecordWithId } from '@/lib/risks-api';
+import { formatQuantity } from '@/lib/utils';
 
 interface RiskListProps {
   risks: RiskRecordWithId[];
@@ -33,7 +34,7 @@ interface RiskListProps {
  * Render the risk list with loading, empty, error, and filtered-empty states.
  *
  * Columns: Severity, Risk ID, Component Code, Component Name, Shortage, Available, Required.
- * Decimal quantities displayed as-is from backend (4 decimal places).
+ * Quantity values are formatted using formatQuantity() for display.
  */
 export function RiskList({
   risks,
@@ -126,46 +127,48 @@ export function RiskList({
           Showing {visibleCount} of {totalCount} risks
         </span>
       </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Severity</TableHead>
-            <TableHead>Risk ID</TableHead>
-            <TableHead>Component Code</TableHead>
-            <TableHead>Component Name</TableHead>
-            <TableHead className="text-right">Shortage</TableHead>
-            <TableHead className="text-right">Available</TableHead>
-            <TableHead className="text-right">Required</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {risks.map((risk) => (
-            <TableRow key={risk.risk_id}>
-              <TableCell>
-                <SeverityBadge severity={risk.severity} />
-              </TableCell>
-              <TableCell className="font-mono text-xs text-steel-300">
-                {risk.risk_id}
-              </TableCell>
-              <TableCell className="font-mono text-sm text-white">
-                {risk.component_code}
-              </TableCell>
-              <TableCell className="text-steel-200">
-                {risk.component_name}
-              </TableCell>
-              <TableCell className="text-right font-mono text-sm text-red-300">
-                {risk.shortage}
-              </TableCell>
-              <TableCell className="text-right font-mono text-sm text-steel-200">
-                {risk.available}
-              </TableCell>
-              <TableCell className="text-right font-mono text-sm text-steel-200">
-                {risk.required}
-              </TableCell>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Severity</TableHead>
+              <TableHead>Risk ID</TableHead>
+              <TableHead>Component Code</TableHead>
+              <TableHead>Component Name</TableHead>
+              <TableHead className="text-right">Shortage</TableHead>
+              <TableHead className="text-right">Available</TableHead>
+              <TableHead className="text-right">Required</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {risks.map((risk) => (
+              <TableRow key={risk.risk_id}>
+                <TableCell>
+                  <SeverityBadge severity={risk.severity} />
+                </TableCell>
+                <TableCell className="font-mono text-xs text-steel-300">
+                  {risk.risk_id}
+                </TableCell>
+                <TableCell className="font-mono text-sm text-white">
+                  {risk.component_code}
+                </TableCell>
+                <TableCell className="text-steel-200">
+                  {risk.component_name}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm text-red-300">
+                  {formatQuantity(risk.shortage)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm text-steel-200">
+                  {formatQuantity(risk.available)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm text-steel-200">
+                  {formatQuantity(risk.required)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
