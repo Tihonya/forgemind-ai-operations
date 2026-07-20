@@ -118,8 +118,6 @@ describe('SupplyRiskDetail', () => {
     expect(riskIdElements.length).toBeGreaterThanOrEqual(2);
     // CRITICAL severity badge is rendered
     expect(screen.getByText('CRITICAL')).toBeInTheDocument();
-    // Back button present
-    expect(screen.getByText(/Back to Supply Risks/)).toBeInTheDocument();
   });
 
   it('shows not-found screen for invalid riskId', () => {
@@ -152,7 +150,7 @@ describe('SupplyRiskDetail', () => {
     expect(riskIdElements.length).toBeGreaterThan(0);
   });
 
-  it('displays back button', () => {
+  it('does not display back button (removed in WP-3.7)', () => {
     render(
       <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
         <Routes>
@@ -161,7 +159,8 @@ describe('SupplyRiskDetail', () => {
       </MemoryRouter>
     );
 
-    expect(screen.getByText(/Back to Supply Risks/i)).toBeInTheDocument();
+    // Back button was removed in WP-3.7; breadcrumb navigation is used instead
+    expect(screen.queryByText(/Back to Supply Risks/i)).not.toBeInTheDocument();
   });
 
   it('does not implement whole-row navigation (no onClick on table rows)', () => {

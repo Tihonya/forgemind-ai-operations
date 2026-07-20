@@ -21,23 +21,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useActivePlan } from '@/hooks/useActivePlan';
 import { useRisks } from '@/hooks/useRisks';
+import { formatDate } from '@/lib/format';
 import type { ProductionPlanSummary } from '@/lib/production-plans-api';
-
-/**
- * Format ISO date to short readable format.
- */
-function formatDate(isoDate: string): string {
-  try {
-    const date = new Date(isoDate);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return isoDate;
-  }
-}
 
 /**
  * Active production plan banner.

@@ -22,7 +22,7 @@ export function PartialFailurePlaceholder({
     <div
       className="flex items-start gap-3 rounded-md border border-amber-600/30 bg-amber-600/10 px-4 py-3"
       data-testid={testId}
-      role="status"
+      role="alert"
     >
       <AlertTriangle
         className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-500"

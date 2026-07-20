@@ -4,12 +4,6 @@ import type { AuthUser } from '@/contexts/auth.context'
 import { useNavigationPermissions } from './navigation/useNavigationPermissions'
 import NavigationEntry from './navigation/NavigationItem'
 import { ROLE_LABELS, type UserRole } from './navigation/navigation-config'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 /**
  * ForgeMind logo mark (stylised "F").
@@ -69,32 +63,20 @@ export default function Sidebar({ user }: SidebarProps) {
 
       {/* User summary */}
       <div className="border-t border-steel-700 px-5 py-4">
-        <TooltipProvider delayDuration={200}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="flex w-full items-center gap-3 text-left"
-                data-testid="sidebar-user-summary"
-              >
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-steel-700 text-xs font-semibold text-white">
-                  {displayName.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm font-medium text-white">
-                    {displayName}
-                  </span>
-                  <span className="truncate text-xs text-steel-400">{roleLabel}</span>
-                </div>
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">
-              <p>
-                Signed in as {displayName} ({roleLabel})
-              </p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div
+          className="flex w-full items-center gap-3"
+          data-testid="sidebar-user-summary"
+        >
+          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-steel-700 text-xs font-semibold text-white">
+            {displayName.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium text-white">
+              {displayName}
+            </span>
+            <span className="truncate text-xs text-steel-400">{roleLabel}</span>
+          </div>
+        </div>
       </div>
     </aside>
   )

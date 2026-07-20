@@ -84,7 +84,7 @@ describe('RiskList', () => {
   it('shows error state with retry button when isError', () => {
     renderWithRouter(<RiskList {...defaultProps} isError={true} error={new Error('Network error')} />);
     expect(screen.getByTestId('risk-list-error')).toBeInTheDocument();
-    expect(screen.getByTestId('retry-risks')).toBeInTheDocument();
+    expect(screen.getByTestId('risk-list-error-retry')).toBeInTheDocument();
     expect(screen.getByText('Network error')).toBeInTheDocument();
   });
 

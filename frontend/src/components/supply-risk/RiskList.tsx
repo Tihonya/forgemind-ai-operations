@@ -6,9 +6,11 @@
  */
 
 import { Link } from 'react-router-dom';
-import { AlertTriangle, Package } from 'lucide-react';
+import { Package } from 'lucide-react';
 
 import { SeverityBadge } from './SeverityBadge';
+import { DataErrorState } from '@/components/common/DataErrorState';
+import { DataEmptyState } from '@/components/common/DataEmptyState';
 import {
   Table,
   TableBody,
@@ -59,66 +61,33 @@ export function RiskList({
 
   if (isError) {
     return (
-      <div
-        className="flex items-start gap-3 rounded-md border border-red-600/30 bg-red-600/10 px-4 py-3"
-        data-testid="risk-list-error"
-        role="alert"
-      >
-        <AlertTriangle
-          className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500"
-          aria-hidden="true"
-        />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-red-300">
-            Unable to load risks
-          </p>
-          {error && (
-            <p className="mt-1 text-xs text-red-400">{error.message}</p>
-          )}
-        </div>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-red-600/40 bg-red-600/20 px-3 py-1 text-xs font-medium text-red-300 hover:bg-red-600/30"
-          data-testid="retry-risks"
-        >
-          Retry
-        </button>
-      </div>
+      <DataErrorState
+        title="Unable to load risks"
+        message={error?.message ?? 'An error occurred'}
+        onRetry={onRetry}
+        testId="risk-list-error"
+      />
     );
   }
 
   if (totalCount === 0) {
     return (
-      <div
-        className="flex flex-col items-center justify-center rounded-md border border-steel-700 bg-steel-800/40 px-6 py-12 text-center"
-        data-testid="risk-list-empty"
-      >
-        <Package className="mb-3 h-10 w-10 text-steel-500" aria-hidden="true" />
-        <p className="text-sm font-medium text-steel-300">
-          No risks calculated
-        </p>
-        <p className="mt-1 text-xs text-steel-500">
-          The risk engine has not identified any supply risks for this plan.
-        </p>
-      </div>
+      <DataEmptyState
+        primaryText="No risks calculated"
+        secondaryText="The risk engine has not identified any supply risks for this plan."
+        testId="risk-list-empty"
+      />
     );
   }
 
   if (visibleCount === 0) {
     return (
-      <div
-        className="flex flex-col items-center justify-center rounded-md border border-steel-700 bg-steel-800/40 px-6 py-12 text-center"
-        data-testid="risk-list-filtered-empty"
-      >
-        <Package className="mb-3 h-10 w-10 text-steel-500" aria-hidden="true" />
-        <p className="text-sm font-medium text-steel-300">
-          No risks match the selected filters
-        </p>
-        <p className="mt-1 text-xs text-steel-500">
-          Adjust your filters to see more results.
-        </p>
-      </div>
+      <DataEmptyState
+        primaryText="No risks match the selected filters"
+        secondaryText="Adjust your filters to see more results."
+        icon={<Package className="mb-3 h-10 w-10 text-steel-500" aria-hidden="true" />}
+        testId="risk-list-filtered-empty"
+      />
     );
   }
 
@@ -158,13 +127,13 @@ export function RiskList({
                 <TableCell className="text-steel-200">
                   {risk.component_name}
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm text-red-300">
+                <TableCell className="text-right font-mono text-sm text-red-300 tabular-nums">
                   {formatQuantity(risk.shortage)}
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm text-steel-200">
+                <TableCell className="text-right font-mono text-sm text-steel-200 tabular-nums">
                   {formatQuantity(risk.available)}
                 </TableCell>
-                <TableCell className="text-right font-mono text-sm text-steel-200">
+                <TableCell className="text-right font-mono text-sm text-steel-200 tabular-nums">
                   {formatQuantity(risk.required)}
                 </TableCell>
                 <TableCell>

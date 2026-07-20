@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useHealth } from '@/hooks/useHealth';
 import type { HealthCheckResponse } from '@/lib/health-api';
+import { Button } from '@/components/ui/button';
 
 interface StatusIconProps {
   status: HealthCheckResponse['status'];
@@ -101,7 +102,7 @@ function HealthContent({ data }: { data: HealthCheckResponse }) {
  * Uses the public /health endpoint (no authentication required).
  */
 export default function HealthWidget() {
-  const { data, isLoading, isError } = useHealth();
+  const { data, isLoading, isError, refetch } = useHealth();
 
   return (
     <Card className="bg-steel-900/60 border-steel-700" data-testid="health-widget">
@@ -122,9 +123,20 @@ export default function HealthWidget() {
           </div>
         )}
         {isError && (
-          <p className="text-sm text-red-400" data-testid="health-error" role="alert">
-            Health check unavailable
-          </p>
+          <div className="space-y-2" data-testid="health-error">
+            <p className="text-sm text-red-400" role="alert">
+              Health check unavailable
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              data-testid="health-retry"
+              className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
+            >
+              Retry
+            </Button>
+          </div>
         )}
         {!isLoading && !isError && data && <HealthContent data={data} />}
       </CardContent>
