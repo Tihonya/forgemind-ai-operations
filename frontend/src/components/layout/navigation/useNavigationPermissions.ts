@@ -8,16 +8,25 @@ import {
 } from './navigation-config'
 
 /**
+ * Normalize a role string to lowercase canonical form.
+ * Backend returns UPPERCASE (e.g., PRODUCTION_MANAGER), frontend uses lowercase.
+ */
+function normalizeRoleCode(role: string): string {
+  return role.trim().toLowerCase()
+}
+
+/**
  * Normalize a list of role strings into a validated UserRole set.
+ * Handles case-insensitive matching: backend returns UPPERCASE, frontend uses lowercase.
  * Unknown role strings are silently ignored (defensive filter).
  */
 export function normalizeRoles(roles: string[] | undefined): Set<UserRole> {
   if (!roles || roles.length === 0) return new Set<UserRole>()
   const knownRoles = new Set<string>(ALL_ROLES)
   return new Set(
-    roles.filter(
-      (r): r is UserRole => typeof r === 'string' && knownRoles.has(r)
-    )
+    roles
+      .map((r) => (typeof r === 'string' ? normalizeRoleCode(r) : ''))
+      .filter((r): r is UserRole => knownRoles.has(r))
   )
 }
 

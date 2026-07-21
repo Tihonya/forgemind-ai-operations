@@ -25,25 +25,25 @@ export function EvidencePanel({ risk }: EvidencePanelProps) {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <div className="text-sm text-muted-foreground">Required</div>
-              <div className="text-lg font-semibold">{formatQuantity(risk.required)}</div>
+              <div className="text-lg font-semibold tabular-nums">{formatQuantity(risk.required)}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground">Available</div>
-              <div className="text-lg font-semibold">{formatQuantity(risk.available)}</div>
+              <div className="text-lg font-semibold tabular-nums">{formatQuantity(risk.available)}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground">Confirmed (early)</div>
-              <div className="text-lg font-semibold">{formatQuantity(risk.confirmed_early)}</div>
+              <div className="text-lg font-semibold tabular-nums">{formatQuantity(risk.confirmed_early)}</div>
             </div>
             <div>
               <div className="text-sm text-muted-foreground">Confirmed (late)</div>
-              <div className="text-lg font-semibold">{formatQuantity(risk.confirmed_late)}</div>
+              <div className="text-lg font-semibold tabular-nums">{formatQuantity(risk.confirmed_late)}</div>
             </div>
           </div>
           <div className="border-t pt-3">
             <div className="flex items-baseline justify-between">
               <span className="text-sm font-medium">Shortage</span>
-              <span className="text-2xl font-bold text-destructive">
+              <span className="text-2xl font-bold text-destructive tabular-nums">
                 {formatQuantity(risk.shortage)}
               </span>
             </div>

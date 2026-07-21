@@ -1,5 +1,5 @@
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 
 import { useActivePlan } from '@/hooks/useActivePlan';
 import { useRisks } from '@/hooks/useRisks';
@@ -13,7 +13,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RiskSummary } from '@/components/supply-risk/RiskSummary';
 import { EvidencePanel } from '@/components/supply-risk/EvidencePanel';
 import { ComponentPanel } from '@/components/supply-risk/ComponentPanel';
@@ -69,7 +69,7 @@ export default function SupplyRiskDetail() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Loading...</BreadcrumbPage>
+              <BreadcrumbPage>Loading risk...</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -234,7 +234,7 @@ export default function SupplyRiskDetail() {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Loading...</BreadcrumbPage>
+              <BreadcrumbPage>Loading risk...</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -263,11 +263,8 @@ export default function SupplyRiskDetail() {
         </BreadcrumbList>
       </Breadcrumb>
 
-      {/* Back button */}
-      <Button variant="ghost" onClick={() => navigate('/supply-risk')} className="gap-2">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Supply Risks
-      </Button>
+      {/* Page heading */}
+      <h1 className="text-2xl font-bold text-white">Risk {risk.risk_id}</h1>
 
       {/* Risk Summary */}
       <RiskSummary risk={risk} />
@@ -284,7 +281,13 @@ export default function SupplyRiskDetail() {
           error={componentError}
           onRetry={refetchComponent}
         />
-      ) : null}
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-32 w-full" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Inventory Panel */}
       {inventory ? (
@@ -295,29 +298,42 @@ export default function SupplyRiskDetail() {
           error={inventoryError}
           onRetry={refetchInventory}
         />
-      ) : null}
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-40 w-full" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Incoming Supply Panel */}
-      {(purchaseOrders.length > 0 || purchaseOrderError) ? (
-        purchaseOrders.length > 0 || !purchaseOrderError ? (
-          <IncomingSupplyPanel
-            purchaseOrders={purchaseOrders}
-            isPartial={purchaseOrdersPartial}
-          />
-        ) : (
-          <PartialFailurePlaceholder
-            label="Incoming Supply"
-            error={purchaseOrderError}
-            onRetry={refetchPurchaseOrders}
-          />
-        )
-      ) : purchaseOrderError ? (
+      {purchaseOrderError ? (
         <PartialFailurePlaceholder
           label="Incoming Supply"
           error={purchaseOrderError}
           onRetry={refetchPurchaseOrders}
         />
-      ) : null}
+      ) : purchaseOrders.length > 0 ? (
+        <IncomingSupplyPanel
+          purchaseOrders={purchaseOrders}
+          isPartial={purchaseOrdersPartial}
+        />
+      ) : !detailLoading ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Incoming Supply</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-muted-foreground">No incoming supply orders found for this component.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-32 w-full" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Production Order Panel */}
       {productionOrder ? (
@@ -328,7 +344,13 @@ export default function SupplyRiskDetail() {
           error={productionOrderError}
           onRetry={refetchProductionOrder}
         />
-      ) : null}
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-32 w-full" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Plan Context Panel */}
       {productionPlan ? (
@@ -339,7 +361,13 @@ export default function SupplyRiskDetail() {
           error={productionPlanError}
           onRetry={refetchProductionPlan}
         />
-      ) : null}
+      ) : (
+        <Card>
+          <CardContent className="pt-6">
+            <Skeleton className="h-24 w-full" />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

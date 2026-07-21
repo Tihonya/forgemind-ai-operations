@@ -39,10 +39,16 @@ export default function AuthenticatedLayout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-steel-950 text-steel-100">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-white focus:rounded"
+      >
+        Skip to main content
+      </a>
       <Sidebar user={user} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header user={user} breadcrumbs={breadcrumbs} onLogout={logout} />
-        <main className="flex-1 overflow-y-auto bg-steel-950 p-6" aria-label="Main content">
+        <main id="main-content" className="flex-1 overflow-y-auto bg-steel-950 p-6" aria-label="Main content">
           <Outlet />
         </main>
       </div>

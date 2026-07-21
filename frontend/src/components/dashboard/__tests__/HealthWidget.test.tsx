@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import HealthWidget from '../HealthWidget';
 import { useHealth } from '@/hooks/useHealth';
+
+const user = userEvent.setup();
 
 vi.mock('@/hooks/useHealth');
 
@@ -119,5 +122,21 @@ describe('HealthWidget', () => {
     renderWithQuery(<HealthWidget />);
     expect(screen.getByText('Unhealthy')).toBeInTheDocument();
     expect(screen.getByTestId('health-icon-unhealthy')).toBeInTheDocument();
+  });
+
+  it('calls refetch when retry button is clicked', async () => {
+    const refetchSpy = vi.fn();
+    vi.mocked(useHealth).mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error('Network error'),
+      refetch: refetchSpy,
+    } as unknown as ReturnType<typeof useHealth>);
+
+    renderWithQuery(<HealthWidget />);
+    const retryButton = screen.getByTestId('health-retry');
+    await user.click(retryButton);
+    expect(refetchSpy).toHaveBeenCalledTimes(1);
   });
 });

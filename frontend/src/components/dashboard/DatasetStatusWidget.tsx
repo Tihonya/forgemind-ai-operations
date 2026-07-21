@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDatasetStatus } from '@/hooks/useDatasetStatus';
 import type { DatasetStatusResponse } from '@/lib/dataset-api';
+import { Button } from '@/components/ui/button';
 
 interface StatusDisplayProps {
   status: DatasetStatusResponse['status'];
@@ -91,7 +92,7 @@ function DatasetContent({ data }: { data: DatasetStatusResponse }) {
  * Requires Bearer token authentication.
  */
 export default function DatasetStatusWidget() {
-  const { data, isLoading, isError } = useDatasetStatus();
+  const { data, isLoading, isError, refetch } = useDatasetStatus();
 
   return (
     <Card className="bg-steel-900/60 border-steel-700" data-testid="dataset-status-widget">
@@ -109,9 +110,20 @@ export default function DatasetStatusWidget() {
           </div>
         )}
         {isError && (
-          <p className="text-sm text-red-400" data-testid="dataset-status-error" role="alert">
-            Dataset status unavailable
-          </p>
+          <div className="space-y-2" data-testid="dataset-status-error">
+            <p className="text-sm text-red-400" role="alert">
+              Dataset status unavailable
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              data-testid="dataset-status-retry"
+              className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
+            >
+              Retry
+            </Button>
+          </div>
         )}
         {!isLoading && !isError && data && <DatasetContent data={data} />}
       </CardContent>
