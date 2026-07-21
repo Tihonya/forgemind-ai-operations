@@ -3,7 +3,8 @@ import { useMemo } from 'react'
 import type { AuthUser } from '@/contexts/auth.context'
 import { useNavigationPermissions } from './navigation/useNavigationPermissions'
 import NavigationEntry from './navigation/NavigationItem'
-import { ROLE_LABELS, type UserRole } from './navigation/navigation-config'
+import { ROLE_LABELS } from './navigation/navigation-config'
+import { normalizeRoles } from './navigation/useNavigationPermissions'
 
 /**
  * ForgeMind logo mark (stylised "F").
@@ -34,7 +35,8 @@ interface SidebarProps {
 export default function Sidebar({ user }: SidebarProps) {
   const displayName = user.display_name ?? user.username
   const roleLabel = useMemo(() => {
-    const primaryRole = user.roles[0] as UserRole | undefined
+    const normalized = normalizeRoles(user.roles)
+    const primaryRole = Array.from(normalized)[0]
     return primaryRole ? ROLE_LABELS[primaryRole] : 'User'
   }, [user.roles])
 

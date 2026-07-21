@@ -1,7 +1,8 @@
 import { LogOut } from 'lucide-react'
 
 import type { AuthUser } from '@/contexts/auth.context'
-import { ROLE_LABELS, type UserRole } from './navigation/navigation-config'
+import { ROLE_LABELS } from './navigation/navigation-config'
+import { normalizeRoles } from './navigation/useNavigationPermissions'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 
@@ -21,7 +22,8 @@ interface HeaderProps {
  */
 export default function Header({ user, breadcrumbs, onLogout }: HeaderProps) {
   const displayName = user.display_name ?? user.username
-  const primaryRole: UserRole | undefined = user.roles[0] as UserRole | undefined
+  const normalized = normalizeRoles(user.roles)
+  const primaryRole = Array.from(normalized)[0]
   const roleLabel = primaryRole ? ROLE_LABELS[primaryRole] : 'User'
 
   return (
