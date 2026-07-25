@@ -168,4 +168,4 @@ class TestCORSProgrammaticInit:
     def test_direct_list_with_non_string_rejected(self):
         """Test that programmatic init rejects non-string list items."""
         with pytest.raises(ValidationError):
-            Settings(cors_origins=[42, "http://localhost"])
+            Settings(cors_origins=[42, "http://localhost"])  # type: ignore[list-item]
