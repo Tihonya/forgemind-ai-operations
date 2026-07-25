@@ -37,7 +37,6 @@ COPY --from=builder /usr/local/bin/arq /usr/local/bin/arq
 # Copy application code
 COPY backend/app/ ./backend/app/
 COPY backend/pyproject.toml ./backend/
-COPY seed/ ./seed/
 
 # Set Python path
 ENV PYTHONPATH=/app/backend

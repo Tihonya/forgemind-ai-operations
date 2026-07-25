@@ -38,7 +38,6 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 # Copy application code
 COPY backend/app/ ./backend/app/
 COPY backend/pyproject.toml ./backend/
-COPY seed/ ./seed/
 
 # Set Python path
 ENV PYTHONPATH=/app/backend
