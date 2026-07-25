@@ -39,7 +39,7 @@ jobs:
           sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key_for_ci_only_32_chars_minimum/' .env
 
       - name: Start services
-        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.override.yml up -d --build
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
       - name: Wait for backend health
         run: |
@@ -48,7 +48,7 @@ jobs:
 
       - name: Seed database
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.override.yml exec -T backend bash -c \
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend bash -c \
             "cd /app/backend && python -m app.seed.generator.main"
           echo "✓ Database seeded"
 
@@ -118,4 +118,4 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.override.yml down
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
