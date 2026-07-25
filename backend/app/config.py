@@ -1,9 +1,26 @@
-"""Application configuration management using Pydantic Settings."""
+"""Application configuration management using Pydantic Settings.
 
-from typing import Literal
+CORS origin sources:
+
+The ``cors_origins`` field is declared as :class:`Annotated[list[str], NoDecode]``
+so the raw environment string is passed to our own ``mode="before"`` validator.
+This allows the field to accept, from environment variables:
+  - comma-separated origin strings: ``http://a.com,http://b.com``
+  - a JSON array string: ``["http://a.com","http://b.com"]``
+  - direct Python ``list[str]`` initialization.
+
+The validator then rejects any value that does not parse as an absolute
+``http://`` or ``https://`` origin (or wildcard ``*``).
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Annotated, Any, Literal
+from urllib.parse import urlparse
 
 from pydantic import Field, ValidationInfo, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -31,7 +48,7 @@ class Settings(BaseSettings):
         min_length=32,
     )
     api_v1_prefix: str = "/api/v1"
-    cors_origins: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173", "http://localhost:3000"]
 
     # Database
     database_url: str = Field(
@@ -74,11 +91,104 @@ class Settings(BaseSettings):
 
     @field_validator("cors_origins", mode="before")
     @classmethod
-    def parse_cors_origins(cls, v: str | list[str]) -> list[str]:
-        """Parse CORS origins from comma-separated string or list."""
+    def parse_cors_origins(cls, v: Any) -> list[str]:
+        """Parse CORS origins from environment variable or direct initialization.
+
+        Handles three input forms:
+        1. String input: if it starts with '[', parse as JSON array;
+           otherwise split by comma.
+        2. List input: validate each item is a string.
+
+        Every resulting origin is then validated for format:
+        - Whitespace is stripped; empty entries are skipped.
+        - Must start with 'http://', 'https://', or be the wildcard '*'.
+        - Path component (if any) is only '' or '/'.
+        - Query string and fragment are prohibited.
+        """
+        # Step 1: Normalize to a list of raw str candidates.
         if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+            v = cls._raw_items_from_string(v)
+        elif not isinstance(v, list):
+            raise ValueError(
+                f"cors_origins must be a string or list, got {type(v).__name__}"
+            )
+
+        # Step 2: Validate every item and format-check the origin.
+        return cls._validate_origin_list(v)
+
+    @classmethod
+    def _raw_items_from_string(cls, raw: str) -> list:
+        """Convert a string env value to a list of raw items.
+
+        - Blank string → [].
+        - Starts with '[' → JSON array parse (must be a JSON list of items).
+        - Otherwise → split on comma.
+        """
+        stripped = raw.strip()
+        if not stripped:
+            return []
+
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+            except json.JSONDecodeError as e:
+                raise ValueError(
+                    f"Invalid JSON array for cors_origins: {e}"
+                ) from e
+            if not isinstance(parsed, list):
+                raise ValueError(
+                    f"JSON value must be an array, got {type(parsed).__name__}"
+                )
+            return parsed
+
+        return stripped.split(",")
+
+    @classmethod
+    def _validate_origin_list(cls, items: list) -> list[str]:
+        """Validate each item is a well-formed origin string."""
+        result: list[str] = []
+        for item in items:
+            if not isinstance(item, str):
+                raise ValueError(
+                    f"Each CORS origin must be a string, got {type(item).__name__}"
+                )
+
+            origin = item.strip()
+            if not origin:
+                continue
+
+            if origin == "*":
+                result.append(origin)
+                continue
+
+            if not (origin.startswith("http://") or origin.startswith("https://")):
+                raise ValueError(
+                    f"Invalid CORS origin {origin!r}: "
+                    "must start with 'http://' or 'https://'"
+                )
+
+            # urlparse handles both absolute URLs and gracefully degrades.
+            parsed = urlparse(origin)
+
+            # Reject non-root paths: path must be '' or '/'.
+            if parsed.path and parsed.path != "/":
+                raise ValueError(
+                    f"Invalid CORS origin {origin!r}: paths are not allowed"
+                )
+
+            if parsed.query:
+                raise ValueError(
+                    f"Invalid CORS origin {origin!r}: query strings are not allowed"
+                )
+
+            if parsed.fragment:
+                raise ValueError(
+                    f"Invalid CORS origin {origin!r}: fragments are not allowed"
+                )
+
+            result.append(origin)
+
+        return result
 
     @field_validator("secret_key")
     @classmethod
