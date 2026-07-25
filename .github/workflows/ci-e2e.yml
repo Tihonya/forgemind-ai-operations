@@ -92,13 +92,17 @@ jobs:
         run: |
           set +e
           echo "===== docker compose ps --all ====="
-          docker compose ps --all || true
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            ps --all || true
           echo "===== docker compose logs backend ====="
-          docker compose logs --no-color --timestamps backend || true
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps backend || true
           echo "===== docker compose logs worker ====="
-          docker compose logs --no-color --timestamps worker || true
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps worker || true
           echo "===== docker compose logs caddy ====="
-          docker compose logs --no-color --timestamps caddy || true
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps caddy || true
           echo "===== backend .State.Health ====="
           docker inspect --format '{{json .State.Health}}' \
             forgemind-ai-operations-backend-1 || true
