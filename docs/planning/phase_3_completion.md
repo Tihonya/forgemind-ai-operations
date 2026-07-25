@@ -29,7 +29,7 @@
 | Frontend unit + component tests pass | ✓ | PR #24 — WP-3.8 AT-005 contract tests; Frontend CI green |
 | E2E Golden Scenario Playwright test passes | ✓ | PR #27 — WP-3.9; run 30174585614 SUCCESS |
 | `npm run lint`, `type-check`, `test`, `build` green | ✓ | Frontend CI |
-| `npm run test:e2e` Playwright green | ✓ | run 30174585614 — 1 spec passed |
+| `npm run test:e2e` Playwright green | ✓ | run 30174585614 — 1 test passed, no retries |
 | `make test` ≥ 709 backend tests; 0 regressions | ✓ | Backend CI on every Phase 3 PR |
 | `make lint` backend clean | ✓ | Backend CI on every Phase 3 PR |
 | No secrets in frontend source | ✓ | Reviewed in each PR; no .env leaked |
@@ -76,10 +76,31 @@ issues discovered in CI. The final WP-3.9 commit is
 - Frontend CI — run 30174585616: SUCCESS (Vitest + AT-005 suite)
 - Backend CI — passing for every WP PR (no regressions; ≥709 tests)
 
+**Note:** PR #27 branch (`feature/phase-3-wp-3-9-golden-scenario-e2e-v2`) was preserved after merge; no branch deletion occurred.
+
 ## 5. Deferred findings (carried forward)
 
-None requiring immediate action. All Phase-3-external concerns remain
-bound to their approved future phases per the SoT roadmap:
+### 5.1 Non-blocking technical findings
+
+The following five findings were identified during Phase 3 implementation and
+testing but do not invalidate Phase 3 completion. Each is verified against the
+original planning documentation.
+
+| # | Finding | Source Document | Line Reference | Impact |
+|---|---------|----------------|----------------|--------|
+| 1 | `make seed` working-directory error | wp_3_9_golden_scenario_e2e_spec.md | 569 | Operational inconvenience only; CI runs seed from correct directory |
+| 2 | React Router v7 migration warning | wp_3_9_golden_scenario_e2e_spec.md, phase_0_bootstrap_plan.md | 307-309, 425, 158 | Pure warning; no functional breakage in v6 |
+| 3 | Horizontal-scroll ergonomics at 1024px | wp_3_9_golden_scenario_e2e_spec.md | 374, 420-421 | Usable but awkward on smaller screens; UX polish item |
+| 4 | ActivePlanWidget / RiskSummaryWidget retry architecture | wp_3_7_loading_error_states_spec.md | 38-40, 133-136, 236-246, 279-282 | These widgets cannot retry (no `refetch` exposed); error text shown without retry button |
+| 5 | Global 401/403 Axios interceptor hardening | wp_3_7_loading_error_states_spec.md, wp_3_9_golden_scenario_e2e_spec.md | 248-255, 424 | Current per-component handling is functional but not standardized; explicitly deferred in WP-3.7 |
+
+**All five findings do not block Phase 3 closure.** They are documented here for
+prioritization in future Phases (Phase 4+).
+
+### 5.2 Phase-boundary deferred scope
+
+The following features were explicitly deferred to future Phases. None are part
+of Phase 3 scope:
 
 - Approval Center → Phase 6
 - Knowledge Sources (RAG) screen → Phase 4
@@ -90,6 +111,9 @@ bound to their approved future phases per the SoT roadmap:
 - Mobile phone responsive mode → Post-MVP
 - Multi-language interface → Post-MVP
 - Report / PDF export → Post-MVP
+
+**All deferred scope items respect Phase 3 boundaries per the Source of Truth
+requirements.**
 
 ## 6. Verdict
 
