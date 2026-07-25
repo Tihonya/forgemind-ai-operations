@@ -169,10 +169,14 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // Step 7: Verify Risk Summary
   // ────────────────────────────────────────────────────────────
-  // AT-004: Verify component and work order context
-  await expect(page.getByText('CTRL-X4', { exact: true })).toBeVisible();
+  // AT-004: Verify component and work order context (scoped via label→parent container)
+  await expect(
+    page.getByText(/^Component:$/).locator('xpath=..').getByText('CTRL-X4', { exact: true }),
+  ).toBeVisible();
   await expect(page.getByText(/CRITICAL/i)).toBeVisible();
-  await expect(page.getByText(/WO-2026-0142/i)).toBeVisible();
+  await expect(
+    page.getByText(/^Work Order:$/).locator('xpath=..').getByText('WO-2026-0142'),
+  ).toBeVisible();
   await expect(page.getByText('8', { exact: true }).first()).toBeVisible(); // shortage in summary
 
   // ────────────────────────────────────────────────────────────
@@ -219,7 +223,9 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // Step 11: Verify Incoming Supply Panel
   // ────────────────────────────────────────────────────────────
-  await expect(page.getByText(/Incoming Supply/i)).toBeVisible();
+  // Scoped via exact CardTitle text to avoid matching the empty-state paragraph
+  // that also contains "incoming supply".
+  await expect(page.getByText('Incoming Supply', { exact: true })).toBeVisible();
   // Incoming supply may be empty or have data - just verify panel renders
 
   // ────────────────────────────────────────────────────────────
