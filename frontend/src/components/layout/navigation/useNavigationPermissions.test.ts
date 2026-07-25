@@ -231,4 +231,19 @@ describe('useNavigationPermissions hook', () => {
     expect(ids).toContain('dashboard')
     expect(ids).toContain('audit')
   })
+
+  // AT-005 role visibility regression per spec
+  it('Production Manager and Procurement Specialist see Supply Risk Analysis (uppercase backend codes)', () => {
+    const pm = renderHook(() => useNavigationPermissions(['PRODUCTION_MANAGER']))
+    const ps = renderHook(() => useNavigationPermissions(['PROCUREMENT_SPECIALIST']))
+    expect(pm.result.current.navigationItems.map((i) => i.id)).toContain('supply-risk')
+    expect(ps.result.current.navigationItems.map((i) => i.id)).toContain('supply-risk')
+  })
+
+  it('AI Administrator and Auditor do not see Supply Risk Analysis (uppercase backend codes)', () => {
+    const ai = renderHook(() => useNavigationPermissions(['AI_ADMINISTRATOR']))
+    const aud = renderHook(() => useNavigationPermissions(['AUDITOR']))
+    expect(ai.result.current.navigationItems.map((i) => i.id)).not.toContain('supply-risk')
+    expect(aud.result.current.navigationItems.map((i) => i.id)).not.toContain('supply-risk')
+  })
 })
