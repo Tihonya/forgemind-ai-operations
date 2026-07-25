@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { useRiskDetail } from './useRiskDetail';
 import * as api from '@/lib/risk-detail-api';
 import type { RiskRecordWithId } from '@/lib/risks-api';
+import { createRisk, createMutatedRisk } from '@/test/fixtures/risk-contract';
 
 vi.mock('@/lib/risk-detail-api');
 
@@ -18,22 +19,13 @@ function createWrapper() {
   };
 }
 
-const mockRisk: RiskRecordWithId = {
+const mockRisk: RiskRecordWithId = createRisk({
   risk_id: 'RISK-001',
   component_code: 'COMP-1',
   component_name: 'Component 1',
   affected_wo_code: 'WO-1',
-  required: '100.0000',
-  available: '50.0000',
-  confirmed_early: '10.0000',
-  confirmed_late: '5.0000',
-  shortage: '40.0000',
-  severity: 'CRITICAL',
-  has_approved_alternative: false,
-  has_proposed_alternative: false,
-  need_date: '2026-07-28',
   plan_code: 'PLAN-1',
-};
+});
 
 describe('useRiskDetail', () => {
   it('returns risk=null when riskId not found', () => {
@@ -101,5 +93,26 @@ describe('useRiskDetail', () => {
     expect(result.current.refetchPurchaseOrders).toBeInstanceOf(Function);
     expect(result.current.refetchProductionOrder).toBeInstanceOf(Function);
     expect(result.current.refetchProductionPlan).toBeInstanceOf(Function);
+  });
+});
+
+/**
+ * AT-005: risk list input to hook drives the returned risk (data fidelity).
+ */
+describe('useRiskDetail — AT-005 data fidelity (risk from list)', () => {
+  it('returns the mutated risk record when supplied in risks list (non-canonical values)', () => {
+    const mutated = createMutatedRisk({ risk_id: 'RISK-MUT' });
+    const risks: RiskRecordWithId[] = [mutated];
+
+    const { result } = renderHook(() => useRiskDetail({ risks, riskId: 'RISK-MUT' }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.risk).not.toBeNull();
+    expect(result.current.risk?.plan_code).toBe('PLAN-TEST-MUTATED');
+    expect(result.current.risk?.component_name).toBe('Mutated Test Component');
+    expect(result.current.risk?.shortage).toBe('37.2500');
+    expect(result.current.risk?.severity).toBe('LOW');
+    expect(result.current.riskFound).toBe(true);
   });
 });

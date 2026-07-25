@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ActivePlanWidget from '../ActivePlanWidget';
 import * as useActivePlanModule from '@/hooks/useActivePlan';
 import type { ProductionPlanSummary } from '@/lib/production-plans-api';
+import { canonicalPlan, mutatedPlan } from '@/test/fixtures/risk-contract';
 
 vi.mock('@/hooks/useActivePlan');
 
@@ -72,11 +73,11 @@ describe('ActivePlanWidget', () => {
 
   it('renders active plan with correct data', () => {
     const plan: ProductionPlanSummary = {
-      code: 'PLAN-2026-W31',
-      status: 'EXECUTING',
-      period_start: '2026-07-27',
-      period_end: '2026-08-02',
-    };
+      code: canonicalPlan.code,
+      status: canonicalPlan.status,
+      period_start: canonicalPlan.period_start,
+      period_end: canonicalPlan.period_end,
+    } as ProductionPlanSummary;
 
     vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
       plans: [plan],
@@ -95,17 +96,17 @@ describe('ActivePlanWidget', () => {
 
   it('renders warning when multiple active plans exist', () => {
     const plan1: ProductionPlanSummary = {
-      code: 'PLAN-2026-W31',
-      status: 'EXECUTING',
-      period_start: '2026-07-27',
-      period_end: '2026-08-02',
-    };
+      code: canonicalPlan.code,
+      status: canonicalPlan.status,
+      period_start: canonicalPlan.period_start,
+      period_end: canonicalPlan.period_end,
+    } as ProductionPlanSummary;
     const plan2: ProductionPlanSummary = {
       code: 'PLAN-2026-W32',
       status: 'EXECUTING',
       period_start: '2026-08-03',
       period_end: '2026-08-09',
-    };
+    } as ProductionPlanSummary;
 
     vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
       plans: [plan1, plan2],
@@ -126,11 +127,11 @@ describe('ActivePlanWidget', () => {
 
   it('does not render warning when single active plan', () => {
     const plan: ProductionPlanSummary = {
-      code: 'PLAN-2026-W31',
-      status: 'EXECUTING',
-      period_start: '2026-07-27',
-      period_end: '2026-08-02',
-    };
+      code: canonicalPlan.code,
+      status: canonicalPlan.status,
+      period_start: canonicalPlan.period_start,
+      period_end: canonicalPlan.period_end,
+    } as ProductionPlanSummary;
 
     vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
       plans: [plan],
@@ -143,5 +144,53 @@ describe('ActivePlanWidget', () => {
 
     renderWithQuery(<ActivePlanWidget />);
     expect(screen.queryByTestId('multiple-active-warning')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * AT-005 data-fidelity for Dashboard active plan.
+ */
+describe('ActivePlanWidget — AT-005 data fidelity (plan mutation)', () => {
+  it('renders canonical plan code from fixture', () => {
+    const plan: ProductionPlanSummary = {
+      code: canonicalPlan.code,
+      status: canonicalPlan.status,
+      period_start: canonicalPlan.period_start,
+      period_end: canonicalPlan.period_end,
+    } as ProductionPlanSummary;
+
+    vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
+      plans: [plan],
+      activePlan: plan,
+      hasMultipleActive: false,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+
+    renderWithQuery(<ActivePlanWidget />);
+    expect(screen.getByTestId('plan-code')).toHaveTextContent('PLAN-2026-W31');
+  });
+
+  it('renders mutated plan code exactly when fixture provides non-canonical plan (AT-005)', () => {
+    const plan: ProductionPlanSummary = {
+      code: mutatedPlan.code,
+      status: mutatedPlan.status,
+      period_start: mutatedPlan.period_start,
+      period_end: mutatedPlan.period_end,
+    } as ProductionPlanSummary;
+
+    vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
+      plans: [plan],
+      activePlan: plan,
+      hasMultipleActive: false,
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+
+    renderWithQuery(<ActivePlanWidget />);
+    expect(screen.getByTestId('plan-code')).toHaveTextContent('PLAN-TEST-MUTATED');
+    expect(screen.getByTestId('plan-status')).toHaveTextContent('DRAFT');
   });
 });

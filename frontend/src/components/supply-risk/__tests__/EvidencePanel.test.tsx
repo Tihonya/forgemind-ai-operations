@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { EvidencePanel } from '../EvidencePanel';
 import type { RiskRecordWithId } from '@/lib/risks-api';
+import { createRisk, createMutatedRisk } from '@/test/fixtures/risk-contract';
 
 describe('EvidencePanel', () => {
   const mockRisk: RiskRecordWithId = {
@@ -72,5 +73,46 @@ describe('EvidencePanel', () => {
     expect(screen.getByText('30')).toBeInTheDocument();
     expect(screen.getByText('0')).toBeInTheDocument();
     expect(screen.getByText('20')).toBeInTheDocument();
+  });
+});
+
+/**
+ * AT-005 data-fidelity contract tests.
+ * Mutated fixture values must appear exactly; no recalculation.
+ */
+describe('EvidencePanel — AT-005 data fidelity (non-canonical mutations)', () => {
+  it('renders canonical fixture values', () => {
+    const risk = createRisk();
+    render(<EvidencePanel risk={risk} />);
+
+    expect(screen.getByText('20')).toBeInTheDocument(); // required
+    expect(screen.getByText('12')).toBeInTheDocument(); // available
+    expect(screen.getByText('8')).toBeInTheDocument(); // shortage
+  });
+
+  it('renders unmistakably non-canonical mutated values exactly (AT-005)', () => {
+    const mutated = createMutatedRisk();
+    render(<EvidencePanel risk={mutated} />);
+
+    // Non-canonical values from fixture must be rendered verbatim (via formatQuantity)
+    // formatQuantity strips trailing zeros and rounds to 2 decimals:
+    // '99.0000' → '99', '61.7500' → '61.75', '37.2500' → '37.25'
+    expect(screen.getByText('99')).toBeInTheDocument(); // required
+    expect(screen.getByText('61.75')).toBeInTheDocument(); // available
+    expect(screen.getByText('37.25')).toBeInTheDocument(); // shortage (key AT-005 proof)
+    // Descriptive formula label remains (not a calculation)
+    expect(screen.getByText(/Shortage = max\(0, required − available − confirmed_early\)/)).toBeInTheDocument();
+  });
+
+  it('does not recalculate shortage from mutated inputs', () => {
+    // Use values where formatQuantity output is unambiguous (≤2 decimals)
+    // mutated shortage='50.5000' → formatted '50.5'; required='30.0000'→'30'; available='10.0000'→'10'
+    // If frontend recalculated: 30 - 10 - 0 = 20, NOT 50.5
+    const mutated = createMutatedRisk({ required: '30.0000', available: '10.0000', confirmed_early: '0.0000', shortage: '50.5000' });
+    render(<EvidencePanel risk={mutated} />);
+
+    // Must show the supplied shortage, not computed 20
+    expect(screen.getByText('50.5')).toBeInTheDocument();
+    expect(screen.queryByText('20')).not.toBeInTheDocument();
   });
 });

@@ -2,8 +2,9 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import SupplyRiskDetail from '../supply-risk-detail';
+import { createRisk, createMutatedRisk } from '@/test/fixtures/risk-contract';
 
-// Mock hooks
+// Mock hooks with fixture support for AT-005
 vi.mock('@/hooks/useActivePlan', () => ({
   useActivePlan: () => ({
     activePlan: { code: 'PLAN-001', status: 'ACTIVE' },
@@ -15,22 +16,7 @@ vi.mock('@/hooks/useActivePlan', () => ({
 vi.mock('@/hooks/useRisks', () => ({
   useRisks: () => ({
     risks: [
-      {
-        risk_id: 'RISK-001',
-        component_code: 'COMP-001',
-        component_name: 'Widget A',
-        affected_wo_code: 'WO-001',
-        required: '100.0000',
-        available: '50.0000',
-        confirmed_early: '10.0000',
-        confirmed_late: '5.0000',
-        shortage: '40.0000',
-        severity: 'CRITICAL',
-        has_approved_alternative: false,
-        has_proposed_alternative: false,
-        need_date: '2024-03-01',
-        plan_code: 'PLAN-001',
-      },
+      createRisk({ risk_id: 'RISK-001', component_name: 'Widget A', plan_code: 'PLAN-001' }),
     ],
     isLoading: false,
     isError: false,
@@ -43,25 +29,33 @@ vi.mock('@/hooks/useRiskDetail', () => ({
   useRiskDetail: ({ riskId }: { riskId: string }) => {
     if (riskId === 'RISK-001') {
       return {
-        risk: {
-          risk_id: 'RISK-001',
-          component_code: 'COMP-001',
-          component_name: 'Widget A',
-          affected_wo_code: 'WO-001',
-          required: '100.0000',
-          available: '50.0000',
-          confirmed_early: '10.0000',
-          confirmed_late: '5.0000',
-          shortage: '40.0000',
-          severity: 'CRITICAL',
-          has_approved_alternative: false,
-          has_proposed_alternative: false,
-          need_date: '2024-03-01',
-          plan_code: 'PLAN-001',
-        },
+        risk: createRisk({ risk_id: 'RISK-001', component_name: 'Widget A', plan_code: 'PLAN-001' }),
         riskFound: true,
         component: { code: 'COMP-001', name: 'Widget A', unit: 'EA', alternatives: [] },
         inventory: { component_code: 'COMP-001', component_name: 'Widget A', unit: 'EA', balances: [], reservations: [] },
+        purchaseOrders: [],
+        purchaseOrdersPartial: false,
+        productionOrder: null,
+        productionPlan: null,
+        isLoading: false,
+        componentError: null,
+        inventoryError: null,
+        purchaseOrderError: null,
+        productionOrderError: null,
+        productionPlanError: null,
+        refetchComponent: vi.fn(),
+        refetchInventory: vi.fn(),
+        refetchPurchaseOrders: vi.fn(),
+        refetchProductionOrder: vi.fn(),
+        refetchProductionPlan: vi.fn(),
+      };
+    }
+    if (riskId === 'RISK-MUT') {
+      return {
+        risk: createMutatedRisk({ risk_id: 'RISK-MUT' }),
+        riskFound: true,
+        component: null,
+        inventory: null,
         purchaseOrders: [],
         purchaseOrdersPartial: false,
         productionOrder: null,
@@ -103,15 +97,19 @@ vi.mock('@/hooks/useRiskDetail', () => ({
   },
 }));
 
+function renderDetail(riskId = 'RISK-001') {
+  return render(
+    <MemoryRouter initialEntries={[`/supply-risk/${riskId}`]}>
+      <Routes>
+        <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
 describe('SupplyRiskDetail', () => {
   it('renders risk detail for valid riskId', () => {
-    render(
-      <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
-        <Routes>
-          <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderDetail('RISK-001');
 
     // RISK-001 appears in breadcrumb and in risk summary
     const riskIdElements = screen.getAllByText('RISK-001');
@@ -136,13 +134,7 @@ describe('SupplyRiskDetail', () => {
   });
 
   it('displays breadcrumb navigation', () => {
-    render(
-      <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
-        <Routes>
-          <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderDetail('RISK-001');
 
     expect(screen.getByText('Supply Risks')).toBeInTheDocument();
     // RISK-001 appears in breadcrumb
@@ -151,26 +143,14 @@ describe('SupplyRiskDetail', () => {
   });
 
   it('does not display back button (removed in WP-3.7)', () => {
-    render(
-      <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
-        <Routes>
-          <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    renderDetail('RISK-001');
 
     // Back button was removed in WP-3.7; breadcrumb navigation is used instead
     expect(screen.queryByText(/Back to Supply Risks/i)).not.toBeInTheDocument();
   });
 
   it('does not implement whole-row navigation (no onClick on table rows)', () => {
-    const { container } = render(
-      <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
-        <Routes>
-          <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
-        </Routes>
-      </MemoryRouter>
-    );
+    const { container } = renderDetail('RISK-001');
 
     // Check that no table rows have onClick handlers (whole-row navigation forbidden)
     const rows = container.querySelectorAll('tr');
@@ -178,5 +158,29 @@ describe('SupplyRiskDetail', () => {
       expect(row.getAttribute('onclick')).toBeNull();
       expect(row.style.cursor).not.toBe('pointer');
     });
+  });
+
+  // AT-005: detail renders mutated risk values from fixture
+  it('renders mutated evidence values when non-canonical risk supplied (AT-005)', () => {
+    renderDetail('RISK-MUT');
+
+    // Mutated risk_id (multiple elements: breadcrumb, RiskSummary, h1)
+    const riskIdElements = screen.getAllByText('RISK-MUT');
+    expect(riskIdElements.length).toBeGreaterThanOrEqual(2);
+    // Mutated component code and name via RiskSummary
+    expect(screen.getByText('MUT-TEST')).toBeInTheDocument();
+    expect(screen.getByText(/Mutated Test Component/)).toBeInTheDocument();
+    // Mutated severity
+    expect(screen.getByText('LOW')).toBeInTheDocument();
+    // Mutated work order
+    expect(screen.getByText('WO-TEST-999')).toBeInTheDocument();
+    // Evidence panel shows mutated values (formatQuantity strips trailing zeros)
+    // Note: both RiskSummary and EvidencePanel display shortage, so use getAllByText.
+    expect(screen.getByText('99')).toBeInTheDocument(); // required (EvidencePanel only)
+    expect(screen.getByText('61.75')).toBeInTheDocument(); // available (EvidencePanel only)
+    const shortageElements = screen.getAllByText('37.25');
+    expect(shortageElements.length).toBeGreaterThanOrEqual(2); // RiskSummary + EvidencePanel
+    // Descriptive formula label remains
+    expect(screen.getByText(/Shortage = max\(0, required − available − confirmed_early\)/)).toBeInTheDocument();
   });
 });

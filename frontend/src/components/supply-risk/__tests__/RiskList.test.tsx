@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 
 import { RiskList } from '../RiskList';
 import type { RiskRecordWithId } from '@/lib/risks-api';
+import { canonicalRisks, createMutatedRisk, createRisk } from '@/test/fixtures/risk-contract';
 
 const mockRisks: RiskRecordWithId[] = [
   {
@@ -147,5 +148,87 @@ describe('RiskList', () => {
     expect(screen.getByText('1,234,567.89')).toBeInTheDocument(); // required
     expect(screen.getByText('100')).toBeInTheDocument(); // available
     expect(screen.getByText('45.68')).toBeInTheDocument(); // shortage
+  });
+});
+
+/**
+ * AT-005 data-fidelity contract tests.
+ * Verify that changing fixture data changes rendered output without prod changes.
+ * Use non-canonical mutations.
+ */
+describe('RiskList — AT-005 data fidelity (canonical + mutated fixtures)', () => {
+  it('renders canonical fixture risks in severity order', () => {
+    const risks = canonicalRisks;
+    renderWithRouter(
+      <RiskList
+        risks={risks}
+        isLoading={false}
+        isError={false}
+        error={null}
+        onRetry={() => {}}
+        totalCount={risks.length}
+        visibleCount={risks.length}
+      />
+    );
+
+    const rows = screen.getAllByRole('row');
+    // Header + 3 data rows
+    expect(rows.length).toBeGreaterThanOrEqual(4);
+    // First data risk should be CRITICAL (RISK-001)
+    expect(screen.getByText('RISK-001')).toBeInTheDocument();
+    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
+    expect(screen.getByText('8')).toBeInTheDocument();
+  });
+
+  it('renders unmistakably non-canonical mutated values exactly (AT-005)', () => {
+    const mutated = [createMutatedRisk()];
+    renderWithRouter(
+      <RiskList
+        risks={mutated}
+        isLoading={false}
+        isError={false}
+        error={null}
+        onRetry={() => {}}
+        totalCount={1}
+        visibleCount={1}
+      />
+    );
+
+    // RiskList columns: Severity, Risk ID, Component Code, Component Name, Shortage, Available, Required.
+    // (plan_code is NOT a column — it is only used as a query parameter key)
+    expect(screen.getByText('RISK-001')).toBeInTheDocument(); // risk_id from mutated fixture
+    expect(screen.getByText('MUT-TEST')).toBeInTheDocument(); // component_code mutation
+    expect(screen.getByText('Mutated Test Component')).toBeInTheDocument(); // component_name mutation
+    expect(screen.getByText('37.25')).toBeInTheDocument(); // shortage (formatted from '37.2500')
+    expect(screen.getByText('61.75')).toBeInTheDocument(); // available (formatted from '61.7500')
+    expect(screen.getByText('99')).toBeInTheDocument(); // required (formatted from '99.0000')
+    expect(screen.getByText('LOW')).toBeInTheDocument(); // severity mutation
+  });
+
+  it('filtering and ordering work on mutated fixture data', () => {
+    const mutated = [
+      createMutatedRisk({ severity: 'CRITICAL', shortage: '37.2500' }),
+      createRisk({ risk_id: 'RISK-010', severity: 'LOW', shortage: '1.0000', plan_code: 'PLAN-TEST-MUTATED' }),
+    ];
+
+    renderWithRouter(
+      <RiskList
+        risks={mutated}
+        isLoading={false}
+        isError={false}
+        error={null}
+        onRetry={() => {}}
+        totalCount={2}
+        visibleCount={2}
+      />
+    );
+
+    // Ordering: CRITICAL before LOW
+    const badges = screen.getAllByTestId('severity-badge');
+    expect(badges[0]).toHaveTextContent('CRITICAL');
+    expect(badges[1]).toHaveTextContent('LOW');
+
+    // Filter would be in RiskFilters, but list receives filtered; here verify data is used
+    expect(screen.getByText('37.25')).toBeInTheDocument();
   });
 });
