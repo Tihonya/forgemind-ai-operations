@@ -41,10 +41,24 @@ jobs:
       - name: Start services
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-      - name: Wait for backend health
+      # Wait for backend HTTP readiness only (service responds, but migrations may not be run yet)
+      - name: Wait for backend HTTP readiness
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:8000/health > /dev/null 2>&1; do sleep 3; done'
+          echo "✓ Backend HTTP endpoint ready"
+
+      # Run Alembic migrations before requiring full application health
+      - name: Run Alembic migrations
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend bash -c \
+            "cd /app/backend && alembic upgrade head"
+          echo "✓ Migrations complete"
+
+      # Now wait for full application health (migrations done, all dependencies ready)
+      - name: Wait for full backend health
         run: |
           timeout 120 bash -c 'until curl -sf http://localhost:8000/health | grep -q "\"healthy\""; do sleep 3; done'
-          echo "✓ Backend healthy"
+          echo "✓ Backend fully healthy"
 
       - name: Seed database
         run: |
