@@ -3,34 +3,27 @@ name: End-to-End Tests
 on:
   push:
     branches: [main, develop]
+    paths:
+      - 'frontend/e2e/**'
+      - 'frontend/src/**'
+      - 'frontend/playwright.config.ts'
+      - 'backend/**'
+      - 'seed/**'
+      - 'docker-compose*.yml'
+      - '.github/workflows/ci-e2e.yml'
   pull_request:
     branches: [main]
+    paths:
+      - 'frontend/e2e/**'
+      - 'frontend/src/**'
+      - 'frontend/playwright.config.ts'
+      - 'backend/**'
+      - 'seed/**'
+      - 'docker-compose*.yml'
 
 jobs:
-  e2e-check:
-    name: Check if E2E tests exist
-    runs-on: ubuntu-latest
-    outputs:
-      should-run: ${{ steps.check.outputs.exists }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for tests/e2e directory
-        id: check
-        run: |
-          if [ -d "tests/e2e" ] && [ -f "tests/e2e/package.json" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ E2E test structure found"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️  No E2E test structure found, skipping"
-          fi
-
   e2e:
-    name: Run E2E tests
-    needs: e2e-check
-    if: needs.e2e-check.outputs.should-run == 'true'
+    name: Run Golden Scenario E2E Tests
     runs-on: ubuntu-latest
 
     steps:
@@ -46,45 +39,95 @@ jobs:
           sed -i 's/SECRET_KEY=.*/SECRET_KEY=test_secret_key_for_ci_only_32_chars_minimum/' .env
 
       - name: Start services
-        run: docker compose up -d
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 
-      - name: Wait for services to be healthy
+      # Wait for backend HTTP readiness only (service responds, but migrations may not be run yet)
+      - name: Wait for backend HTTP readiness
         run: |
-          timeout 60 bash -c 'until curl -f http://localhost:80/health; do sleep 2; done'
-          timeout 60 bash -c 'until curl -f http://localhost:80; do sleep 2; done'
+          timeout 120 bash -c 'until curl -sf http://localhost:8000/health > /dev/null 2>&1; do sleep 3; done'
+          echo "✓ Backend HTTP endpoint ready"
+
+      # Run Alembic migrations before requiring full application health
+      - name: Run Alembic migrations
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend bash -c \
+            "cd /app/backend && python -m alembic upgrade head"
+          echo "✓ Migrations complete"
+
+      # Now wait for full application health (migrations done, all dependencies ready)
+      - name: Wait for full backend health
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:8000/health | grep -q "\"healthy\""; do sleep 3; done'
+          echo "✓ Backend fully healthy"
+
+      - name: Seed database
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend bash -c \
+            "cd /app/backend && python -m app.seed.generator.main"
+          echo "✓ Database seeded"
+
+      - name: Verify Golden Dataset via API
+        run: |
+          # Obtain token
+          TOKEN=$(curl -sf -X POST http://localhost:8000/api/v1/auth/login \
+            -H 'Content-Type: application/json' \
+            -d '{"username":"manager.demo","password":"ManagerPass123!"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["access_token"])')
+          
+          # Verify PLAN-2026-W31 risks
+          RISKS=$(curl -sf http://localhost:8000/api/v1/production-plans/PLAN-2026-W31/risks \
+            -H "Authorization: Bearer $TOKEN")
+          
+          # Verify 3 risks exist
+          COUNT=$(echo "$RISKS" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
+          if [ "$COUNT" != "3" ]; then
+            echo "✗ Expected 3 risks, got $COUNT"
+            exit 1
+          fi
+          echo "✓ Golden Dataset verified: 3 risks present"
 
       - name: Set up Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install Playwright
-        working-directory: ./tests/e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci
 
-      - name: Run Playwright tests
-        working-directory: ./tests/e2e
+      - name: Build frontend for preview
+        working-directory: ./frontend
         env:
-          BASE_URL: http://localhost:80
-          API_URL: http://localhost:80/api/v1
-        run: npx playwright test
+          VITE_API_BASE_URL: /api/v1
+        run: npm run build
+
+      - name: Install Playwright browsers
+        working-directory: ./frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright Golden Scenario
+        working-directory: ./frontend
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:4173
+          API_BASE_URL: http://localhost:8000
+          CI: 'true'
+        run: npx playwright test e2e/golden-scenario.spec.ts
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: playwright-report
-          path: tests/e2e/playwright-report/
+          path: frontend/playwright-report/
           retention-days: 30
 
-      - name: Upload screenshots
+      - name: Upload screenshots on failure
         uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: playwright-screenshots
-          path: tests/e2e/test-results/
+          path: frontend/test-results/
           retention-days: 30
 
       - name: Capture failure diagnostics
@@ -112,4 +155,4 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker compose down
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
