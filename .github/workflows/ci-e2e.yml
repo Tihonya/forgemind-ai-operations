@@ -116,6 +116,29 @@ jobs:
           path: frontend/test-results/
           retention-days: 30
 
+      - name: Capture failure diagnostics
+        if: failure()
+        run: |
+          set +e
+          echo "===== docker compose ps --all ====="
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            ps --all || true
+          echo "===== docker compose logs backend ====="
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps backend || true
+          echo "===== docker compose logs worker ====="
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps worker || true
+          echo "===== docker compose logs caddy ====="
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml \
+            logs --no-color --timestamps caddy || true
+          echo "===== backend .State.Health ====="
+          docker inspect --format '{{json .State.Health}}' \
+            forgemind-ai-operations-backend-1 || true
+          echo "===== backend .State ====="
+          docker inspect --format '{{json .State}}' \
+            forgemind-ai-operations-backend-1 || true
+
       - name: Stop services
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
