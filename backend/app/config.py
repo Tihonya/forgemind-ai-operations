@@ -117,7 +117,7 @@ class Settings(BaseSettings):
         return cls._validate_origin_list(v)
 
     @classmethod
-    def _raw_items_from_string(cls, raw: str) -> list:
+    def _raw_items_from_string(cls, raw: str) -> list[str]:
         """Convert a string env value to a list of raw items.
 
         - Blank string → [].
@@ -144,7 +144,7 @@ class Settings(BaseSettings):
         return stripped.split(",")
 
     @classmethod
-    def _validate_origin_list(cls, items: list) -> list[str]:
+    def _validate_origin_list(cls, items: list[str]) -> list[str]:
         """Validate each item is a well-formed origin string."""
         result: list[str] = []
         for item in items:
