@@ -51,7 +51,7 @@ jobs:
       - name: Run Alembic migrations
         run: |
           docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T backend bash -c \
-            "cd /app/backend && alembic upgrade head"
+            "cd /app/backend && python -m alembic upgrade head"
           echo "✓ Migrations complete"
 
       # Now wait for full application health (migrations done, all dependencies ready)
