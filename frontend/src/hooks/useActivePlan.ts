@@ -2,7 +2,7 @@
  * React hook for fetching and selecting the active production plan.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
   getProductionPlans,
   selectActivePlan,
@@ -17,10 +17,11 @@ export interface UseActivePlanResult {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  refetch: UseQueryResult<ProductionPlanListResponse, Error>['refetch'];
 }
 
 export function useActivePlan(): UseActivePlanResult {
-  const { data, isLoading, isError, error } = useQuery<
+  const { data, isLoading, isError, error, refetch } = useQuery<
     ProductionPlanListResponse,
     Error
   >({
@@ -42,5 +43,6 @@ export function useActivePlan(): UseActivePlanResult {
     isLoading,
     isError,
     error,
+    refetch,
   };
 }

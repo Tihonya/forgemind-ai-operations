@@ -1,11 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import RiskSummaryWidget from '../RiskSummaryWidget';
 import { useRiskSummary } from '@/hooks/useRiskSummary';
 import { canonicalRisks, canonicalSummary, mutatedRisks, mutatedSummary } from '@/test/fixtures/risk-contract';
 
 vi.mock('@/hooks/useRiskSummary');
+
+const user = userEvent.setup();
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -30,6 +33,7 @@ describe('RiskSummaryWidget', () => {
       isLoading: true,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
@@ -37,18 +41,36 @@ describe('RiskSummaryWidget', () => {
     expect(screen.getByTestId('risk-summary-loading')).toBeInTheDocument();
   });
 
-  it('renders error state', () => {
+  it('renders error state with retry button visible', () => {
     vi.mocked(useRiskSummary).mockReturnValue({
       risks: [],
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
     expect(screen.getByTestId('risk-summary-error')).toBeInTheDocument();
     expect(screen.getByText('Unable to load risk summary')).toBeInTheDocument();
+    expect(screen.getByTestId('risk-summary-retry')).toBeInTheDocument();
+  });
+
+  it('calls refetch when retry button is clicked', async () => {
+    const refetchSpy = vi.fn();
+    vi.mocked(useRiskSummary).mockReturnValue({
+      risks: [],
+      summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0 },
+      isLoading: false,
+      isError: true,
+      error: new Error('Network error'),
+      refetch: refetchSpy,
+    } as ReturnType<typeof useRiskSummary>);
+
+    renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
+    await user.click(screen.getByTestId('risk-summary-retry'));
+    expect(refetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('renders no risks state', () => {
@@ -58,6 +80,7 @@ describe('RiskSummaryWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
@@ -71,6 +94,7 @@ describe('RiskSummaryWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-001" />);
@@ -89,6 +113,7 @@ describe('RiskSummaryWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode={null} />);
@@ -108,6 +133,7 @@ describe('RiskSummaryWidget — AT-005 data fidelity (risk mutation)', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-2026-W31" />);
@@ -124,6 +150,7 @@ describe('RiskSummaryWidget — AT-005 data fidelity (risk mutation)', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     } as ReturnType<typeof useRiskSummary>);
 
     renderWithQuery(<RiskSummaryWidget planCode="PLAN-TEST-MUTATED" />);

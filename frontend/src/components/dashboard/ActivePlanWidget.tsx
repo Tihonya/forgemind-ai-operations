@@ -2,6 +2,7 @@ import { Calendar, AlertTriangle, Package } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useActivePlan } from '@/hooks/useActivePlan';
 import type { ProductionPlanSummary } from '@/lib/production-plans-api';
 
@@ -86,7 +87,7 @@ function MultipleActiveWarning() {
  * status badge, and date period. Handles loading, empty, and error states.
  */
 export default function ActivePlanWidget() {
-  const { activePlan, hasMultipleActive, isLoading, isError } = useActivePlan();
+  const { activePlan, hasMultipleActive, isLoading, isError, refetch } = useActivePlan();
 
   return (
     <Card className="bg-steel-900/60 border-steel-700" data-testid="active-plan-widget">
@@ -104,9 +105,22 @@ export default function ActivePlanWidget() {
           </div>
         )}
         {isError && (
-          <p className="text-sm text-red-400" data-testid="plan-error" role="alert">
-            Unable to load production plans
-          </p>
+          <div className="space-y-2" data-testid="plan-error">
+            <p className="text-sm text-red-400" role="alert">
+              Unable to load production plans
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void refetch();
+              }}
+              data-testid="plan-retry"
+              className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
+            >
+              Retry
+            </Button>
+          </div>
         )}
         {!isLoading && !isError && activePlan === null && (
           <p className="text-sm text-steel-400" data-testid="no-active-plan">

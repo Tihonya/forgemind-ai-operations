@@ -2,7 +2,7 @@
  * React hook for fetching and aggregating risk severity counts.
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, type UseQueryResult } from '@tanstack/react-query';
 import {
   getProductionPlanRisks,
   aggregateRiskSummary,
@@ -16,10 +16,11 @@ export interface UseRiskSummaryResult {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  refetch: UseQueryResult<RiskRecordWithId[], Error>['refetch'];
 }
 
 export function useRiskSummary(planCode: string | null): UseRiskSummaryResult {
-  const { data, isLoading, isError, error } = useQuery<
+  const { data, isLoading, isError, error, refetch } = useQuery<
     RiskRecordWithId[],
     Error
   >({
@@ -39,5 +40,6 @@ export function useRiskSummary(planCode: string | null): UseRiskSummaryResult {
     isLoading,
     isError,
     error,
+    refetch,
   };
 }
