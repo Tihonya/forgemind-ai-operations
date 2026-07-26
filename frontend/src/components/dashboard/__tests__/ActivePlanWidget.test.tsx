@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ActivePlanWidget from '../ActivePlanWidget';
 import * as useActivePlanModule from '@/hooks/useActivePlan';
@@ -7,6 +8,8 @@ import type { ProductionPlanSummary } from '@/lib/production-plans-api';
 import { canonicalPlan, mutatedPlan } from '@/test/fixtures/risk-contract';
 
 vi.mock('@/hooks/useActivePlan');
+
+const user = userEvent.setup();
 
 function renderWithQuery(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -34,6 +37,7 @@ describe('ActivePlanWidget', () => {
       isLoading: true,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -41,7 +45,8 @@ describe('ActivePlanWidget', () => {
     expect(screen.getByTestId('plan-loading')).toBeInTheDocument();
   });
 
-  it('renders error state', () => {
+  it('renders error state with retry button', () => {
+    const refetchSpy = vi.fn();
     vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
       plans: [],
       activePlan: null,
@@ -49,11 +54,30 @@ describe('ActivePlanWidget', () => {
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
+      refetch: refetchSpy,
     });
 
     renderWithQuery(<ActivePlanWidget />);
     expect(screen.getByTestId('plan-error')).toBeInTheDocument();
     expect(screen.getByText('Unable to load production plans')).toBeInTheDocument();
+    expect(screen.getByTestId('plan-retry')).toBeInTheDocument();
+  });
+
+  it('calls refetch when retry button is clicked', async () => {
+    const refetchSpy = vi.fn();
+    vi.mocked(useActivePlanModule.useActivePlan).mockReturnValue({
+      plans: [],
+      activePlan: null,
+      hasMultipleActive: false,
+      isLoading: false,
+      isError: true,
+      error: new Error('Network error'),
+      refetch: refetchSpy,
+    });
+
+    renderWithQuery(<ActivePlanWidget />);
+    await user.click(screen.getByTestId('plan-retry'));
+    expect(refetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('renders empty state when no active plan', () => {
@@ -64,6 +88,7 @@ describe('ActivePlanWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -86,6 +111,7 @@ describe('ActivePlanWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -115,6 +141,7 @@ describe('ActivePlanWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -140,6 +167,7 @@ describe('ActivePlanWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -166,6 +194,7 @@ describe('ActivePlanWidget — AT-005 data fidelity (plan mutation)', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);
@@ -187,6 +216,7 @@ describe('ActivePlanWidget — AT-005 data fidelity (plan mutation)', () => {
       isLoading: false,
       isError: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     renderWithQuery(<ActivePlanWidget />);

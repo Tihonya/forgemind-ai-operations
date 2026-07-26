@@ -2,6 +2,7 @@ import { ShieldAlert } from 'lucide-react';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { useRiskSummary } from '@/hooks/useRiskSummary';
 import type { RiskSummary } from '@/lib/risks-api';
 
@@ -90,7 +91,7 @@ interface RiskSummaryWidgetProps {
  * Fetches risks only when a plan code is provided.
  */
 export default function RiskSummaryWidget({ planCode }: RiskSummaryWidgetProps) {
-  const { summary, isLoading, isError } = useRiskSummary(planCode);
+  const { summary, isLoading, isError, refetch } = useRiskSummary(planCode);
 
   return (
     <Card className="bg-steel-900/60 border-steel-700" data-testid="risk-summary-widget">
@@ -113,9 +114,22 @@ export default function RiskSummaryWidget({ planCode }: RiskSummaryWidgetProps) 
           </div>
         )}
         {isError && (
-          <p className="text-sm text-red-400" data-testid="risk-summary-error" role="alert">
-            Unable to load risk summary
-          </p>
+          <div className="space-y-2" data-testid="risk-summary-error">
+            <p className="text-sm text-red-400" role="alert">
+              Unable to load risk summary
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                void refetch();
+              }}
+              data-testid="risk-summary-retry"
+              className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
+            >
+              Retry
+            </Button>
+          </div>
         )}
         {!isLoading && !isError && (
           <div data-testid="risk-summary-content">
