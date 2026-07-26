@@ -12,7 +12,10 @@ import {
 import type { PropsWithChildren, ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 
-import { clearAuthHeader as clearAxiosAuthHeader } from '@/lib/api'
+import {
+  clearAuthHeader as clearAxiosAuthHeader,
+  setOnUnauthorizedHandler,
+} from '@/lib/api'
 import { getMe, login as loginApi, UserResponse } from '@/lib/auth-api'
 import {
   getAccessToken,
@@ -189,6 +192,27 @@ function AuthProviderInner({
       mountedRef.current = false
     }
   }, [])
+
+  /**
+   * Register the global 401 handler with the Axios interceptor.
+   *
+   * The handler invalidates the session and navigates to /login.
+   * It is safe under React StrictMode: cleanup unregisters on unmount,
+   * so mount → unmount → mount cycles don't leave stale callbacks.
+   */
+  useEffect(() => {
+    const handler = () => {
+      removeAccessToken()
+      clearAxiosAuthHeader()
+      setUser(null)
+      setError(null)
+      navigate('/login', { replace: true })
+    }
+    setOnUnauthorizedHandler(handler)
+    return () => {
+      setOnUnauthorizedHandler(null)
+    }
+  }, [navigate])
 
   /**
    * Attempt to restore session from a stored token.
