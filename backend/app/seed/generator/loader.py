@@ -60,6 +60,50 @@ _sync_engine = _get_sync_engine()
 _SessionFactory = sessionmaker(bind=_sync_engine)
 
 
+def _find_alembic_ini() -> Path:
+    """Locate alembic.ini using multiple fallback strategies.
+
+    Strategy 1: Walk upward from this module's filesystem location.
+    Strategy 2: Search from the current working directory.
+    Strategy 3: Use the AIAUTOMATION_REPO_ROOT environment variable.
+
+    Returns:
+        Resolved Path to alembic.ini
+
+    Raises:
+        RuntimeError: If alembic.ini cannot be found by any strategy
+    """
+    import os
+
+    candidates: list[Path] = []
+
+    # Strategy 1: walk upward from this module
+    # Module is at backend/app/seed/generator/, so backend/ is 4 levels up.
+    module_root = Path(__file__).resolve().parent.parent.parent.parent
+    candidates.append(module_root / "alembic.ini")
+
+    # Strategy 2: search from current working directory
+    cwd = Path.cwd()
+    candidates.append(cwd / "backend" / "alembic.ini")
+    candidates.append(cwd / "alembic.ini")
+
+    # Strategy 3: AIAUTOMATION_REPO_ROOT environment variable
+    repo_root_env = os.environ.get("AIAUTOMATION_REPO_ROOT")
+    if repo_root_env:
+        repo_root = Path(repo_root_env).resolve()
+        candidates.append(repo_root / "backend" / "alembic.ini")
+        candidates.append(repo_root / "alembic.ini")
+
+    alembic_ini_path = next((p for p in candidates if p.exists()), None)
+    if alembic_ini_path:
+        return alembic_ini_path
+
+    raise RuntimeError(
+        f"alembic.ini not found. Tried: {', '.join(str(p) for p in candidates)}\n"
+        f"Set AIAUTOMATION_REPO_ROOT or run from the repository root."
+    )
+
+
 def _verify_alembic_head() -> None:
     """Verify the database is at the expected Alembic revision.
 
@@ -77,19 +121,7 @@ def _verify_alembic_head() -> None:
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
-    # Resolve alembic.ini location.
-    # Module is at backend/app/seed/generator/, so backend/ is 4 levels up.
-    backend_root = Path(__file__).resolve().parent.parent.parent.parent
-    candidates = [
-        backend_root / "alembic.ini",
-    ]
-
-    alembic_ini_path = next((p for p in candidates if p.exists()), None)
-    if not alembic_ini_path:
-        raise RuntimeError(
-            f"alembic.ini not found. Tried: {', '.join(str(p) for p in candidates)}"
-        )
-
+    alembic_ini_path = _find_alembic_ini()
     alembic_cfg = Config(str(alembic_ini_path))
     script_dir = ScriptDirectory.from_config(alembic_cfg)
     expected_head = script_dir.get_current_head()
