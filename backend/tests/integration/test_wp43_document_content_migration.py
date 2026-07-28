@@ -10,7 +10,7 @@ Skips cleanly if the database is unavailable.
 """
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from sqlalchemy import Engine, create_engine, text
@@ -87,6 +87,7 @@ def _run_alembic_upgrade(revision: str = "head") -> None:
     config = Config(str(alembic_cfg_path))
     config.set_main_option("script_location", str(backend_dir / "alembic"))
 
+    assert _INTEGRATION_DB_URL is not None
     sync_url = _INTEGRATION_DB_URL
     if "+asyncpg" in sync_url:
         sync_url = sync_url.replace("+asyncpg", "+psycopg")
@@ -109,6 +110,7 @@ def _run_alembic_downgrade(revision: str) -> None:
     config = Config(str(alembic_cfg_path))
     config.set_main_option("script_location", str(backend_dir / "alembic"))
 
+    assert _INTEGRATION_DB_URL is not None
     sync_url = _INTEGRATION_DB_URL
     if "+asyncpg" in sync_url:
         sync_url = sync_url.replace("+asyncpg", "+psycopg")
@@ -118,7 +120,7 @@ def _run_alembic_downgrade(revision: str) -> None:
 
 
 @pytest.fixture
-def sync_connection() -> AsyncIterator[Connection]:
+def sync_connection() -> Iterator[Connection]:
     """Provide a synchronous database connection."""
     engine = _get_sync_engine()
     with engine.connect() as conn:

@@ -7,9 +7,10 @@ requiring a live database.
 import ast
 import importlib.util
 from pathlib import Path
+from typing import Any
 
 
-def _load_migration_module():
+def _load_migration_module() -> tuple[Any, Path]:
     """Load the migration module by file path (no alembic context needed).
 
     Returns:
@@ -28,14 +29,14 @@ def _load_migration_module():
     return mod, migration_file
 
 
-def _read_migration_source():
+def _read_migration_source() -> str:
     """Read the raw source of the migration file."""
     migration_dir = Path(__file__).resolve().parents[2] / "alembic" / "versions"
     migration_file = migration_dir / "625c9f549f2b_add_document_version_content.py"
     return migration_file.read_text()
 
 
-def _parse_migration_tree():
+def _parse_migration_tree() -> ast.Module:
     """Parse the migration source into an AST."""
     return ast.parse(_read_migration_source())
 
@@ -59,7 +60,7 @@ def _call_args(calls: list[ast.Call]) -> list[ast.Constant]:
     return args
 
 
-def _collect_calls(tree, func_name: str):
+def _collect_calls(tree: ast.AST, func_name: str) -> list[ast.Call]:
     """Walk *tree* and collect all ``Call`` nodes whose func is ``op.<func_name>``."""
     calls: list[ast.Call] = []
     for node in ast.walk(tree):

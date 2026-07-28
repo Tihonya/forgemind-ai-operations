@@ -650,7 +650,7 @@ class TestTransactionRollback:
             dv_result,
             chunks_result,  # only 2 execute calls now
         ]
-        mock_session.flush.side_effect = IntegrityError("", None, None)
+        mock_session.flush.side_effect = IntegrityError("", None, Exception())
 
         with pytest.raises(IntegrityError):
             await orchestrator.ingest_document_version(doc_version_id)

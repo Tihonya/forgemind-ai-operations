@@ -326,7 +326,7 @@ class TestOpenAIEmbeddingProviderEmbedText:
     @pytest.mark.asyncio
     async def test_non_list_embedding_raises(self) -> None:
         mock_item = MagicMock()
-        mock_item.embedding = "not-a-list"  # type: ignore[assignment]
+        mock_item.embedding = "not-a-list"
         mock_response = MagicMock()
         mock_response.data = [mock_item]
 
@@ -388,7 +388,7 @@ class TestOpenAIEmbeddingProviderEmbedText:
 class TestEmbeddingProviderABC:
     def test_cannot_instantiate_abstract_base(self) -> None:
         with pytest.raises(TypeError):
-            EmbeddingProvider()  # type: ignore[type-abstract]
+            EmbeddingProvider()  # type: ignore[abstract]
 
     def test_subclass_must_implement_embed_text(self) -> None:
         class IncompleteProvider(EmbeddingProvider):
@@ -396,7 +396,7 @@ class TestEmbeddingProviderABC:
                 return 1
 
         with pytest.raises(TypeError):
-            IncompleteProvider()  # type: ignore[type-abstract]
+            IncompleteProvider()  # type: ignore[abstract]
 
     def test_subclass_must_implement_dimension(self) -> None:
         class IncompleteProvider(EmbeddingProvider):
@@ -404,7 +404,7 @@ class TestEmbeddingProviderABC:
                 return []
 
         with pytest.raises(TypeError):
-            IncompleteProvider()  # type: ignore[type-abstract]
+            IncompleteProvider()  # type: ignore[abstract]
 
 
 # ---------------------------------------------------------------------------
