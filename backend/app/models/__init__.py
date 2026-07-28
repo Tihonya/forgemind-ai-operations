@@ -17,6 +17,7 @@ from app.models.enums import (
     PurchaseOrderLineStatus,
     PurchaseOrderStatus,
 )
+from app.models.knowledge import KnowledgeChunk
 from app.models.product import Product, ProductVersion
 from app.models.production import (
     ProductionOrder,
@@ -65,4 +66,6 @@ __all__ = [
     "DocumentVersion",
     "DocumentVersionStatus",
     "DocumentPermission",
+    # Knowledge chunks (WP-4.2)
+    "KnowledgeChunk",
 ]
