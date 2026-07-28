@@ -6,9 +6,11 @@ for Alembic autogenerate discovery.
 
 from app.models.component import BomItem, Component, ComponentAlternative
 from app.models.diagnostic import DiagnosticJob
+from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.enums import (
     ComponentAlternativeStatus,
     ComponentUnit,
+    DocumentVersionStatus,
     ProductionOrderStatus,
     ProductionPlanStatus,
     ProductVersionStatus,
@@ -58,4 +60,9 @@ __all__ = [
     "Role",
     "User",
     "UserRole",
+    # Document management (WP-4.1)
+    "Document",
+    "DocumentVersion",
+    "DocumentVersionStatus",
+    "DocumentPermission",
 ]
