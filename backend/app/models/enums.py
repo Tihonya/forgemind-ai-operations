@@ -73,3 +73,11 @@ class ComponentAlternativeStatus(enum.StrEnum):
     PROPOSED = "PROPOSED"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+
+
+class DocumentVersionStatus(enum.StrEnum):
+    """Status lifecycle for document versions."""
+
+    DRAFT = "DRAFT"
+    APPROVED = "APPROVED"
+    OBSOLETE = "OBSOLETE"

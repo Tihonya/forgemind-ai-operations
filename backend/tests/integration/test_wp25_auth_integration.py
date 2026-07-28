@@ -95,7 +95,6 @@ class TestMigrationUpgrade:
         ).fetchone()
         assert result is not None
         assert result[0] == EXPECTED_ALEMBIC_HEAD
-        assert result[0] == "b4c5a6b7c8d9"
 
     def test_auth_tables_exist(self, db_conn):
         tables = {"roles", "users", "user_roles"}
