@@ -123,7 +123,7 @@ class TestKnowledgeChunksMigrationUpgrade:
                 "ORDER BY ordinal_position"
             )
         )
-        columns: dict = {}
+        columns: dict[str, dict[str, str]] = {}
         for row in result:
             columns[row[0]] = {
                 "type": row[1],
@@ -131,7 +131,7 @@ class TestKnowledgeChunksMigrationUpgrade:
                 "nullable": row[3],
             }
 
-        expected_columns: dict = {
+        expected_columns: dict[str, dict[str, str]] = {
             "id": {"type": "uuid", "nullable": "NO"},
             "document_version_id": {"type": "uuid", "nullable": "NO"},
             "chunk_index": {"type": "integer", "nullable": "NO"},

@@ -1,8 +1,11 @@
 """Unit tests for WP-4.2 knowledge_chunks model (KnowledgeChunk)."""
+from typing import cast
+
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, Integer, String, Text, inspect
+from sqlalchemy import DateTime, Integer, String, Table, Text, inspect
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.schema import DefaultClause
 
 from app.models import KnowledgeChunk
 from app.models.document import DocumentVersion
@@ -143,13 +146,15 @@ class TestKnowledgeChunkServerDefaults:
         mapper = inspect(KnowledgeChunk)
         col = mapper.columns.id
         assert col.server_default is not None
-        assert "gen_random_uuid" in str(col.server_default.arg)
+        sd = cast(DefaultClause, col.server_default)
+        assert "gen_random_uuid" in str(sd.arg)
 
     def test_created_at_server_default_is_now(self):
         mapper = inspect(KnowledgeChunk)
         col = mapper.columns.created_at
         assert col.server_default is not None
-        assert "now" in str(col.server_default.arg)
+        sd = cast(DefaultClause, col.server_default)
+        assert "now" in str(sd.arg)
 
 
 class TestKnowledgeChunkForeignKey:
@@ -168,7 +173,7 @@ class TestKnowledgeChunkForeignKey:
 
 class TestKnowledgeChunkUniqueConstraint:
     def test_unique_constraint_on_document_version_id_chunk_index(self):
-        tbl = KnowledgeChunk.__table__
+        tbl = cast(Table, KnowledgeChunk.__table__)
         indexes = {idx.name: idx for idx in tbl.indexes}
         uq_name = "uq_knowledge_chunks_document_version_id_chunk_index"
         assert uq_name in indexes
@@ -180,19 +185,19 @@ class TestKnowledgeChunkUniqueConstraint:
 
 class TestKnowledgeChunkIndexes:
     def test_btree_index_on_document_version_id_exists(self):
-        tbl = KnowledgeChunk.__table__
+        tbl = cast(Table, KnowledgeChunk.__table__)
         index_names = {idx.name for idx in tbl.indexes}
         assert "ix_knowledge_chunks_document_version_id" in index_names
 
     def test_no_hnsw_index(self):
-        tbl = KnowledgeChunk.__table__
+        tbl = cast(Table, KnowledgeChunk.__table__)
         for idx in tbl.indexes:
             # Check that no index has hnsw in its kwargs (pgvector ANN index)
             kwargs = getattr(idx, "kwargs", {})
             assert "hnsw" not in str(kwargs).lower()
 
     def test_no_ivfflat_index(self):
-        tbl = KnowledgeChunk.__table__
+        tbl = cast(Table, KnowledgeChunk.__table__)
         for idx in tbl.indexes:
             kwargs = getattr(idx, "kwargs", {})
             assert "ivfflat" not in str(kwargs).lower()
