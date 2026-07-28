@@ -37,8 +37,8 @@ from app.seed.generator.golden_dataset import (
 
 logger = logging.getLogger(__name__)
 
-# Expected Alembic revision after WP-4.1 document schema migration
-EXPECTED_ALEMBIC_HEAD = "a1b2c3d4e5f6"
+# Expected Alembic revision after WP-4.2 knowledge_chunks schema migration
+EXPECTED_ALEMBIC_HEAD = "c7d8e9f0a1b2"
 
 
 def _get_sync_engine() -> Engine:
