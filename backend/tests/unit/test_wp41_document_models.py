@@ -2,7 +2,9 @@
 
 Tests SQLAlchemy model definitions without database interaction.
 """
-from sqlalchemy import inspect
+from typing import cast
+
+from sqlalchemy import String, Table, inspect
 
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.enums import DocumentVersionStatus
@@ -38,7 +40,7 @@ class TestDocumentModel:
         """Document.title has max length 500."""
         mapper = inspect(Document)
         title_col = mapper.columns.title
-        assert title_col.type.length == 500
+        assert cast(String, title_col.type).length == 500
 
     def test_document_description_nullable(self):
         """Document.description is nullable."""
@@ -110,7 +112,7 @@ class TestDocumentVersionModel:
         """DocumentVersion.version_number has max length 50."""
         mapper = inspect(DocumentVersion)
         vn_col = mapper.columns.version_number
-        assert vn_col.type.length == 50
+        assert cast(String, vn_col.type).length == 50
 
     def test_document_version_status_not_nullable(self):
         """DocumentVersion.status is NOT NULL."""
@@ -128,11 +130,12 @@ class TestDocumentVersionModel:
         """DocumentVersion.content_hash has max length 64."""
         mapper = inspect(DocumentVersion)
         hash_col = mapper.columns.content_hash
-        assert hash_col.type.length == 64
+        assert cast(String, hash_col.type).length == 64
 
     def test_document_version_indexes(self):
         """DocumentVersion has expected indexes."""
-        indexes = {idx.name for idx in DocumentVersion.__table__.indexes}
+        tbl = cast(Table, DocumentVersion.__table__)
+        indexes = {idx.name for idx in tbl.indexes}
         assert "idx_document_versions_document_id" in indexes
 
     def test_document_version_relationship(self):
@@ -192,7 +195,7 @@ class TestDocumentPermissionModel:
 
     def test_document_permission_unique_constraint(self):
         """DocumentPermission has unique index on (document_id, role_id)."""
-        tbl = DocumentPermission.__table__
+        tbl = cast(Table, DocumentPermission.__table__)
         idx_names = {idx.name for idx in tbl.indexes}
         assert "idx_document_permissions_document_id_role_id" in idx_names
         for idx in tbl.indexes:
@@ -204,7 +207,8 @@ class TestDocumentPermissionModel:
 
     def test_document_permission_indexes(self):
         """DocumentPermission has expected indexes."""
-        indexes = {idx.name for idx in DocumentPermission.__table__.indexes}
+        tbl = cast(Table, DocumentPermission.__table__)
+        indexes = {idx.name for idx in tbl.indexes}
         assert "idx_document_permissions_document_id" in indexes
         assert "idx_document_permissions_role_id" in indexes
 

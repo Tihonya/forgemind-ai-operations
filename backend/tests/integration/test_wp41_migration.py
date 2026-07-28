@@ -20,6 +20,7 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     Yields:
         AsyncSession: Database session connected to test database.
     """
+    assert _INTEGRATION_DB_URL is not None, "DATABASE_URL or TEST_DATABASE_URL must be set"
     engine = create_async_engine(_INTEGRATION_DB_URL, echo=False)
     session_factory = async_sessionmaker[AsyncSession](
         bind=engine, expire_on_commit=False
@@ -234,7 +235,7 @@ class TestDocumentSchemaMigration:
         unique_constraints = result.fetchall()
 
         # Check that at least one unique constraint exists with both columns
-        constraint_columns = {}
+        constraint_columns: dict[str, set[str]] = {}
         for constraint_name, column_name in unique_constraints:
             if constraint_name not in constraint_columns:
                 constraint_columns[constraint_name] = set()
