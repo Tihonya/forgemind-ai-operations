@@ -69,7 +69,11 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-4o-mini"
     llm_timeout_seconds: int = Field(default=30, ge=5, le=120)
     llm_max_retries: int = Field(default=3, ge=0, le=10)
-    embedding_dimensions: int = 1536  # text-embedding-3-small default
+    embedding_dimensions: int = Field(default=1536, ge=1)
+
+    # Embedding provider
+    embedding_provider: Literal["openai", "fake"] = "openai"
+    embedding_timeout_seconds: int = Field(default=30, ge=5, le=120)
 
     # Rate Limiting
     rate_limit_per_minute: int = Field(default=60, ge=1)

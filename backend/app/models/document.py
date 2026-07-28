@@ -1,8 +1,9 @@
 """Document metadata ORM models.
 
 Document management data foundation (WP-4.1). Defines the core schema
-for documents, versioning, and access permissions. No document content
-storage, RAG, or AI logic — those belong to later work packages.
+for documents, versioning, and access permissions. Document content
+is stored directly in the DocumentVersion.content column for RAG
+processing. AI logic belongs to later work packages.
 """
 
 from datetime import datetime
@@ -103,6 +104,11 @@ class DocumentVersion(Base):
 
     content_hash: Mapped[str | None] = mapped_column(
         String(64),
+        nullable=True,
+    )
+
+    content: Mapped[str | None] = mapped_column(
+        Text,
         nullable=True,
     )
 
