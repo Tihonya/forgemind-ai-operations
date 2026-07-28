@@ -78,6 +78,7 @@ class TestDocumentVersionModel:
             "version_number",
             "status",
             "content_hash",
+            "content",
             "created_at",
         }
         assert columns == expected
