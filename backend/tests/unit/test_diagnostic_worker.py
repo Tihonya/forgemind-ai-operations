@@ -245,10 +245,12 @@ def test_registration_function_in_worker_settings() -> None:
 def test_registration_no_noop_functions() -> None:
     """functions must contain at least one real callable; no placeholders."""
     assert len(WorkerSettings.functions) >= 1
+    # Allow any real worker function (diagnostic, ingestion, etc.)
+    allowed_names = {"run_diagnostic_job", "run_document_ingestion"}
     for fn in WorkerSettings.functions:
         assert callable(fn)
-        # Accept only the real diagnostic function
-        assert fn.__name__ == "run_diagnostic_job"
+        # Accept only registered real worker functions
+        assert fn.__name__ in allowed_names
 
 
 # --------------------------------------------------------------------------- #
