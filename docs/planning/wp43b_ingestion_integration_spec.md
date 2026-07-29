@@ -13,8 +13,8 @@
 
 ## 1. Repository evidence (verified)
 
-**Base commit**: b384c839e7f19dd7817c58c21331c5d4fe102f08  
-**Branch**: main  
+**Base commit**: b384c839e7f19dd7817c58c21331c5d4fe102f08
+**Branch**: main
 **Working tree**: clean (verified via `git status --short`)
 
 **Verified artifacts**:
@@ -43,15 +43,15 @@
 
 ## 2. WP-4.3B0: Embedding Provider Runtime Contract Repair (prerequisite)
 
-**Status**: APPROVED as first internal implementation slice  
-**Scope**: Repair embedding provider before WP-4.3B integration work  
+**Status**: APPROVED as first internal implementation slice
+**Scope**: Repair embedding provider before WP-4.3B integration work
 **PR strategy**: Part of WP-4.3B branch and PR, not standalone
 
 ### 2.1 Current defects (verified)
 
 - `backend/app/services/embedding_provider.py:168-172` — validates numeric type but NOT `math.isfinite()`
 - `backend/app/services/embedding_provider.py:139-142` — wraps all exceptions as RuntimeError (loses type information)
-- `backend/app/services/embedding_provider.py:124` — AsyncOpenAI constructed without explicit `max_retries=0`
+- `OpenAIEmbeddingProvider.__init__` — AsyncOpenAI constructed without explicit `max_retries=0`
 - `backend/app/services/ingestion.py:199-201` — wraps provider exceptions as RuntimeError (loses type information)
 
 ### 2.2 Mandatory repairs
@@ -103,7 +103,7 @@ async def run_document_ingestion(ctx: dict, version_id: str, document_id: str) -
     if job_try < 3:
         defer_seconds = [2, 4][job_try - 1]
         ctx["retry_defer"] = defer_seconds
-    
+
     # ... ingestion logic ...
 ```
 
@@ -150,21 +150,21 @@ except (
 def main() -> None:
     """CLI entry point for seed generator."""
     logging.basicConfig(...)
-    
+
     try:
         # Phase 1: synchronous seed load
         counts = load_golden_dataset()
         logger.info("Seed data loaded successfully")
-        
+
         # Phase 2: async ingestion
         failed_versions = asyncio.run(_ingest_seed_documents())
-        
+
         if failed_versions:
             logger.error(f"Failed to ingest {len(failed_versions)} versions: {failed_versions}")
             raise SystemExit(1)
-        
+
         logger.info("All seed documents ingested successfully")
-    
+
     except RuntimeError as e:
         logger.error(f"Error: {e}")
         raise SystemExit(1) from None
@@ -180,14 +180,14 @@ async def _ingest_seed_documents() -> list[UUID]:
     from app.services.ingestion import IngestionOrchestrator
     from app.models.document import DocumentVersion
     from sqlalchemy import select
-    
+
     provider = create_embedding_provider()  # explicit provider selection
     failed_versions: list[UUID] = []
-    
+
     async with async_session_factory() as session:
         result = await session.execute(select(DocumentVersion))
         versions = result.scalars().all()
-    
+
     for version in versions:
         try:
             async with async_session_factory() as version_session:
@@ -198,7 +198,7 @@ async def _ingest_seed_documents() -> list[UUID]:
         except Exception as exc:
             logger.error(f"Failed to ingest version {version.id}: {exc}")
             failed_versions.append(version.id)
-    
+
     return failed_versions
 ```
 
@@ -231,30 +231,30 @@ def create_embedding_provider(
         FakeEmbeddingProvider,
         OpenAIEmbeddingProvider,
     )
-    
+
     name = provider_name or settings.embedding_provider
-    
+
     if name == "fake":
         if settings.environment in ("production", "staging"):
             raise EmbeddingProviderConfigurationError(
                 "Fake embedding provider is not allowed in production/staging"
             )
         return FakeEmbeddingProvider(dimension=settings.embedding_dimensions)
-    
+
     if name == "openai":
         api_key = settings.openai_api_key
         base_url = settings.openai_api_base
-        
+
         # Official endpoint requires API key
         if base_url == "https://api.openai.com/v1" and not api_key:
             raise EmbeddingProviderConfigurationError(
                 "API key required for official OpenAI endpoint"
             )
-        
+
         # Custom endpoint may use sentinel if API key is empty
         if not api_key:
             api_key = "sentinel-not-a-real-key"
-        
+
         return OpenAIEmbeddingProvider(
             api_key=api_key,
             model=settings.openai_embedding_model,
@@ -262,7 +262,7 @@ def create_embedding_provider(
             base_url=base_url if base_url != "https://api.openai.com/v1" else None,
             timeout_seconds=settings.embedding_timeout_seconds,
         )
-    
+
     raise EmbeddingProviderConfigurationError(f"Unknown embedding provider: {name}")
 ```
 
@@ -281,7 +281,8 @@ def create_embedding_provider(
 async def ingest_document_version(
     document_id: UUID,
     version_id: UUID,
-    current_user: User = Depends(require_ai_administrator),
+    current_user: User = Depends(require_role({"AI_ADMINISTRATOR"})),
+
 ):
     # Query with BOTH conditions
     async with async_session_factory() as session:
@@ -292,19 +293,19 @@ async def ingest_document_version(
             )
         )
         doc_version = result.scalar_one_or_none()
-        
+
         # Identical 404 for missing OR mismatched
         if doc_version is None:
             raise HTTPException(status_code=404, detail="Document version not found")
-    
+
     correlation_id = uuid4()
-    
+
     enqueued = await enqueue_ingestion_job(
         version_id=doc_version.id,
         document_id=doc_version.document_id,
         correlation_id=correlation_id,
     )
-    
+
     return JSONResponse(
         status_code=202,
         content={
@@ -339,13 +340,13 @@ async def enqueue_ingestion_job(
     """Enqueue document ingestion job to ARQ."""
     from arq.connections import create_pool
     from app.config import settings
-    from app.worker import _build_redis_settings
-    
-    pool = await create_pool(_build_redis_settings())
-    
+    from app.worker import _build_redis_settings  # proposed helper (not yet implemented; Phase 0)
+
+    pool = await create_pool(_build_redis_settings())  # proposed helper to be implemented in Phase 0
+
     try:
         arq_job_id = f"document-ingestion:{version_id}"
-        
+
         enqueued_job = await pool.enqueue_job(
             "run_document_ingestion",
             str(version_id),
@@ -353,11 +354,11 @@ async def enqueue_ingestion_job(
             _job_id=arq_job_id,
             _queue_name=settings.arq_queue_name,
         )
-        
+
         if enqueued_job is None:
             # Duplicate active job
             raise HTTPException(status_code=409, detail="Ingestion job already active")
-        
+
         return {
             "job_id": arq_job_id,
             "correlation_id": correlation_id,
@@ -433,11 +434,11 @@ async def enqueue_ingestion_job(
 
 ### 5.1 Endpoint: Ingest Document Version
 
-**HTTP**: `POST /api/v1/documents/{document_id}/versions/{version_id}/ingest`  
-**Router location**: `backend/app/api/ingestion.py` (new file)  
+**HTTP**: `POST /api/v1/documents/{document_id}/versions/{version_id}/ingest`
+**Router location**: `backend/app/api/ingestion.py` (new file)
 **Router prefix**: Will be mounted at `/api/v1` in `backend/app/main.py`
 
-**Authentication**: Bearer token with `AI_ADMINISTRATOR` role (via `require_ai_administrator` dependency)
+**Authentication**: Bearer token with `AI_ADMINISTRATOR` role (via `require_role({"AI_ADMINISTRATOR"})` dependency)
 
 **Path parameters**:
 - `document_id`: UUID
@@ -491,20 +492,20 @@ async def run_document_ingestion(
     from app.database import async_session_factory
     from app.services.embedding_provider_factory import create_embedding_provider
     from app.services.ingestion import IngestionOrchestrator
-    
+
     # Retry policy: defer 2s after first failure, 4s after second failure
     job_try = ctx["job_try"]
     if job_try < 3:
         defer_seconds = [2, 4][job_try - 1]
         ctx["retry_defer"] = defer_seconds
-    
+
     version_uuid = UUID(version_id)
     document_uuid = UUID(document_id)
-    
+
     async with async_session_factory() as session:
         provider = create_embedding_provider()
         orchestrator = IngestionOrchestrator(session, provider)
-        
+
         try:
             result = await orchestrator.ingest_document_version(version_uuid)
             await session.commit()
@@ -564,6 +565,8 @@ async def run_document_ingestion(
 
 ### 6.5 Error handling
 
+For database exception classification, section 6.6 is the authoritative reference. Only DB failures explicitly classified as transient in section 6.6 are retried. `IntegrityError` is permanent. General `ValueError` is permanent. A catch-all `Exception` must not automatically trigger a retry.
+
 ```python
 try:
     result = await orchestrator.ingest_document_version(version_id)
@@ -612,13 +615,13 @@ def create_embedding_provider(
     provider_name: str | None = None,
 ) -> EmbeddingProvider:
     """Create an embedding provider based on configuration or explicit name.
-    
+
     Args:
         provider_name: Override settings.embedding_provider
-        
+
     Returns:
         Configured EmbeddingProvider
-        
+
     Raises:
         EmbeddingProviderConfigurationError: unknown provider, missing API key,
         fake provider in production/staging
@@ -674,30 +677,30 @@ async def embed_text(self, texts: list[str]) -> list[list[float]]:
             raise PermanentEmbeddingProviderError(...) from exc
     except Exception as exc:
         raise PermanentEmbeddingProviderError(...) from exc
-    
+
     # Validate response
     if not response.data:
         raise PermanentEmbeddingProviderError("no data returned")
-    
+
     if len(response.data) != len(texts):
         raise PermanentEmbeddingProviderError(
             f"count mismatch: expected {len(texts)}, got {len(response.data)}"
         )
-    
+
     for item in response.data:
         embedding = item.embedding
         if not isinstance(embedding, list):
             raise PermanentEmbeddingProviderError("malformed embedding")
-        
+
         if len(embedding) != self._expected_dimension:
             raise PermanentEmbeddingProviderError(
                 f"dimension mismatch: expected {self._expected_dimension}, got {len(embedding)}"
             )
-        
+
         for v in embedding:
             if not isinstance(v, (int, float)) or not math.isfinite(v):
                 raise PermanentEmbeddingProviderError("non-finite value in embedding")
-    
+
     return [[float(v) for v in item.embedding] for item in response.data]
 ```
 
@@ -741,7 +744,7 @@ async def _generate_embeddings(
     chunks: list[ChunkData],
 ) -> list[list[float]]:
     """Generate embeddings for a list of chunks.
-    
+
     Raises:
         TransientEmbeddingProviderError: retryable provider error
         PermanentEmbeddingProviderError: non-retryable provider error
@@ -809,7 +812,7 @@ def main() -> None:
 
 async def _ingest_seed_documents() -> list[UUID]:
     """Ingest all DocumentVersions using configured provider.
-    
+
     Returns:
         List of version IDs that failed ingestion
     """
@@ -818,21 +821,21 @@ async def _ingest_seed_documents() -> list[UUID]:
     from app.services.ingestion import IngestionOrchestrator
     from app.models.document import DocumentVersion
     from sqlalchemy import select
-    
+
     provider = create_embedding_provider()  # explicit provider selection
     failed_versions: list[UUID] = []
-    
+
     # Query all DocumentVersions
     async with async_session_factory() as session:
         result = await session.execute(select(DocumentVersion))
         versions = result.scalars().all()
-    
+
     if not versions:
         logger.info("No DocumentVersions found, skipping ingestion")
         return []
-    
+
     logger.info(f"Found {len(versions)} DocumentVersions to ingest")
-    
+
     # Ingest each version in its own transaction
     for version in versions:
         try:
@@ -851,7 +854,7 @@ async def _ingest_seed_documents() -> list[UUID]:
                 pass  # rollback best-effort
             logger.error(f"Failed to ingest version {version.id}: {exc}")
             failed_versions.append(version.id)
-    
+
     return failed_versions
 ```
 
@@ -885,7 +888,7 @@ async def run_document_ingestion(ctx, version_id, document_id):
     async with async_session_factory() as session:
         provider = create_embedding_provider()
         orchestrator = IngestionOrchestrator(session, provider)
-        
+
         try:
             result = await orchestrator.ingest_document_version(version_id)
             await session.commit()
@@ -916,12 +919,12 @@ async def _store_knowledge_chunks(self, version_id, chunks, embeddings):
     )
     for existing in result.scalars().all():
         await self._session.delete(existing)
-    
+
     # Insert new chunks (within transaction)
     for chunk, embedding in zip(chunks, embeddings, strict=True):
         kc = KnowledgeChunk(...)
         self._session.add(kc)
-    
+
     # Flush (not commit)
     await self._session.flush()
 ```
@@ -965,13 +968,13 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.1 Phase 1: WP-4.3B0 — Provider Contract Repair
 
-**TASK_ID**: WP43B0-PROVIDER-REPAIR-01  
-**ROLE**: IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B0-PROVIDER-REPAIR-01
+**ROLE**: IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Add typed error hierarchy to `backend/app/services/embedding_provider.py`
 - Add NaN/Inf validation with `math.isfinite()` at line 168
-- Set `max_retries=0` on `AsyncOpenAI` constructor at line 124
+- Set `max_retries=0` on `AsyncOpenAI` constructor in `OpenAIEmbeddingProvider.__init__`
 - Classify errors into transient/permanent/configuration
 - Preserve exception chaining with `raise ... from`
 - Modify `backend/app/services/ingestion.py` to preserve typed errors (remove RuntimeError wrapping at line 199-201)
@@ -1031,9 +1034,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.2 Phase 2: Provider Factory
 
-**TASK_ID**: WP43B-FACTORY-01  
-**ROLE**: IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B-FACTORY-01
+**ROLE**: IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Create `backend/app/services/embedding_provider_factory.py`
 - Implement provider selection logic
@@ -1087,9 +1090,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.3 Phase 3: ARQ Worker Function
 
-**TASK_ID**: WP43B-WORKER-01  
-**ROLE**: IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B-WORKER-01
+**ROLE**: IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Create `backend/app/jobs/ingestion.py`
 - Implement retry policy (max_tries=3, defer 2s/4s)
@@ -1151,9 +1154,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.4 Phase 4: API Endpoint
 
-**TASK_ID**: WP43B-ENDPOINT-01  
-**ROLE**: IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B-ENDPOINT-01
+**ROLE**: IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Create `backend/app/api/ingestion.py`
 - Implement AI_ADMINISTRATOR authentication
@@ -1214,9 +1217,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.5 Phase 5: Seed Async Bridge
 
-**TASK_ID**: WP43B-SEED-BRIDGE-01  
-**ROLE**: IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B-SEED-BRIDGE-01
+**ROLE**: IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Add `_ingest_seed_documents()` async function to `backend/app/seed/generator/loader.py`
 - Modify `main()` to call `asyncio.run(_ingest_seed_documents())` after sync commit
@@ -1274,9 +1277,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.6 Phase 6: E2E Tests
 
-**TASK_ID**: WP43B-E2E-01  
-**ROLE**: TEST_IMPLEMENTER  
-**MODE**: PATCH-ALLOWED  
+**TASK_ID**: WP43B-E2E-01
+**ROLE**: TEST_IMPLEMENTER
+**MODE**: PATCH-ALLOWED
 **Scope**:
 - Create E2E test for full ingestion flow
 - Use fake provider (no network)
@@ -1324,9 +1327,9 @@ If commit fails, all changes (delete + insert) are rolled back together.
 
 ### 11.7 Phase 7: Full Verification
 
-**TASK_ID**: WP43B-VERIFY-01  
-**ROLE**: REVIEWER  
-**MODE**: READ-ONLY  
+**TASK_ID**: WP43B-VERIFY-01
+**ROLE**: REVIEWER
+**MODE**: READ-ONLY
 **Scope**:
 - Run full test suite
 - Run full lint suite
