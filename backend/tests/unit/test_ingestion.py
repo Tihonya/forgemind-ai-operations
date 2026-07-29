@@ -460,6 +460,112 @@ class TestEmbeddingGeneration:
         assert exc_info.value.__cause__ is original
 
 # ---------------------------------------------------------------------------
+# Typed error propagation through orchestrator
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+class TestTypedErrorPropagation:
+    """Verify that typed EmbeddingProviderError subclasses propagate
+    unchanged through IngestionOrchestrator._generate_embeddings."""
+
+    async def test_transient_error_propagates_unchanged(
+        self,
+        mock_session: MagicMock,
+        doc_version_id: UUID,
+        mock_embedding_provider: AsyncMock,
+    ) -> None:
+        """TransientEmbeddingProviderError propagates without wrapping."""
+        from app.services.embedding_provider import (
+            TransientEmbeddingProviderError,
+        )
+
+        original = TransientEmbeddingProviderError("network failure")
+        mock_embedding_provider.embed_text = AsyncMock(side_effect=original)
+
+        orchestrator = IngestionOrchestrator(
+            mock_session, mock_embedding_provider
+        )
+
+        dv = MagicMock(spec=DocumentVersion)
+        dv.id = doc_version_id
+        dv.content = "A" * 2000
+        dv.document = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = dv
+        mock_session.execute.return_value = mock_result
+
+        with pytest.raises(TransientEmbeddingProviderError) as exc_info:
+            await orchestrator.ingest_document_version(doc_version_id)
+
+        # Same instance — no wrapping
+        assert exc_info.value is original
+
+    async def test_permanent_error_propagates_unchanged(
+        self,
+        mock_session: MagicMock,
+        doc_version_id: UUID,
+        mock_embedding_provider: AsyncMock,
+    ) -> None:
+        """PermanentEmbeddingProviderError propagates without wrapping."""
+        from app.services.embedding_provider import (
+            PermanentEmbeddingProviderError,
+        )
+
+        original = PermanentEmbeddingProviderError("invalid model")
+        mock_embedding_provider.embed_text = AsyncMock(side_effect=original)
+
+        orchestrator = IngestionOrchestrator(
+            mock_session, mock_embedding_provider
+        )
+
+        dv = MagicMock(spec=DocumentVersion)
+        dv.id = doc_version_id
+        dv.content = "A" * 2000
+        dv.document = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = dv
+        mock_session.execute.return_value = mock_result
+
+        with pytest.raises(PermanentEmbeddingProviderError) as exc_info:
+            await orchestrator.ingest_document_version(doc_version_id)
+
+        assert exc_info.value is original
+
+    async def test_configuration_error_propagates_unchanged(
+        self,
+        mock_session: MagicMock,
+        doc_version_id: UUID,
+        mock_embedding_provider: AsyncMock,
+    ) -> None:
+        """EmbeddingProviderConfigurationError propagates without wrapping."""
+        from app.services.embedding_provider import (
+            EmbeddingProviderConfigurationError,
+        )
+
+        original = EmbeddingProviderConfigurationError("missing key")
+        mock_embedding_provider.embed_text = AsyncMock(side_effect=original)
+
+        orchestrator = IngestionOrchestrator(
+            mock_session, mock_embedding_provider
+        )
+
+        dv = MagicMock(spec=DocumentVersion)
+        dv.id = doc_version_id
+        dv.content = "A" * 2000
+        dv.document = MagicMock()
+
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = dv
+        mock_session.execute.return_value = mock_result
+
+        with pytest.raises(EmbeddingProviderConfigurationError) as exc_info:
+            await orchestrator.ingest_document_version(doc_version_id)
+
+        assert exc_info.value is original
+
+# ---------------------------------------------------------------------------
 # Knowledge chunk storage and idempotent replacement
 # ---------------------------------------------------------------------------
 

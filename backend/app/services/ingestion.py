@@ -18,7 +18,10 @@ from sqlalchemy.orm import selectinload
 from app.models.document import DocumentVersion
 from app.models.knowledge import KnowledgeChunk
 from app.services.chunking import ChunkData, chunk_text
-from app.services.embedding_provider import EmbeddingProvider
+from app.services.embedding_provider import (
+    EmbeddingProvider,
+    EmbeddingProviderError,
+)
 
 
 @dataclass(frozen=True)
@@ -81,7 +84,8 @@ class IngestionOrchestrator:
 
         Raises:
             ValueError: If the document version is not found or has no content.
-            RuntimeError: If embedding generation fails.
+            EmbeddingProviderError: If embedding generation fails.
+                Typed provider errors propagate unchanged.
         """
         # Step 1 — load document version
         doc_version = await self._load_document_version(document_version_id)
@@ -189,7 +193,8 @@ class IngestionOrchestrator:
             A list of embedding vectors, one per chunk.
 
         Raises:
-            RuntimeError: If the embedding provider fails.
+            EmbeddingProviderError: If the embedding provider fails.
+                Typed provider errors propagate unchanged.
         """
         if not chunks:
             return []
@@ -197,6 +202,9 @@ class IngestionOrchestrator:
         texts = [chunk.chunk_text for chunk in chunks]
         try:
             return await self._embedding_provider.embed_text(texts)
+        except EmbeddingProviderError:
+            # Typed provider errors propagate unchanged
+            raise
         except Exception as exc:
             raise RuntimeError(f"Embedding generation failed: {exc}") from exc
 
