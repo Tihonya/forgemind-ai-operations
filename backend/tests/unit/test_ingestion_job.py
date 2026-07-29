@@ -71,13 +71,25 @@ def _make_ingestion_result(version_id: str | None = None) -> IngestionResult:
 class TestWorkerRegistration:
     def test_ingestion_job_registered(self) -> None:
         """run_document_ingestion must be in WorkerSettings.functions."""
-        assert run_document_ingestion in WorkerSettings.functions
+        # The function may be wrapped by func(), so check the coroutine attribute
+        job_names = []
+        for fn in WorkerSettings.functions:
+            if hasattr(fn, 'coroutine'):
+                job_names.append(fn.coroutine.__name__)
+            else:
+                job_names.append(fn.__name__)
+        assert "run_document_ingestion" in job_names
 
     def test_both_jobs_registered(self) -> None:
         """Both diagnostic and ingestion jobs must be registered."""
-        from app.jobs.diagnostics import run_diagnostic_job
-        assert run_diagnostic_job in WorkerSettings.functions
-        assert run_document_ingestion in WorkerSettings.functions
+        job_names = []
+        for fn in WorkerSettings.functions:
+            if hasattr(fn, 'coroutine'):
+                job_names.append(fn.coroutine.__name__)
+            else:
+                job_names.append(fn.__name__)
+        assert "run_diagnostic_job" in job_names
+        assert "run_document_ingestion" in job_names
 
     def test_function_count(self) -> None:
         """WorkerSettings.functions should have exactly 2 jobs."""
