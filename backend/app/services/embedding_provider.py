@@ -11,8 +11,31 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any
 
-from openai import AsyncOpenAI
+from openai import APIStatusError, AsyncOpenAI
 
+# ---------------------------------------------------------------------------
+# Exception hierarchy
+# ---------------------------------------------------------------------------
+
+class EmbeddingProviderError(Exception):
+    """Base exception for all embedding provider errors."""
+
+
+class TransientEmbeddingProviderError(EmbeddingProviderError):
+    """Transient error — the operation may succeed on retry."""
+
+
+class PermanentEmbeddingProviderError(EmbeddingProviderError):
+    """Permanent error — retrying the same request will not help."""
+
+
+class EmbeddingProviderConfigurationError(EmbeddingProviderError):
+    """Configuration error — provider was misconfigured at construction."""
+
+
+# ---------------------------------------------------------------------------
+# Provider interface
+# ---------------------------------------------------------------------------
 
 class EmbeddingProvider(ABC):
     """Abstract base class for embedding providers."""
@@ -30,7 +53,8 @@ class EmbeddingProvider(ABC):
 
         Raises:
             ValueError: If the input list is empty.
-            RuntimeError: If the provider fails to generate an embedding.
+            EmbeddingProviderError: If the provider fails to generate an
+                embedding.
         """
         ...
 
@@ -39,6 +63,10 @@ class EmbeddingProvider(ABC):
         """Return the vector dimension produced by this provider."""
         ...
 
+
+# ---------------------------------------------------------------------------
+# Fake provider
+# ---------------------------------------------------------------------------
 
 class FakeEmbeddingProvider(EmbeddingProvider):
     """Deterministic fake embedding provider for testing.
@@ -88,13 +116,34 @@ class FakeEmbeddingProvider(EmbeddingProvider):
         return values
 
 
+# ---------------------------------------------------------------------------
+# OpenAI provider
+# ---------------------------------------------------------------------------
+
 class OpenAIEmbeddingProvider(EmbeddingProvider):
     """OpenAI-compatible embedding provider.
 
     Wraps the OpenAI async client and validates that every returned vector
     has the expected dimension. Provider errors are re-raised with the
     original exception as the cause (raise from).
+
+    SDK retries are disabled (max_retries=0) so that transient errors
+    surface as TransientEmbeddingProviderError for the caller to handle.
     """
+
+    _TRANSIENT_TYPES: tuple[str, ...] = (
+        "APIConnectionError",
+        "APITimeoutError",
+        "RateLimitError",
+        "InternalServerError",
+    )
+
+    _PERMANENT_TYPES: tuple[str, ...] = (
+        "AuthenticationError",
+        "PermissionDeniedError",
+        "BadRequestError",
+        "UnprocessableEntityError",
+    )
 
     def __init__(
         self,
@@ -106,9 +155,13 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         timeout_seconds: int = 30,
     ) -> None:
         if not api_key:
-            raise ValueError("api_key must not be empty")
+            raise EmbeddingProviderConfigurationError(
+                "api_key must not be empty"
+            )
         if dimension <= 0:
-            raise ValueError(f"dimension must be positive, got {dimension}")
+            raise EmbeddingProviderConfigurationError(
+                f"dimension must be positive, got {dimension}"
+            )
 
         self._model = model
         self._expected_dimension = dimension
@@ -117,6 +170,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         client_kwargs: dict[str, Any] = {
             "api_key": api_key,
             "timeout": float(timeout_seconds),
+            "max_retries": 0,
         }
         if base_url is not None:
             client_kwargs["base_url"] = base_url
@@ -137,17 +191,36 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 dimensions=self._expected_dimension,
             )
         except Exception as exc:
-            raise RuntimeError(
-                f"OpenAI embedding API failed for model={self._model!r}"
+            exc_name = type(exc).__name__
+            if exc_name in self._TRANSIENT_TYPES:
+                raise TransientEmbeddingProviderError(
+                    f"Transient OpenAI error ({exc_name}): {exc}"
+                ) from exc
+            if exc_name in self._PERMANENT_TYPES:
+                raise PermanentEmbeddingProviderError(
+                    f"Permanent OpenAI error ({exc_name}): {exc}"
+                ) from exc
+            # Fallback: APIStatusError with 5xx -> transient, 4xx -> permanent
+            if isinstance(exc, APIStatusError):
+                if exc.status_code >= 500:
+                    raise TransientEmbeddingProviderError(
+                        f"Transient OpenAI error (5xx {exc.status_code}): {exc}"
+                    ) from exc
+                raise PermanentEmbeddingProviderError(
+                    f"Permanent OpenAI error (4xx {exc.status_code}): {exc}"
+                ) from exc
+            # Unrecognised SDK error — permanent by default
+            raise PermanentEmbeddingProviderError(
+                f"OpenAI embedding API failed for model={self._model!r}: {exc}"
             ) from exc
 
         if not response.data:
-            raise RuntimeError(
+            raise PermanentEmbeddingProviderError(
                 f"OpenAI embedding API returned no data for {len(texts)} input(s)"
             )
 
         if len(response.data) != len(texts):
-            raise RuntimeError(
+            raise PermanentEmbeddingProviderError(
                 f"OpenAI embedding API returned {len(response.data)} embeddings "
                 f"for {len(texts)} inputs"
             )
@@ -156,19 +229,23 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
         for item in response.data:
             embedding = item.embedding
             if not isinstance(embedding, list):
-                raise RuntimeError(
+                raise PermanentEmbeddingProviderError(
                     f"Expected list embedding, got {type(embedding).__name__}"
                 )
             if len(embedding) != self._expected_dimension:
-                raise RuntimeError(
+                raise PermanentEmbeddingProviderError(
                     f"Embedding dimension mismatch: expected "
                     f"{self._expected_dimension}, got {len(embedding)}"
                 )
-            # Validate all values are finite
+            # Validate all values are numeric and finite
             for v in embedding:
                 if not isinstance(v, (int, float)):
-                    raise RuntimeError(
+                    raise PermanentEmbeddingProviderError(
                         f"Non-numeric value in embedding: {type(v).__name__}"
+                    )
+                if not math.isfinite(v):
+                    raise PermanentEmbeddingProviderError(
+                        f"Non-finite value in embedding: {v}"
                     )
             results.append([float(v) for v in embedding])
 
