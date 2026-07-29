@@ -3,6 +3,7 @@
 from typing import Any
 from urllib.parse import urlparse
 
+from arq import func
 from arq.connections import RedisSettings
 
 from app.config import settings
@@ -51,7 +52,10 @@ _redis_host, _redis_port, _redis_db, _redis_password = _parse_redis_url(settings
 class WorkerSettings:
     """ARQ worker settings for ForgeMind background task processing."""
 
-    functions: list[Any] = [run_diagnostic_job, run_document_ingestion]
+    functions: list[Any] = [
+        run_diagnostic_job,
+        func(run_document_ingestion, keep_result=300, max_tries=3),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     queue_name = settings.arq_queue_name
