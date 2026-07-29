@@ -5,19 +5,24 @@ Transactional loader for Phase 2 Golden Dataset. Implements:
 - Transaction boundaries with rollback
 - Idempotent loading (safe to run multiple times)
 - Preservation of Phase 1 diagnostic_jobs
+- Async ingestion bridge for document versions (WP-4.3B4)
 
 Dataset version: GOLDEN_DATASET_V1.0
 """
 
+import asyncio
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.models.component import BomItem, Component, ComponentAlternative
+from app.models.document import DocumentVersion
 from app.models.product import Product, ProductVersion
 from app.models.production import (
     ProductionOrder,
@@ -453,8 +458,135 @@ def load_golden_dataset() -> dict[str, int]:
         session.close()
 
 
+@dataclass
+class IngestionResult:
+    """Result summary of async ingestion phase."""
+
+    attempted_count: int
+    succeeded_count: int
+    failed_count: int
+    failed_version_ids: list[UUID]
+
+
+async def _ingest_seed_documents(version_ids: list[UUID]) -> IngestionResult:
+    """Ingest all seed document versions asynchronously.
+
+    This function is called after synchronous seed commit completes.
+    Each version gets its own transaction (session + orchestrator).
+    Failures are aggregated and reported without exposing sensitive details.
+
+    Args:
+        version_ids: List of DocumentVersion UUIDs to ingest
+
+    Returns:
+        IngestionResult with counts and failed version IDs
+
+    Raises:
+        RuntimeError: If critical setup fails (provider creation, etc.)
+    """
+    from app.database import async_session_factory
+    from app.services.embedding_provider_factory import create_embedding_provider
+    from app.services.ingestion import IngestionOrchestrator
+
+    logger.info("=" * 70)
+    logger.info("Phase 2: Async ingestion of seed documents")
+    logger.info(f"Versions to ingest: {len(version_ids)}")
+    logger.info("=" * 70)
+
+    # Create embedding provider once (reused across all versions)
+    try:
+        provider = create_embedding_provider()
+    except Exception as e:
+        logger.error(f"Failed to create embedding provider: {type(e).__name__}")
+        raise RuntimeError("Embedding provider initialization failed") from e
+
+    failed_versions: list[UUID] = []
+    succeeded_count = 0
+
+    for version_id in version_ids:
+        session = None
+        try:
+            # Fresh session for this version
+            session = async_session_factory()
+
+            # Fresh orchestrator with this session
+            orchestrator = IngestionOrchestrator(session, provider)
+
+            # Ingest this version
+            await orchestrator.ingest_document_version(version_id)
+
+            # Commit this version's transaction
+            await session.commit()
+            succeeded_count += 1
+
+            logger.info(f"Successfully ingested version: {version_id}")
+
+        except Exception as e:
+            # Rollback this version's transaction
+            if session:
+                try:
+                    await session.rollback()
+                except Exception as rollback_error:
+                    logger.warning(
+                        f"Rollback failed for version {version_id}: {type(rollback_error).__name__}"
+                    )
+
+            failed_versions.append(version_id)
+            # Log only the exception type, not the full message (may contain sensitive data)
+            logger.error(
+                f"Failed to ingest version {version_id}: {type(e).__name__}"
+            )
+
+        finally:
+            # Close session
+            if session:
+                try:
+                    await session.close()
+                except Exception as close_error:
+                    msg = f"Session close failed for version {version_id}: "
+                    msg += f"{type(close_error).__name__}"
+                    logger.warning(msg)
+
+    # Build result summary
+    result = IngestionResult(
+        attempted_count=len(version_ids),
+        succeeded_count=succeeded_count,
+        failed_count=len(failed_versions),
+        failed_version_ids=failed_versions,
+    )
+
+    logger.info("=" * 70)
+    logger.info("Ingestion phase complete")
+    logger.info(f"Attempted: {result.attempted_count}")
+    logger.info(f"Succeeded: {result.succeeded_count}")
+    logger.info(f"Failed: {result.failed_count}")
+    if failed_versions:
+        logger.warning(f"Failed version IDs: {[str(vid) for vid in failed_versions]}")
+    logger.info("=" * 70)
+
+    return result
+
+
+def _collect_version_ids_sync() -> list[UUID]:
+    """Collect all DocumentVersion IDs synchronously after seed commit.
+
+    Uses the existing synchronous engine to avoid a second asyncio.run call.
+
+    Returns:
+        List of UUIDs for all document versions in the database
+    """
+    with _sync_engine.connect() as conn:
+        result = conn.execute(select(DocumentVersion.id))
+        return list(result.scalars().all())
+
+
 def main() -> None:
-    """CLI entry point for seed generator."""
+    """CLI entry point for seed generator.
+
+    Two-phase execution:
+    1. Synchronous seed data creation (existing behavior)
+    2. Asynchronous document ingestion (new bridge)
+    """
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -462,16 +594,37 @@ def main() -> None:
     )
 
     try:
+        # Phase 1: Synchronous seed data creation
         counts = load_golden_dataset()
 
         logger.info("Golden Dataset loaded successfully")
         logger.info("Inserted records:")
         for k, v in counts.items():
-            logger.info("  %s: %s", k, v)
+            logger.info(f"  {k}: {v}")
+
+        # Collect version IDs after sync commit
+        version_ids = _collect_version_ids_sync()
+        logger.info(f"Collected {len(version_ids)} document versions for ingestion")
+
+        # Phase 2: Asynchronous ingestion
+        if version_ids:
+            result = asyncio.run(_ingest_seed_documents(version_ids))
+
+            # Exit with non-zero status if any versions failed
+            if result.failed_count > 0:
+                logger.error(
+                    f"Ingestion completed with {result.failed_count} failure(s)"
+                )
+                raise SystemExit(1)
+
+            logger.info("All seed documents ingested successfully")
 
     except RuntimeError as e:
         logger.error(f"Error: {e}")
         raise SystemExit(1) from None
+    except SystemExit:
+        # Re-raise SystemExit without wrapping
+        raise
     except Exception as e:
         logger.error(f"Database error: {e}")
         raise SystemExit(1) from None
