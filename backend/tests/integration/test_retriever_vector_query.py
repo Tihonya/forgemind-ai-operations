@@ -2,11 +2,14 @@
 
 Tests vector similarity search using real PostgreSQL/pgvector with
 deterministic fake embeddings via IngestionOrchestrator.
+
+Updated for WP-4.4B: all tests create matching DocumentPermission rows
+and pass allowed_role_ids to the retrieval service.
 """
 
 import re
 from collections.abc import AsyncIterator
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import text
@@ -18,7 +21,8 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.ai.rag.retriever import RetrievalService
-from app.models.document import Document, DocumentVersion
+from app.models.document import Document, DocumentPermission, DocumentVersion
+from app.models.user import Role
 from app.services.embedding_provider import FakeEmbeddingProvider
 from app.services.ingestion import IngestionOrchestrator
 
@@ -43,14 +47,14 @@ def _get_test_database_url() -> str:
     with open(env_file) as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith('#') or '=' not in line:
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            key, _, value = line.partition('=')
+            key, _, value = line.partition("=")
             env_vars[key.strip()] = value.strip()
 
     # Interpolate ${VAR} placeholders
     def interpolate(value: str) -> str:
-        pattern = re.compile(r'\$\{(\w+)\}')
+        pattern = re.compile(r"\$\{(\w+)\}")
 
         def replacer(match: re.Match[str]) -> str:
             var_name: str = match.group(1)
@@ -62,11 +66,11 @@ def _get_test_database_url() -> str:
             value = pattern.sub(replacer, value)
         return value
 
-    user = interpolate(env_vars.get('POSTGRES_USER', ''))
-    password = interpolate(env_vars.get('POSTGRES_PASSWORD', ''))
-    host = 'localhost'  # Use localhost for tests
-    port = interpolate(env_vars.get('POSTGRES_PORT', '5432'))
-    db = interpolate(env_vars.get('POSTGRES_DB', ''))
+    user = interpolate(env_vars.get("POSTGRES_USER", ""))
+    password = interpolate(env_vars.get("POSTGRES_PASSWORD", ""))
+    host = "localhost"  # Use localhost for tests
+    port = interpolate(env_vars.get("POSTGRES_PORT", "5432"))
+    db = interpolate(env_vars.get("POSTGRES_DB", ""))
 
     # URL-encode password for special characters
     password_encoded = urllib.parse.quote_plus(password)
@@ -132,6 +136,82 @@ CONTENT_PATTERN_C = "Pattern C. " * 200
 
 
 # ---------------------------------------------------------------------------
+# Helper to create role + permission for test documents
+# ---------------------------------------------------------------------------
+
+
+async def _create_role_and_permission(
+    session: AsyncSession,
+    doc_id: UUID,
+    role_code: str = "WP44A_TEST_ROLE",
+) -> tuple[UUID, str]:
+    """Create a Role and DocumentPermission for a test document.
+
+    Returns (role_id, role_code_used).
+    """
+    role_id = uuid4()
+    role = Role(id=role_id, code=role_code, name=f"Test Role {role_code}")
+    session.add(role)
+    await session.flush()
+
+    perm = DocumentPermission(
+        id=uuid4(),
+        document_id=doc_id,
+        role_id=role_id,
+    )
+    session.add(perm)
+    await session.flush()
+
+    return role_id, role_code
+
+
+async def _cleanup_test_data(
+    session: AsyncSession,
+    version_id: UUID,
+    doc_id: UUID,
+    role_id: UUID,
+    role_code: str,
+) -> None:
+    """Clean up all test-owned rows."""
+    await session.rollback()
+
+    await session.execute(
+        text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
+        {"vid": version_id},
+    )
+    await session.execute(
+        text("DELETE FROM document_permissions WHERE document_id = :did"),
+        {"did": doc_id},
+    )
+    await session.execute(
+        text("DELETE FROM document_versions WHERE id = :vid"),
+        {"vid": version_id},
+    )
+    await session.execute(
+        text("DELETE FROM documents WHERE id = :did"),
+        {"did": doc_id},
+    )
+    await session.execute(
+        text("DELETE FROM user_roles WHERE role_id = :rid"),
+        {"rid": role_id},
+    )
+    await session.execute(
+        text("DELETE FROM roles WHERE id = :rid"),
+        {"rid": role_id},
+    )
+    await session.commit()
+
+    # Verify cleanup
+    row = await session.execute(
+        text(
+            "SELECT COUNT(*) FROM knowledge_chunks WHERE document_version_id = :vid"
+        ),
+        {"vid": version_id},
+    )
+    assert row.scalar() == 0, "Chunks not cleaned up"
+
+
+# ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
 
@@ -160,6 +240,10 @@ async def test_retrieval_nearest_chunk_first(async_session: AsyncSession) -> Non
     async_session.add(version)
     await async_session.flush()
 
+    role_id, role_code = await _create_role_and_permission(
+        async_session, doc_id, role_code="WP44A_NEAREST_ROLE"
+    )
+
     try:
         # Ingest with FakeEmbeddingProvider to create chunks with deterministic embeddings
         provider = FakeEmbeddingProvider(dimension=1536)
@@ -176,7 +260,9 @@ async def test_retrieval_nearest_chunk_first(async_session: AsyncSession) -> Non
         query_embedding = query_embeddings[0]
 
         service = RetrievalService()
-        retrieval_results = await service.retrieve(async_session, query_embedding, top_k=3)
+        retrieval_results = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=3
+        )
 
         # Verify we got results
         assert len(retrieval_results) > 0
@@ -186,30 +272,7 @@ async def test_retrieval_nearest_chunk_first(async_session: AsyncSession) -> Non
             assert retrieval_results[0].similarity >= retrieval_results[1].similarity
 
     finally:
-        # Rollback any failed transaction before cleanup
-        await async_session.rollback()
-
-        # Cleanup
-        await async_session.execute(
-            text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM document_versions WHERE id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM documents WHERE id = :did"),
-            {"did": doc_id},
-        )
-        await async_session.commit()
-
-        # Verify cleanup
-        row = await async_session.execute(
-            text("SELECT COUNT(*) FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        assert row.scalar() == 0, "Chunks not cleaned up"
+        await _cleanup_test_data(async_session, version_id, doc_id, role_id, role_code)
 
 
 async def test_retrieval_similarity_ordering(async_session: AsyncSession) -> None:
@@ -221,8 +284,8 @@ async def test_retrieval_similarity_ordering(async_session: AsyncSession) -> Non
     doc_id = uuid4()
     version_id = uuid4()
 
-    # Create document with multiple content patterns
-    combined_content = CONTENT_PATTERN_A + "\n" + CONTENT_PATTERN_B + "\n" + CONTENT_PATTERN_C
+    # Create enough content to produce multiple chunks
+    combined_content = (CONTENT_PATTERN_A + "\n" + CONTENT_PATTERN_B + "\n" + CONTENT_PATTERN_C) * 3
 
     doc = Document(id=doc_id, title="WP-4.4A Similarity Ordering Test", description=None)
     version = DocumentVersion(
@@ -238,6 +301,10 @@ async def test_retrieval_similarity_ordering(async_session: AsyncSession) -> Non
     async_session.add(version)
     await async_session.flush()
 
+    role_id, role_code = await _create_role_and_permission(
+        async_session, doc_id, role_code="WP44A_ORDERING_ROLE"
+    )
+
     try:
         provider = FakeEmbeddingProvider(dimension=1536)
         orchestrator = IngestionOrchestrator(async_session, provider)
@@ -251,7 +318,9 @@ async def test_retrieval_similarity_ordering(async_session: AsyncSession) -> Non
         query_embedding = query_embeddings[0]
 
         service = RetrievalService()
-        retrieval_results = await service.retrieve(async_session, query_embedding, top_k=10)
+        retrieval_results = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=10
+        )
 
         # Verify ordering: similarity should be descending
         for i in range(len(retrieval_results) - 1):
@@ -268,23 +337,7 @@ async def test_retrieval_similarity_ordering(async_session: AsyncSession) -> Non
             )
 
     finally:
-        # Rollback any failed transaction before cleanup
-        await async_session.rollback()
-
-        # Cleanup
-        await async_session.execute(
-            text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM document_versions WHERE id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM documents WHERE id = :did"),
-            {"did": doc_id},
-        )
-        await async_session.commit()
+        await _cleanup_test_data(async_session, version_id, doc_id, role_id, role_code)
 
 
 async def test_retrieval_top_k_enforcement(async_session: AsyncSession) -> None:
@@ -309,6 +362,10 @@ async def test_retrieval_top_k_enforcement(async_session: AsyncSession) -> None:
     async_session.add(version)
     await async_session.flush()
 
+    role_id, role_code = await _create_role_and_permission(
+        async_session, doc_id, role_code="WP44A_TOPK_ROLE"
+    )
+
     try:
         provider = FakeEmbeddingProvider(dimension=1536)
         orchestrator = IngestionOrchestrator(async_session, provider)
@@ -322,35 +379,25 @@ async def test_retrieval_top_k_enforcement(async_session: AsyncSession) -> None:
         query_embedding = query_embeddings[0]
 
         service = RetrievalService()
-        results_k1 = await service.retrieve(async_session, query_embedding, top_k=1)
+        results_k1 = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=1
+        )
         assert len(results_k1) == 1
 
         # Query with top_k=3
-        results_k3 = await service.retrieve(async_session, query_embedding, top_k=3)
+        results_k3 = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=3
+        )
         assert len(results_k3) <= 3
 
         # Query with top_k=10
-        results_k10 = await service.retrieve(async_session, query_embedding, top_k=10)
+        results_k10 = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=10
+        )
         assert len(results_k10) <= 10
 
     finally:
-        # Rollback any failed transaction before cleanup
-        await async_session.rollback()
-
-        # Cleanup
-        await async_session.execute(
-            text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM document_versions WHERE id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM documents WHERE id = :did"),
-            {"did": doc_id},
-        )
-        await async_session.commit()
+        await _cleanup_test_data(async_session, version_id, doc_id, role_id, role_code)
 
 
 async def test_retrieval_deterministic_tie_breaking(async_session: AsyncSession) -> None:
@@ -376,6 +423,10 @@ async def test_retrieval_deterministic_tie_breaking(async_session: AsyncSession)
     async_session.add(version)
     await async_session.flush()
 
+    role_id, role_code = await _create_role_and_permission(
+        async_session, doc_id, role_code="WP44A_TIEBREAK_ROLE"
+    )
+
     try:
         provider = FakeEmbeddingProvider(dimension=1536)
         orchestrator = IngestionOrchestrator(async_session, provider)
@@ -391,8 +442,12 @@ async def test_retrieval_deterministic_tie_breaking(async_session: AsyncSession)
         service = RetrievalService()
 
         # Run same query twice
-        results1 = await service.retrieve(async_session, query_embedding, top_k=5)
-        results2 = await service.retrieve(async_session, query_embedding, top_k=5)
+        results1 = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=5
+        )
+        results2 = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=5
+        )
 
         # Results should be identical (deterministic)
         assert len(results1) == len(results2)
@@ -401,23 +456,7 @@ async def test_retrieval_deterministic_tie_breaking(async_session: AsyncSession)
             assert results1[i].similarity == results2[i].similarity
 
     finally:
-        # Rollback any failed transaction before cleanup
-        await async_session.rollback()
-
-        # Cleanup
-        await async_session.execute(
-            text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM document_versions WHERE id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM documents WHERE id = :did"),
-            {"did": doc_id},
-        )
-        await async_session.commit()
+        await _cleanup_test_data(async_session, version_id, doc_id, role_id, role_code)
 
 
 async def test_retrieval_returns_correct_identifiers(async_session: AsyncSession) -> None:
@@ -439,6 +478,10 @@ async def test_retrieval_returns_correct_identifiers(async_session: AsyncSession
     async_session.add(version)
     await async_session.flush()
 
+    role_id, role_code = await _create_role_and_permission(
+        async_session, doc_id, role_code="WP44A_IDENT_ROLE"
+    )
+
     try:
         provider = FakeEmbeddingProvider(dimension=1536)
         orchestrator = IngestionOrchestrator(async_session, provider)
@@ -451,7 +494,9 @@ async def test_retrieval_returns_correct_identifiers(async_session: AsyncSession
         query_embedding = query_embeddings[0]
 
         service = RetrievalService()
-        retrieval_results = await service.retrieve(async_session, query_embedding, top_k=1)
+        retrieval_results = await service.retrieve(
+            async_session, query_embedding, allowed_role_ids={role_id}, top_k=1
+        )
 
         assert len(retrieval_results) == 1
         result_item = retrieval_results[0]
@@ -467,20 +512,4 @@ async def test_retrieval_returns_correct_identifiers(async_session: AsyncSession
         assert result_item.version_id == version_id
 
     finally:
-        # Rollback any failed transaction before cleanup
-        await async_session.rollback()
-
-        # Cleanup
-        await async_session.execute(
-            text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM document_versions WHERE id = :vid"),
-            {"vid": version_id},
-        )
-        await async_session.execute(
-            text("DELETE FROM documents WHERE id = :did"),
-            {"did": doc_id},
-        )
-        await async_session.commit()
+        await _cleanup_test_data(async_session, version_id, doc_id, role_id, role_code)

@@ -32,6 +32,11 @@ class TestRetrievalServiceValidation:
         """Create a valid non-zero embedding."""
         return [0.1] * EXPECTED_EMBEDDING_DIMENSION
 
+    @pytest.fixture
+    def valid_role_ids(self) -> set[uuid.UUID]:
+        """Create a valid non-empty set of role IDs."""
+        return {uuid.uuid4()}
+
     def test_top_k_default(self, service: RetrievalService) -> None:
         """Test that default top_k is used when not specified."""
         # Cannot test without mock session, but we can verify constants
@@ -41,13 +46,17 @@ class TestRetrievalServiceValidation:
 
     @pytest.mark.asyncio
     async def test_top_k_below_minimum_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that top_k < 1 is rejected."""
         with pytest.raises(RetrievalValidationError, match="top_k must be at least 1"):
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=0,
             )
 
@@ -55,18 +64,23 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=-1,
             )
 
     @pytest.mark.asyncio
     async def test_top_k_above_maximum_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that top_k > 100 is rejected."""
         with pytest.raises(RetrievalValidationError, match="top_k must be at most 100"):
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=101,
             )
 
@@ -74,12 +88,16 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=1000,
             )
 
     @pytest.mark.asyncio
     async def test_top_k_minimum_accepted(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that top_k = 1 is accepted (validation passes)."""
         # Will fail at session level, but validation should pass
@@ -88,6 +106,7 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=1,
             )
         except RetrievalValidationError:
@@ -98,13 +117,17 @@ class TestRetrievalServiceValidation:
 
     @pytest.mark.asyncio
     async def test_top_k_maximum_accepted(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that top_k = 100 is accepted (validation passes)."""
         try:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=100,
             )
         except RetrievalValidationError:
@@ -115,7 +138,7 @@ class TestRetrievalServiceValidation:
 
     @pytest.mark.asyncio
     async def test_wrong_dimension_rejected(
-        self, service: RetrievalService
+        self, service: RetrievalService, valid_role_ids: set[uuid.UUID]
     ) -> None:
         """Test that embedding with wrong dimension is rejected."""
         # Too short
@@ -127,6 +150,7 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=short_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
@@ -139,12 +163,16 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=long_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_nan_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that embedding containing NaN is rejected."""
         bad_embedding = valid_embedding.copy()
@@ -157,12 +185,16 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=bad_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_inf_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that embedding containing Inf is rejected."""
         bad_embedding = valid_embedding.copy()
@@ -175,6 +207,7 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=bad_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
@@ -187,12 +220,13 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=bad_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_zero_norm_rejected(
-        self, service: RetrievalService
+        self, service: RetrievalService, valid_role_ids: set[uuid.UUID]
     ) -> None:
         """Test that zero-norm embedding is rejected."""
         zero_embedding = [0.0] * EXPECTED_EMBEDDING_DIMENSION
@@ -204,12 +238,16 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=zero_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_non_numeric_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that embedding containing non-numeric values is rejected."""
         bad_embedding = valid_embedding.copy()
@@ -222,12 +260,13 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=bad_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_non_list_embedding_rejected(
-        self, service: RetrievalService
+        self, service: RetrievalService, valid_role_ids: set[uuid.UUID]
     ) -> None:
         """Test that non-list embedding is rejected."""
         with pytest.raises(
@@ -237,12 +276,16 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding="not a list",  # type: ignore[arg-type]
+                allowed_role_ids=valid_role_ids,
                 top_k=10,
             )
 
     @pytest.mark.asyncio
     async def test_invalid_top_k_type_rejected(
-        self, service: RetrievalService, valid_embedding: list[float]
+        self,
+        service: RetrievalService,
+        valid_embedding: list[float],
+        valid_role_ids: set[uuid.UUID],
     ) -> None:
         """Test that non-integer top_k is rejected."""
         with pytest.raises(
@@ -252,6 +295,7 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=10.5,  # type: ignore[arg-type]
             )
 
@@ -262,7 +306,68 @@ class TestRetrievalServiceValidation:
             await service.retrieve(
                 session=None,  # type: ignore[arg-type]
                 query_embedding=valid_embedding,
+                allowed_role_ids=valid_role_ids,
                 top_k=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_empty_allowed_role_ids_rejected(
+        self, service: RetrievalService, valid_embedding: list[float]
+    ) -> None:
+        """Test that empty allowed_role_ids is rejected."""
+        with pytest.raises(
+            RetrievalValidationError,
+            match="allowed_role_ids must be non-empty",
+        ):
+            await service.retrieve(
+                session=None,  # type: ignore[arg-type]
+                query_embedding=valid_embedding,
+                allowed_role_ids=set(),
+                top_k=10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_non_set_allowed_role_ids_rejected(
+        self, service: RetrievalService, valid_embedding: list[float]
+    ) -> None:
+        """Test that non-set allowed_role_ids is rejected."""
+        role_id = uuid.uuid4()
+        with pytest.raises(
+            RetrievalValidationError,
+            match="allowed_role_ids must be a set",
+        ):
+            await service.retrieve(
+                session=None,  # type: ignore[arg-type]
+                query_embedding=valid_embedding,
+                allowed_role_ids=[role_id],  # type: ignore[arg-type]
+                top_k=10,
+            )
+
+        with pytest.raises(
+            RetrievalValidationError,
+            match="allowed_role_ids must be a set",
+        ):
+            await service.retrieve(
+                session=None,  # type: ignore[arg-type]
+                query_embedding=valid_embedding,
+                allowed_role_ids=frozenset({role_id}),  # type: ignore[arg-type]
+                top_k=10,
+            )
+
+    @pytest.mark.asyncio
+    async def test_non_uuid_in_allowed_role_ids_rejected(
+        self, service: RetrievalService, valid_embedding: list[float]
+    ) -> None:
+        """Test that non-UUID elements in allowed_role_ids are rejected."""
+        with pytest.raises(
+            RetrievalValidationError,
+            match="each allowed_role_ids element must be a UUID",
+        ):
+            await service.retrieve(
+                session=None,  # type: ignore[arg-type]
+                query_embedding=valid_embedding,
+                allowed_role_ids={"not-a-uuid"},  # type: ignore[arg-type]
+                top_k=10,
             )
 
 

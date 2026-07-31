@@ -1,8 +1,8 @@
-"""Retrieval service for RAG vector search (WP-4.4A).
+"""Retrieval service for RAG vector search (WP-4.4A, WP-4.4B).
 
 Implements the retrieval domain contract: cosine similarity search over
-knowledge chunks using pgvector, with deterministic ordering and strict
-input validation.
+knowledge chunks using pgvector, with deterministic ordering, strict
+input validation, and document access filtering via document_permissions.
 """
 
 from __future__ import annotations
@@ -53,29 +53,55 @@ class RetrievalService:
     """Async retrieval service for vector similarity search.
 
     Uses PostgreSQL/pgvector for cosine similarity computation.
-    Does not apply document permission filtering (deferred to WP-4.4B).
+    Applies document permission filtering via SQL join on
+    document_permissions (WP-4.4B).
     """
 
     async def retrieve(
         self,
         session: AsyncSession,
         query_embedding: list[float],
+        allowed_role_ids: set[UUID],
         top_k: int = TOP_K_DEFAULT,
     ) -> list[RetrievalResult]:
         """Execute vector similarity search over knowledge chunks.
 
+        Access filtering is enforced inside the PostgreSQL query via a
+        join on document_permissions. Only chunks whose parent document
+        has at least one permission row matching an allowed_role_id are
+        returned. Post-query filtering is never applied.
+
         Args:
             session: Async SQLAlchemy session.
             query_embedding: Query vector (must match EXPECTED_EMBEDDING_DIMENSION).
+            allowed_role_ids: Set of role UUIDs the caller is authorized for.
+                Must be non-empty. Documents without a matching permission
+                row are excluded.
             top_k: Maximum number of results (1..100, default 10).
 
         Returns:
             List of RetrievalResult ordered by similarity DESC, then deterministic
-            tie-breakers.
+            tie-breakers. Only authorized chunks are included.
 
         Raises:
             RetrievalValidationError: If input validation fails.
         """
+        # Validate allowed_role_ids
+        if not isinstance(allowed_role_ids, set):
+            raise RetrievalValidationError(
+                f"allowed_role_ids must be a set, got {type(allowed_role_ids).__name__}"
+            )
+        if len(allowed_role_ids) == 0:
+            raise RetrievalValidationError(
+                "allowed_role_ids must be non-empty"
+            )
+        for role_id in allowed_role_ids:
+            if not isinstance(role_id, UUID):
+                raise RetrievalValidationError(
+                    f"each allowed_role_ids element must be a UUID, "
+                    f"got {type(role_id).__name__}"
+                )
+
         # Validate top_k
         if not isinstance(top_k, int) or isinstance(top_k, bool):
             raise RetrievalValidationError(
@@ -123,6 +149,13 @@ class RetrievalService:
         # Convert list to proper format for pgvector
         vector_str = "[" + ",".join(str(v) for v in query_embedding) + "]"
 
+        # Convert allowed_role_ids to list for SQL parameter binding
+        role_ids_list = list(allowed_role_ids)
+
+        # SQL query with access filtering via document_permissions join.
+        # The subquery in the WHERE clause ensures only chunks whose parent
+        # document has a matching permission row for one of the allowed roles
+        # are eligible. top_k (LIMIT) is applied AFTER authorization filtering.
         query = text(
             """
             SELECT
@@ -138,6 +171,11 @@ class RetrievalService:
             JOIN documents d ON d.id = dv.document_id
             WHERE kc.embedding IS NOT NULL
               AND dv.status = 'APPROVED'
+              AND d.id IN (
+                  SELECT dp.document_id
+                  FROM document_permissions dp
+                  WHERE dp.role_id = ANY(:allowed_role_ids)
+              )
             ORDER BY
                 (kc.embedding <=> CAST(:query_vector AS vector)) ASC,
                 d.id ASC,
@@ -149,7 +187,12 @@ class RetrievalService:
         )
 
         result = await session.execute(
-            query, {"query_vector": vector_str, "top_k": top_k}
+            query,
+            {
+                "query_vector": vector_str,
+                "allowed_role_ids": role_ids_list,
+                "top_k": top_k,
+            },
         )
         rows = result.fetchall()
 
