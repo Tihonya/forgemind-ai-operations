@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import router as auth_router
 from app.api.components import router as components_router
 from app.api.ingestion import router as ingestion_router
+from app.api.retrieval import router as retrieval_router
 from app.api.inventory import router as inventory_router
 from app.api.inventory_reservations import router as inventory_reservations_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
@@ -96,6 +97,9 @@ app.include_router(risks_router, prefix=settings.api_v1_prefix)
 
 # Document ingestion endpoint (WP-4.3B3)
 app.include_router(ingestion_router, prefix=settings.api_v1_prefix)
+
+# Document retrieval endpoint (WP-4.4C)
+app.include_router(retrieval_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
