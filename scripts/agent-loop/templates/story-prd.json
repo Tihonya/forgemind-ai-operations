@@ -1,0 +1,67 @@
+{
+  "story_id": "US-002",
+  "title": "Automate AT-006 retrieval and citation verification",
+  "description": "Integration test proving mitigation query retrieves approved document with valid citations.",
+  "branch": "feature/phase-4-wp-4-4-retrieval-citations-access-control",
+  "implementation_agent": "ralph",
+  "review_agent": "opencode",
+  "allowed_paths": [
+    "backend/tests/integration/test_at006_rag_retrieval.py",
+    "backend/tests/fixtures/evaluation/.*"
+  ],
+  "forbidden_paths": [
+    "backend/app/.*",
+    "docker-compose.*",
+    "forgemind_project_source_of_truth/.*"
+  ],
+  "gates": {
+    "scope": {
+      "required": true,
+      "enabled": true
+    },
+    "json_syntax": {
+      "required": true,
+      "enabled": true
+    },
+    "targeted_tests": {
+      "required": true,
+      "enabled": true,
+      "assertion_gate": true
+    },
+    "lint": {
+      "required": true,
+      "enabled": true,
+      "scope_to_diff": true
+    },
+    "secrets": {
+      "required": true,
+      "enabled": true,
+      "scope_to_diff": true
+    },
+    "git_diff_check": {
+      "required": false,
+      "enabled": true
+    }
+  },
+  "test_commands": {
+    "targeted_args": "tests/integration/test_at006_rag_retrieval.py -v --junitxml={report_file}",
+    "related_unit_args": "tests/ -v --junitxml={report_file}"
+  },
+  "environment_requirements": {
+    "database": true,
+    "redis": false,
+    "compose_up": false
+  },
+  "acceptance_criteria": [
+    "Test uses repository established integration-test database infrastructure",
+    "No custom .env parser or blanket connectivity-to-skip logic",
+    "Test contains assertions that execute (not all-skipped)",
+    "Test validates retrieval and citation evidence without LLM prose",
+    "No external embedding endpoint contacted"
+  ],
+  "repair_hints": [
+    "Reuse existing conftest.py and database fixtures",
+    "Remove custom _get_test_database_url() and _can_connect()",
+    "Use repository standard engine/session factories"
+  ]
+}

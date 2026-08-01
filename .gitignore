@@ -93,3 +93,6 @@ frontend/.vite/
 *.key
 *.cert
 secrets/
+
+# Agent loop artifacts
+.ralph-tui/artifacts/

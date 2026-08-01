@@ -1,0 +1,45 @@
+{
+  "gates": {
+    "scope": {
+      "enabled": true,
+      "description": "Check that changes are within allowed paths and don't touch forbidden files",
+      "command": "check_scope"
+    },
+    "json_syntax": {
+      "enabled": true,
+      "description": "Validate JSON syntax in modified/created JSON files",
+      "command": "check_json_syntax"
+    },
+    "yaml_syntax": {
+      "enabled": true,
+      "description": "Validate YAML syntax in modified/created YAML files",
+      "command": "check_yaml_syntax"
+    },
+    "targeted_tests": {
+      "enabled": true,
+      "description": "Run targeted tests from story manifest or diff-based selection",
+      "command": "run_targeted_tests",
+      "assertion_gate": true
+    },
+    "lint": {
+      "enabled": true,
+      "description": "Run ruff and mypy linters",
+      "command": "run_lint"
+    },
+    "secrets": {
+      "enabled": true,
+      "description": "Scan for accidentally committed secrets",
+      "command": "./scripts/check-secrets.sh"
+    },
+    "git_diff_check": {
+      "enabled": true,
+      "description": "Run git diff --check for whitespace errors",
+      "command": "git diff --check"
+    }
+  },
+  "defaults": {
+    "max_repair_iterations": 3,
+    "auto_commit": false,
+    "dry_run": false
+  }
+}
