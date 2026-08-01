@@ -44,8 +44,16 @@
     }
   },
   "test_commands": {
-    "targeted_args": "tests/integration/test_at006_rag_retrieval.py -v --junitxml={report_file}",
-    "related_unit_args": "tests/ -v --junitxml={report_file}"
+    "targeted_args": [
+      "tests/integration/test_at006_rag_retrieval.py",
+      "-v",
+      "--junitxml={report_file}"
+    ],
+    "related_unit_args": [
+      "tests/",
+      "-v",
+      "--junitxml={report_file}"
+    ]
   },
   "environment_requirements": {
     "database": true,

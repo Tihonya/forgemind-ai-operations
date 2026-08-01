@@ -1,4 +1,4 @@
 {"story_id": "HARNESS-E", "title": "Scenario E",
   "gates": {"targeted_tests": {"required": true}},
-  "test_commands": {"targeted_args": "tests/unit/test_harness_a.py -v --junitxml={report_file}"},
+  "test_commands": {"targeted_args": ["tests/unit/test_harness_a.py", "-v", "--junitxml={report_file}"]},
   "broken": true,

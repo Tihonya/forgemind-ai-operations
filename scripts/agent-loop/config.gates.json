@@ -2,39 +2,41 @@
   "gates": {
     "scope": {
       "enabled": true,
-      "description": "Check that changes are within allowed paths and don't touch forbidden files",
-      "command": "check_scope"
+      "required": true,
+      "description": "Check that changes are within allowed paths and don't touch forbidden files"
     },
     "json_syntax": {
       "enabled": true,
-      "description": "Validate JSON syntax in modified/created JSON files",
-      "command": "check_json_syntax"
+      "required": true,
+      "description": "Validate JSON syntax in modified/created JSON files"
     },
     "yaml_syntax": {
       "enabled": true,
-      "description": "Validate YAML syntax in modified/created YAML files",
-      "command": "check_yaml_syntax"
+      "required": true,
+      "description": "Validate YAML syntax in modified/created YAML files"
     },
     "targeted_tests": {
       "enabled": true,
-      "description": "Run targeted tests from story manifest or diff-based selection",
-      "command": "run_targeted_tests",
-      "assertion_gate": true
+      "required": true,
+      "assertion_gate": true,
+      "description": "Run targeted tests from story manifest or diff-based selection"
     },
     "lint": {
       "enabled": true,
-      "description": "Run ruff and mypy linters",
-      "command": "run_lint"
+      "required": true,
+      "scope_to_diff": true,
+      "description": "Run ruff and mypy linters"
     },
     "secrets": {
       "enabled": true,
-      "description": "Scan for accidentally committed secrets",
-      "command": "./scripts/check-secrets.sh"
+      "required": true,
+      "scope_to_diff": true,
+      "description": "Scan for accidentally committed secrets using inline regex patterns"
     },
     "git_diff_check": {
       "enabled": true,
-      "description": "Run git diff --check for whitespace errors",
-      "command": "git diff --check"
+      "required": false,
+      "description": "Run git diff --check for whitespace errors"
     }
   },
   "defaults": {

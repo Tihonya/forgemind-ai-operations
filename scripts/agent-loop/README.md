@@ -4,67 +4,59 @@ Autonomous agent-driven development cycle with deterministic verification gates.
 
 ## Quick Start
 
-Single command to run a story through the agent loop:
-
 ```bash
-cd /run/media/toha/Virtual Staff/AgentLab/worktrees/forgemind-agent-loop
+cd /path/to/forgemind-agent-loop
 
 # Dry run (verify only, no agent invocation)
 ./scripts/agent-loop/run-story.sh --dry-run --manifest scripts/agent-loop/templates/story-prd.json
 
 # Full run (implementation + verify + review + repair loop)
 ./scripts/agent-loop/run-story.sh --manifest scripts/agent-loop/templates/story-prd.json
-
-# With custom max iterations
-./scripts/agent-loop/run-story.sh --max-iterations 5 --manifest scripts/agent-loop/templates/story-prd.json
 ```
 
 ## Architecture
 
 ### Components
 
-1. **run-story.sh** - Main orchestrator, implements the loop:
+1. **run-story.sh** - Main orchestrator
    - Implementation (Ralph) → Verification → Review → Repair → Report
    - Max iterations configurable (default: 3)
    - Dry-run mode for testing verification gates without agents
 
-2. **verify-story.sh** - Deterministic verification (no agent):
+2. **verify-story.sh** - Deterministic verification (no agent)
    - Scope check (allowed/forbidden paths)
-   - JSON/YAML syntax validation
+   - JSON syntax validation
    - Targeted tests with assertion gate
    - Lint (ruff + mypy)
-   - Secrets scan
+   - Secrets scan (inline regex)
    - git diff --check
    - Generates machine-readable JSON report
 
-3. **review-story.sh** - Independent review (Phase 2):
-   - Separate OpenCode session
-   - Does not trust implementation agent's claims
-   - Produces independent verdict
+3. **report-story.sh** - Final report generator
+   - Aggregates verification/review/repair results
+   - Atomic JSON writes via shared harness.py module
 
-4. **repair-story.sh** - Automatic repair (Phase 2):
-   - Receives structured failure report
-   - Invokes agent with failure context
-   - Iterates up to MAX_REPAIR_ITERATIONS
-
-5. **report-story.sh** - Final report generator:
-   - Aggregates all results
-   - Machine-readable JSON
-   - Human-readable summary
+4. **lib/harness.py** - Shared Python utilities
+   - atomic_json_write: tmp+os.replace for crash safety
+   - parse_junit_xml: pytest JUnit parser
+   - validate_manifest: manifest schema validation
+   - load_gate_config: extract gate config from manifest
+   - load_test_args: extract test args as JSON array
 
 ### Configuration
 
 **config.sh** - Shared configuration:
-- Agent binaries (Ralph, OpenCode)
+- Agent binaries (override via RALPH_BIN, OPENCODE_BIN environment variables)
+- Python/pytest/ruff/mypy binaries (auto-detect via command -v or MAIN_REPO/.venv)
 - State directories
 - Loop limits
 - Forbidden/allowed path patterns
-- Test/lint commands
 
 **config.gates.json** - Gate definitions:
-- Which gates to run
-- Gate order
-- Gate-specific options
+- Which gates to run (enabled/disabled)
+- Gate required/optional status
+- Gate-specific options (scope_to_diff, assertion_gate)
+- No command fields — gate logic is in verify-story.sh
 
 ### Story Manifest
 
@@ -72,8 +64,8 @@ Each story has a JSON manifest defining:
 - `story_id` - Unique identifier
 - `allowed_paths` - Regex patterns for files agent can modify
 - `forbidden_paths` - Regex patterns for files agent cannot touch
-- `gates_required` - Which verification gates to run
-- `test_commands` - Explicit test commands (overrides diff-based selection)
+- `gates` - Dict with per-gate {required, enabled, scope_to_diff} config
+- `test_commands.targeted_args` - JSON array of pytest arguments (no shell interpolation)
 - `acceptance_criteria` - Human-readable requirements
 - `repair_hints` - Context for repair iterations
 
@@ -102,6 +94,8 @@ This prevents false positives from all-skipped test suites.
 
 Checks that changes are within allowed paths and don't touch forbidden files.
 
+**Behavior on clean working tree**: SKIP (acceptable for required gates — nothing to verify).
+
 Forbidden by default:
 - `.env*` files
 - Credentials/secrets
@@ -109,23 +103,31 @@ Forbidden by default:
 - Docker compose files
 - Database migrations
 
-### JSON/YAML Syntax Gate
+### JSON Syntax Gate
 
-Validates syntax of all modified/created JSON and YAML files.
+Validates syntax of all modified/created JSON files.
 
 ### Targeted Tests Gate
 
-Runs tests specified in story manifest or falls back to diff-based selection.
+Runs tests specified in story manifest (`test_commands.targeted_args` as JSON array).
 
-Uses `pytest-json-report` for structured output and assertion counting.
+Uses built-in pytest `--junitxml` for structured output (no pytest-json-report plugin required).
 
 ### Lint Gate
 
 Runs `ruff` and `mypy` on backend code.
 
+Can be scoped to diff via `scope_to_diff: true` in gate config.
+
 ### Secrets Gate
 
-Scans for accidentally committed secrets using `scripts/check-secrets.sh`.
+Scans for accidentally committed secrets using inline regex patterns:
+- Stripe keys (sk_live_, sk_test_)
+- GitHub tokens (ghp_)
+- Private keys (BEGIN PRIVATE KEY)
+- Password/API key/secret assignments
+
+Can be scoped to diff via `scope_to_diff: true` in gate config.
 
 ### Git Diff Check Gate
 
@@ -139,20 +141,26 @@ Runs `git diff --check` for whitespace errors.
 4. **No destructive operations** - No `rm -rf`, `git reset --hard`, etc.
 5. **No secrets in logs** - Environment loading masks credentials
 6. **Worktree isolation** - Agent loop runs in separate worktree, not main repo
+7. **Atomic JSON writes** - All reports use tmp+os.replace for crash safety
+8. **Cleanup traps** - EXIT/INT/TERM handlers remove temp files
 
 ## Artifacts
 
 All logs and reports are stored in:
 ```
-.ralph-tui/artifacts/<story_id>_<timestamp>/
+.ralph-tui/artifacts/<story_id>_<timestamp>_<PID>/
   verify/
     scope.log
     json_*.log
     tests.log
-    pytest-report.json
+    pytest-report.xml
+    pytest-stdout.log
     lint.log
-    secrets.log
+    ruff.log
+    mypy.log
     diff_check.log
+    .gates-tmp.json
+    .gate-config-tmp.json
   review/
     (Phase 2)
   repair/
@@ -177,17 +185,20 @@ The system loads `.env` safely using Python (no `source .env`):
 ### Phase 1 (Implemented)
 
 - [x] Worktree isolation
-- [x] Configuration system
-- [x] Artifact management
-- [x] Environment loading (safe)
-- [x] Scope verification
-- [x] JSON/YAML syntax checks
-- [x] Test execution with assertion gate
-- [x] Lint checks
-- [x] Secrets scanning
+- [x] Configuration system (env overrides, command -v fallback)
+- [x] Artifact management (collision-resistant RUN_ID with nanoseconds+PID)
+- [x] Environment loading (safe Python parser)
+- [x] Scope verification (SKIP on clean tree = PASS)
+- [x] JSON syntax checks
+- [x] Test execution with assertion gate (JSON array args, no shell splitting)
+- [x] Lint checks (ruff + mypy, optional if not installed)
+- [x] Secrets scanning (inline regex, portable [[:space:]])
 - [x] Main loop orchestrator
 - [x] Dry-run mode
-- [x] Machine-readable reports
+- [x] Machine-readable reports (atomic JSON writes)
+- [x] Cleanup traps (EXIT/INT/TERM)
+- [x] Shared Python harness module (lib/harness.py)
+- [x] Comprehensive test scenarios A-O (15 scenarios)
 
 ### Phase 2 (Next)
 
@@ -197,38 +208,49 @@ The system loads `.env` safely using Python (no `source .env`):
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
 
-## Testing on US-002
+## Testing
 
-Current story: `backend/tests/integration/test_at006_rag_retrieval.py`
+Run the harness validation suite:
 
-Dry run:
 ```bash
-cd /run/media/toha/Virtual Staff/AgentLab/worktrees/forgemind-agent-loop
-./scripts/agent-loop/run-story.sh --dry-run --manifest scripts/agent-loop/templates/story-prd.json
+cd /path/to/forgemind-agent-loop
+./scripts/agent-loop/tests/run_harness_scenarios.sh
 ```
 
-This will:
-1. Load story manifest
-2. Run all verification gates
-3. Generate reports
-4. NOT invoke any agents
-
-Check results in `.ralph-tui/artifacts/US-002_<timestamp>/`
+Scenarios A-O test:
+- A: required test passes
+- B: required test missing
+- C: all tests skipped
+- D: real tests pass
+- E: malformed manifest (ERROR)
+- F: zero tests collected
+- G: pytest collection error
+- H: pytest failure
+- I: mixed passed + skipped
+- J: optional gate skipped (does not block)
+- K: malformed JUnit XML
+- L: missing manifest file
+- M: test path with spaces
+- N: concurrent runs (collision-resistant RUN_ID)
+- O: interruption cleanup
 
 ## Troubleshooting
 
-### pytest-json-report not installed
+### Python/pytest not found
 
-The system will auto-install if missing:
+The system auto-detects via `command -v` or uses `MAIN_REPO/.venv/bin/python`.
+
+Override via environment:
 ```bash
-.venv/bin/pip install pytest-json-report
+export PYTHON_BIN=/path/to/python
+export PYTEST_BIN=/path/to/pytest
 ```
 
 ### Database connectivity issues
 
 Check environment:
 ```bash
-cd /run/media/toha/Virtual Staff/VScode/AIAutomation
+cd /main/repo/path
 docker compose ps
 ```
 
@@ -248,3 +270,14 @@ If verification fails with "all tests skipped":
 2. Verify database connectivity
 3. Check test markers (integration tests need DB)
 4. Review test conftest.py for skip conditions
+
+### Stale temp files
+
+If verify-story.sh is interrupted, the cleanup trap removes temp files automatically.
+
+Manual cleanup:
+```bash
+rm -f /tmp/agent-loop-report-*
+rm -f .ralph-tui/artifacts/*/verify/.gates-tmp.json
+rm -f .ralph-tui/artifacts/*/verify/.gate-config-tmp.json
+```

@@ -1,17 +1,42 @@
 {
   "story_id": "HARNESS-C",
   "title": "Harness Validation: Scenario C — all tests skipped",
-  "description": "Validates gate aggregation when targeted tests are all skipped",
+  "description": "Validates FAIL when all targeted tests are skipped (zero passed)",
   "branch": "chore/agent-loop-infrastructure",
   "gates": {
-    "scope": {"required": true, "enabled": true},
-    "json_syntax": {"required": true, "enabled": true},
-    "targeted_tests": {"required": true, "enabled": true, "assertion_gate": true},
-    "lint": {"required": true, "enabled": true, "scope_to_diff": true},
-    "secrets": {"required": true, "enabled": true, "scope_to_diff": true},
-    "git_diff_check": {"required": false, "enabled": true}
+    "scope": {
+      "required": true,
+      "enabled": true
+    },
+    "json_syntax": {
+      "required": true,
+      "enabled": true
+    },
+    "targeted_tests": {
+      "required": true,
+      "enabled": true,
+      "assertion_gate": true
+    },
+    "lint": {
+      "required": true,
+      "enabled": true,
+      "scope_to_diff": true
+    },
+    "secrets": {
+      "required": true,
+      "enabled": true,
+      "scope_to_diff": true
+    },
+    "git_diff_check": {
+      "required": false,
+      "enabled": true
+    }
   },
   "test_commands": {
-    "targeted_args": "tests/unit/test_harness_c.py -v --junitxml={report_file}"
+    "targeted_args": [
+      "tests/synthetic/test_harness_c.py",
+      "-v",
+      "--junitxml={report_file}"
+    ]
   }
 }

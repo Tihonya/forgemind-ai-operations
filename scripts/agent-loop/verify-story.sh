@@ -13,6 +13,24 @@ source "$SCRIPT_DIR/lib/tests.sh"
 # Track timing
 START_TIME="$(date -Iseconds)"
 
+# Temp files to clean up
+TEMP_FILES=()
+
+cleanup() {
+  local exit_code=$?
+  for f in "${TEMP_FILES[@]}"; do
+    rm -f "$f" 2>/dev/null || true
+  done
+  if [[ -n "${SYNTHETIC_DIR:-}" && -d "$SYNTHETIC_DIR" ]]; then
+    rm -rf "$SYNTHETIC_DIR" 2>/dev/null || true
+  fi
+  exit $exit_code
+}
+
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Initialize artifacts directory (only if not already set by parent)
 STORY_MANIFEST="${1:-}"
 STORY_ID="${STORY_ID:-}"
@@ -25,62 +43,10 @@ MANIFEST_ERROR=""
 if [[ -n "$STORY_MANIFEST" ]]; then
   if [[ ! -f "$STORY_MANIFEST" ]]; then
     MANIFEST_VALID="false"
-    MANIFEST_ERROR="Manifest file does not exist: $STORY_MANIFEST"
+    MANIFEST_ERROR="MANIFEST_MISSING|Manifest file does not exist: $STORY_MANIFEST"
   else
-    # Validate JSON syntax, root type, story_id presence
-    VALIDATION_RESULT=$("$PYTHON_BIN" -c "
-import json, sys
+    VALIDATION_RESULT="$("$PYTHON_BIN" "$HARNESS_PY" validate "$STORY_MANIFEST" 2>&1)" || VALIDATION_RESULT="ERROR:UNEXPECTED|Validation script failed"
 
-try:
-    with open(sys.argv[1]) as f:
-        data = json.load(f)
-    
-    # Check root type is dict
-    if not isinstance(data, dict):
-        print('ERROR:ROOT_TYPE|Root element is not a JSON object')
-        sys.exit(0)
-    
-    # Check story_id present and non-empty
-    if 'story_id' not in data:
-        print('ERROR:STORY_ID_MISSING|story_id field is required')
-        sys.exit(0)
-    
-    story_id = data['story_id']
-    if not story_id or not isinstance(story_id, str) or story_id.strip() == '':
-        print('ERROR:STORY_ID_EMPTY|story_id must be a non-empty string')
-        sys.exit(0)
-    
-    # Check gates configuration if present
-    if 'gates' in data:
-        gates = data['gates']
-        if not isinstance(gates, dict):
-            print('ERROR:GATES_TYPE|gates must be a JSON object')
-            sys.exit(0)
-        
-        for gate_name, gate_config in gates.items():
-            if not isinstance(gate_config, dict):
-                print(f'ERROR:GATE_CONFIG_TYPE|Gate {gate_name} config must be a JSON object')
-                sys.exit(0)
-            
-            # Check required/enabled are boolean if present
-            if 'required' in gate_config and not isinstance(gate_config['required'], bool):
-                print(f'ERROR:GATE_REQUIRED_TYPE|Gate {gate_name}.required must be boolean')
-                sys.exit(0)
-            if 'enabled' in gate_config and not isinstance(gate_config['enabled'], bool):
-                print(f'ERROR:GATE_ENABLED_TYPE|Gate {gate_name}.enabled must be boolean')
-                sys.exit(0)
-    
-    # If all checks pass, output the story_id
-    print(f'OK:{story_id}')
-    
-except json.JSONDecodeError as e:
-    print(f'ERROR:JSON_SYNTAX|Invalid JSON syntax: {str(e)}')
-    sys.exit(0)
-except Exception as e:
-    print(f'ERROR:UNEXPECTED|Unexpected error: {type(e).__name__}: {str(e)}')
-    sys.exit(0)
-" "$STORY_MANIFEST" 2>&1) || VALIDATION_RESULT="ERROR:UNEXPECTED|Validation script failed"
-    
     if [[ "$VALIDATION_RESULT" == ERROR:* ]]; then
       MANIFEST_VALID="false"
       MANIFEST_ERROR="${VALIDATION_RESULT#ERROR:}"
@@ -108,6 +74,13 @@ if [[ -z "$RUN_DIR" ]]; then
   init_artifacts "$STORY_ID" > /dev/null
 fi
 
+# Helper: atomic JSON write via harness.py
+atomic_json_write() {
+  local output_file="$1"
+  local json_data="$2"
+  "$PYTHON_BIN" "$HARNESS_PY" atomic_write "$output_file" "$json_data"
+}
+
 # Handle manifest validation failure — emit ERROR and exit immediately
 if [[ "$MANIFEST_VALID" == "false" ]]; then
   echo "=========================================="
@@ -119,44 +92,31 @@ if [[ "$MANIFEST_VALID" == "false" ]]; then
   echo ""
   echo "Skipping all verification gates."
   echo ""
-  
+
   # Parse error type and message
   ERROR_TYPE="${MANIFEST_ERROR%%|*}"
   ERROR_MSG="${MANIFEST_ERROR#*|}"
-  
+
   # Generate verify-result.json with ERROR status
   END_TIME="$(date -Iseconds)"
-  "$PYTHON_BIN" - "$STORY_ID" "$RUN_ID" "$START_TIME" "$END_TIME" "$ERROR_TYPE" "$ERROR_MSG" "$RUN_DIR/reports/verify-result.json" <<'PYEOF'
-import json
-import sys
-
-story_id = sys.argv[1]
-run_id = sys.argv[2] if len(sys.argv) > 2 else "unknown"
-started_at = sys.argv[3]
-finished_at = sys.argv[4]
-error_type = sys.argv[5]
-error_message = sys.argv[6] if len(sys.argv) > 6 else ""
-output_file = sys.argv[7]
-
-result = {
-    "schema_version": "1.0",
-    "run_id": run_id,
-    "story_id": story_id,
-    "started_at": started_at,
-    "finished_at": finished_at,
-    "overall_status": "ERROR",
-    "gates": [],
-    "error": {
-        "type": error_type,
-        "message": error_message,
-        "details": f"Manifest validation failed during early validation phase"
-    }
+  atomic_json_write "$RUN_DIR/reports/verify-result.json" "$(cat <<EOF
+{
+  "schema_version": "1.0",
+  "run_id": "$RUN_ID",
+  "story_id": "$STORY_ID",
+  "started_at": "$START_TIME",
+  "finished_at": "$END_TIME",
+  "overall_status": "ERROR",
+  "gates": [],
+  "error": {
+    "type": "$ERROR_TYPE",
+    "message": "$ERROR_MSG",
+    "details": "Manifest validation failed during early validation phase"
+  }
 }
+EOF
+)"
 
-with open(output_file, 'w') as f:
-    json.dump(result, f, indent=2)
-PYEOF
-  
   echo "verify-result.json generated: $RUN_DIR/reports/verify-result.json"
   echo "OVERALL: ERROR"
   exit 2
@@ -165,28 +125,16 @@ fi
 # Temporary file for gate results (passed to Python at end)
 GATES_JSON_TMP="$RUN_DIR/verify/.gates-tmp.json"
 echo '[]' > "$GATES_JSON_TMP"
+TEMP_FILES+=("$GATES_JSON_TMP")
 
 # Load gate configuration from manifest
 GATE_CONFIG_TMP="$RUN_DIR/verify/.gate-config-tmp.json"
 if [[ -n "$STORY_MANIFEST" && -f "$STORY_MANIFEST" ]]; then
-  "$PYTHON_BIN" -c "
-import json, sys
-m = json.load(open(sys.argv[1]))
-# New format: gates dict with required/enabled per gate
-if 'gates' in m:
-    print(json.dumps(m['gates']))
-# Legacy format: gates_required list (all required)
-elif 'gates_required' in m:
-    gates = {}
-    for g in m['gates_required']:
-        gates[g] = {'required': True, 'enabled': True}
-    print(json.dumps(gates))
-else:
-    print('{}')
-" "$STORY_MANIFEST" > "$GATE_CONFIG_TMP" 2>/dev/null || echo '{}' > "$GATE_CONFIG_TMP"
+  "$PYTHON_BIN" "$HARNESS_PY" load_gate_config "$STORY_MANIFEST" > "$GATE_CONFIG_TMP" 2>/dev/null || echo '{}' > "$GATE_CONFIG_TMP"
 else
   echo '{}' > "$GATE_CONFIG_TMP"
 fi
+TEMP_FILES+=("$GATE_CONFIG_TMP")
 
 echo "=========================================="
 echo "VERIFICATION GATES - Story: $STORY_ID"
@@ -195,8 +143,9 @@ echo "=========================================="
 
 # Overall status tracking
 # PASS: all required gates PASS
-# FAIL: any required gate FAIL or SKIP
+# FAIL: any required gate FAIL
 # ERROR: internal harness failure
+# SKIP: gate skipped (clean tree, not a failure for required gates)
 OVERALL_STATUS="PASS"
 INTERNAL_ERROR=""
 
@@ -245,7 +194,7 @@ add_gate_result() {
   local gate_name="$1"
   local status="$2"
   local details="${3:-}"
-  
+
   "$PYTHON_BIN" - "$GATES_JSON_TMP" "$gate_name" "$status" "$details" <<'PYEOF'
 import json
 import sys
@@ -270,14 +219,16 @@ PYEOF
 }
 
 # Update overall status based on gate status
+# SKIP is treated as PASS for required gates (clean tree = nothing to verify = OK)
 update_overall_status() {
   local gate_name="$1"
   local gate_status="$2"
   local gate_required="$3"
-  
-  # For required gates, both FAIL and SKIP lead to overall FAIL
+
+  # For required gates, FAIL leads to overall FAIL
+  # SKIP is acceptable (means nothing to verify)
   if [[ "$gate_required" == "true" ]]; then
-    if [[ "$gate_status" == "FAIL" || "$gate_status" == "SKIP" ]]; then
+    if [[ "$gate_status" == "FAIL" ]]; then
       export OVERALL_STATUS="FAIL"
     fi
   fi
@@ -296,10 +247,11 @@ else
   scope_output="$(check_scope "$STORY_MANIFEST" 2>&1)" || true
   scope_exit=$?
   echo "$scope_output" > "$RUN_DIR/verify/scope.log"
-  
+
   if [[ "$scope_output" == *"NO_CHANGES"* ]]; then
     echo "  SKIP (clean working tree, no changes to verify)"
     add_gate_result "scope" "SKIP" "Clean working tree"
+    # SKIP is acceptable for required gates — nothing to verify
     update_overall_status "scope" "SKIP" "$scope_required"
   elif [[ $scope_exit -eq 0 ]]; then
     echo "  PASS"
@@ -324,15 +276,20 @@ if [[ "$json_enabled" == "false" ]]; then
 else
   json_errors=0
   json_details=""
-  for f in $(git diff --name-only HEAD 2>/dev/null | grep '\.json$' || true); do
-    if [[ -f "$f" ]]; then
+  while IFS= read -r f; do
+    # Skip test fixture files (may be intentionally broken for testing)
+    if [[ "$f" == */fixtures/* ]]; then
+      continue
+    fi
+    if [[ -n "$f" && -f "$f" ]]; then
       if ! check_json_syntax "$f" > "$RUN_DIR/verify/json_$(basename "$f").log" 2>&1; then
         echo "  FAIL: $f"
         json_errors=$((json_errors + 1))
         json_details="$json_details $f"
       fi
     fi
-  done
+  done < <(git diff --name-only HEAD 2>/dev/null | grep '\.json$' || true)
+
   if [[ $json_errors -eq 0 ]]; then
     echo "  PASS (no JSON syntax errors)"
     add_gate_result "json_syntax" "PASS" ""
@@ -356,28 +313,19 @@ if [[ "$tests_enabled" == "false" ]]; then
 else
   # Load env for test execution
   load_env_safe 2>/dev/null || true
-  
-  # Extract test args from manifest (use argv to avoid shell interpolation)
-  TEST_ARGS=""
-  if [[ -n "$STORY_MANIFEST" && -f "$STORY_MANIFEST" ]]; then
-    TEST_ARGS=$("$PYTHON_BIN" -c "import json,sys; m=json.load(open(sys.argv[1])); print(m.get('test_commands',{}).get('targeted_args',''))" "$STORY_MANIFEST" 2>/dev/null || echo "")
-  fi
-  
+
   # Check if test file exists before running
-  test_file_exists="true"
+  test_args_json="$("$PYTHON_BIN" "$HARNESS_PY" load_test_args "$STORY_MANIFEST" 2>/dev/null || echo "[]")"
   test_path=""
-  if [[ -n "$TEST_ARGS" ]]; then
-    for arg in $TEST_ARGS; do
-      if [[ "$arg" == tests/* ]] || [[ "$arg" == test_* ]]; then
-        test_path="$arg"
-        break
-      fi
-    done
-    if [[ -n "$test_path" && ! -f "$REPO_ROOT/backend/$test_path" ]]; then
-      test_file_exists="false"
-    fi
+  if [[ "$test_args_json" != "[]" && -n "$test_args_json" ]]; then
+    test_path="$("$PYTHON_BIN" -c "import json,sys; args=json.loads(sys.argv[1]); print(next((a for a in args if a.startswith('tests/') or a.startswith('test_')), ''))" "$test_args_json" 2>/dev/null || echo "")"
   fi
-  
+
+  test_file_exists="true"
+  if [[ -n "$test_path" && ! -f "$REPO_ROOT/backend/$test_path" ]]; then
+    test_file_exists="false"
+  fi
+
   if [[ "$test_file_exists" == "false" ]]; then
     # Missing test file
     if [[ "$tests_required" == "true" ]]; then
@@ -390,8 +338,8 @@ else
       # Optional SKIP doesn't affect overall status
     fi
   else
-    # Run tests
-    if run_targeted_tests "$TEST_ARGS" "$STORY_MANIFEST" > "$RUN_DIR/verify/tests.log" 2>&1; then
+    # Run tests (pass manifest, not args — tests.sh loads args as JSON array)
+    if run_targeted_tests "$STORY_MANIFEST" > "$RUN_DIR/verify/tests.log" 2>&1; then
       echo "  PASS"
       add_gate_result "targeted_tests" "PASS" ""
       update_overall_status "targeted_tests" "PASS" "$tests_required"
@@ -428,7 +376,7 @@ if [[ "$lint_enabled" == "false" ]]; then
   add_gate_result "lint" "DISABLED" ""
 else
   py_files_in_diff="$(git diff --name-only HEAD 2>/dev/null | grep '\.py$' || true)"
-  
+
   if [[ "${DRY_RUN:-false}" == "true" ]]; then
     # In dry-run mode, always scope to diff
     if [[ -z "$py_files_in_diff" ]]; then
@@ -475,7 +423,7 @@ if [[ "$secrets_enabled" == "false" ]]; then
   add_gate_result "secrets" "DISABLED" ""
 else
   diff_files="$(git diff --name-only HEAD 2>/dev/null || echo "")"
-  
+
   if [[ "${DRY_RUN:-false}" == "true" ]]; then
     # In dry-run mode, always scope to diff
     if [[ -z "$diff_files" ]]; then
@@ -487,7 +435,7 @@ else
       secrets_found=""
       while IFS= read -r f; do
         if [[ -f "$f" ]]; then
-          for pattern in 'sk_live_[a-zA-Z0-9]+' 'sk_test_[a-zA-Z0-9]+' 'ghp_[a-zA-Z0-9]{36}' '-----BEGIN PRIVATE KEY-----' 'password\s*=\s*['\''"][^'\''"]{8,}['\''"]' 'api_key\s*=\s*['\''"][^'\''"]+['\''"]' 'secret\s*=\s*['\''"][^'\''"]+['\''"]'; do
+          for pattern in 'sk_live_[a-zA-Z0-9]+' 'sk_test_[a-zA-Z0-9]+' 'ghp_[a-zA-Z0-9]{36}' '-----BEGIN PRIVATE KEY-----' 'password[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]{8,}['"'"'"]' 'api_key[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]+['"'"'"]' 'secret[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]+['"'"'"]'; do
             if grep -qE "$pattern" "$f" 2>/dev/null; then
               secrets_found="Potential secret in $f matching pattern: $pattern"
               break 2
@@ -495,7 +443,7 @@ else
           done
         fi
       done <<< "$diff_files"
-      
+
       if [[ -n "$secrets_found" ]]; then
         echo "  FAIL - $secrets_found"
         add_gate_result "secrets" "FAIL" "$secrets_found"
@@ -520,11 +468,11 @@ else
       # Scan all tracked files
       files_to_scan="$(git ls-files 2>/dev/null || echo "")"
     fi
-    
+
     if [[ -n "$files_to_scan" ]]; then
       while IFS= read -r f; do
         if [[ -f "$f" ]]; then
-          for pattern in 'sk_live_[a-zA-Z0-9]+' 'sk_test_[a-zA-Z0-9]+' 'ghp_[a-zA-Z0-9]{36}' '-----BEGIN PRIVATE KEY-----' 'password\s*=\s*['\''"][^'\''"]{8,}['\''"]' 'api_key\s*=\s*['\''"][^'\''"]+['\''"]' 'secret\s*=\s*['\''"][^'\''"]+['\''"]'; do
+          for pattern in 'sk_live_[a-zA-Z0-9]+' 'sk_test_[a-zA-Z0-9]+' 'ghp_[a-zA-Z0-9]{36}' '-----BEGIN PRIVATE KEY-----' 'password[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]{8,}['"'"'"]' 'api_key[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]+['"'"'"]' 'secret[[:space:]]*=[[:space:]]*['"'"'"][^'"'"'"]+['"'"'"]'; do
             if grep -qE "$pattern" "$f" 2>/dev/null; then
               secrets_found="Potential secret in $f matching pattern: $pattern"
               break 2
@@ -533,7 +481,7 @@ else
         fi
       done <<< "$files_to_scan"
     fi
-    
+
     if [[ -n "$secrets_found" ]]; then
       echo "  FAIL - $secrets_found"
       add_gate_result "secrets" "FAIL" "$secrets_found"
@@ -604,7 +552,7 @@ for gate in gates:
     gate_name = gate['name']
     gate_status = gate['status']
     is_required = gate_config.get(gate_name, {}).get('required', True)
-    
+
     if is_required and gate_status == 'ERROR':
         print('true')
         sys.exit(0)
@@ -615,7 +563,7 @@ print('false')
 if [[ "$any_error" == "true" ]]; then
   OVERALL_STATUS="ERROR"
 elif [[ "$OVERALL_STATUS" != "ERROR" ]]; then
-  # Check if all required gates passed
+  # Check if all required gates passed or were skipped (clean tree)
   all_required_pass="$("$PYTHON_BIN" -c "
 import json, sys
 gates_file = sys.argv[1]
@@ -630,14 +578,14 @@ for gate in gates:
     gate_name = gate['name']
     gate_status = gate['status']
     is_required = gate_config.get(gate_name, {}).get('required', True)
-    
-    if is_required and gate_status not in ['PASS', 'DISABLED']:
+
+    if is_required and gate_status not in ['PASS', 'DISABLED', 'SKIP']:
         print('false')
         sys.exit(0)
 
 print('true')
 " "$GATES_JSON_TMP" "$GATE_CONFIG_TMP" 2>/dev/null || echo "false")"
-  
+
   if [[ "$all_required_pass" == "true" ]]; then
     OVERALL_STATUS="PASS"
   else

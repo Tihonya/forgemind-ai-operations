@@ -17,7 +17,7 @@ fi
 REPORT_FILE="$RUN_DIR/reports/final-report.json"
 
 # Aggregate all results into final report
-"$PYTHON_BIN" - "$RUN_DIR" "$REPORT_FILE" <<'PYEOF'
+"$PYTHON_BIN" - "$RUN_DIR" "$REPORT_FILE" "$HARNESS_PY" <<'PYEOF'
 import json
 import sys
 from pathlib import Path
@@ -25,7 +25,12 @@ from datetime import datetime
 
 run_dir = sys.argv[1]
 report_file = sys.argv[2]
+harness_py = sys.argv[3]
 reports_dir = Path(run_dir) / "reports"
+
+# Import harness module for atomic write
+sys.path.insert(0, str(Path(harness_py).parent))
+from harness import atomic_json_write
 
 report = {
     "metadata": {
@@ -54,7 +59,7 @@ if review_file.exists():
     try:
         with open(review_file) as f:
             report["review"] = json.load(f)
-    except (json.JSONDecodeError, IOError) as e:
+    except (json.JSONDecodeError, IOError):
         pass  # Review not critical for Phase 1
 
 # Load repair results (if any)
@@ -91,9 +96,8 @@ if report["verification"]:
 elif report.get("error"):
     report["final_status"] = "INFRASTRUCTURE_ERROR"
 
-# Write output
-with open(report_file, 'w') as f:
-    json.dump(report, f, indent=2)
+# Write output atomically
+atomic_json_write(report_file, report)
 
 print(json.dumps(report, indent=2))
 PYEOF

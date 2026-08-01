@@ -17,28 +17,62 @@ if [[ "$REPO_ROOT" == *"AIAutomation" ]] && [[ "$REPO_ROOT" != *"worktrees"* ]];
   exit 1
 fi
 
-# Agent binaries
-export RALPH_BIN="/run/media/toha/Virtual Staff/AgentLab/bin/ralph-agentlab"
-export OPENCODE_BIN="/run/media/toha/Virtual Staff/AgentLab/bin/opencode-agentlab"
+# Agent binaries (override via environment)
+export RALPH_BIN="${RALPH_BIN:-}"
+export OPENCODE_BIN="${OPENCODE_BIN:-}"
 
 # State directories
-export AGENT_STATE="/run/media/toha/Virtual Staff/AgentLab/state"
+export AGENT_STATE="${AGENT_STATE:-$REPO_ROOT/../state}"
 export ARTIFACTS_DIR="$REPO_ROOT/.ralph-tui/artifacts"
 
 # Loop configuration
 export MAX_REPAIR_ITERATIONS="${MAX_REPAIR_ITERATIONS:-3}"
 export DRY_RUN="${DRY_RUN:-false}"
 
-# Verification gates
+# Verification gates config
 export GATES_CONFIG="$SCRIPT_DIR/config.gates.json"
+
+# Shared Python harness module
+export HARNESS_PY="$SCRIPT_DIR/lib/harness.py"
 
 # Test configuration
 # .venv is in the main repo, not in worktrees
-MAIN_REPO="/run/media/toha/Virtual Staff/VScode/AIAutomation"
-export PYTHON_BIN="$MAIN_REPO/.venv/bin/python"
-export PYTEST_BIN="$MAIN_REPO/.venv/bin/pytest"
-export RUFF_BIN="$MAIN_REPO/.venv/bin/ruff"
-export MYPY_BIN="$MAIN_REPO/.venv/bin/mypy"
+# Override via environment variables or use command -v fallback
+MAIN_REPO="${MAIN_REPO:-/run/media/toha/Virtual Staff/VScode/AIAutomation}"
+
+if [[ -x "$MAIN_REPO/.venv/bin/python" ]]; then
+  export PYTHON_BIN="$MAIN_REPO/.venv/bin/python"
+elif command -v python3 &>/dev/null; then
+  export PYTHON_BIN="$(command -v python3)"
+else
+  echo "ERROR: Python not found. Set PYTHON_BIN or ensure python3 is in PATH" >&2
+  exit 1
+fi
+
+if [[ -x "$MAIN_REPO/.venv/bin/pytest" ]]; then
+  export PYTEST_BIN="$MAIN_REPO/.venv/bin/pytest"
+elif command -v pytest &>/dev/null; then
+  export PYTEST_BIN="$(command -v pytest)"
+else
+  echo "ERROR: pytest not found. Set PYTEST_BIN or ensure pytest is in PATH" >&2
+  exit 1
+fi
+
+if [[ -x "$MAIN_REPO/.venv/bin/ruff" ]]; then
+  export RUFF_BIN="$MAIN_REPO/.venv/bin/ruff"
+elif command -v ruff &>/dev/null; then
+  export RUFF_BIN="$(command -v ruff)"
+else
+  export RUFF_BIN=""
+fi
+
+if [[ -x "$MAIN_REPO/.venv/bin/mypy" ]]; then
+  export MYPY_BIN="$MAIN_REPO/.venv/bin/mypy"
+elif command -v mypy &>/dev/null; then
+  export MYPY_BIN="$(command -v mypy)"
+else
+  export MYPY_BIN=""
+fi
 
 # Safety: no auto-commit
 export AUTO_COMMIT="false"

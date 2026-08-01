@@ -59,45 +59,36 @@ if [[ ! -f "$STORY_MANIFEST" ]]; then
 fi
 
 # Validate manifest JSON before processing
-if ! "$PYTHON_BIN" -c "import json,sys; json.load(open(sys.argv[1]))" "$STORY_MANIFEST" 2>/dev/null; then
-  echo "ERROR: manifest is not valid JSON: $STORY_MANIFEST" >&2
-  
+if ! "$PYTHON_BIN" "$HARNESS_PY" validate "$STORY_MANIFEST" 2>/dev/null | grep -q "^OK:"; then
+  echo "ERROR: manifest is not valid JSON or is missing story_id: $STORY_MANIFEST" >&2
+
   # Initialize artifacts for error report
   STORY_ID="unknown"
   init_artifacts "$STORY_ID" > /dev/null
-  
+
   # Create error report
   mkdir -p "$RUN_DIR/reports"
-  "$PYTHON_BIN" - "$STORY_ID" "$RUN_ID" "$(date -Iseconds)" "ERROR" "Invalid manifest JSON" "$RUN_DIR/reports/verify-result.json" <<'PYEOF'
-import json
-import sys
-story_id = sys.argv[1]
-run_id = sys.argv[2]
-timestamp = sys.argv[3]
-overall_status = sys.argv[4]
-internal_error = sys.argv[5]
-output_file = sys.argv[6]
-result = {
-    "schema_version": "1.0",
-    "run_id": run_id,
-    "story_id": story_id,
-    "started_at": timestamp,
-    "finished_at": timestamp,
-    "overall_status": overall_status,
-    "gates": [],
-    "error": internal_error
+  "$PYTHON_BIN" "$HARNESS_PY" atomic_write "$RUN_DIR/reports/verify-result.json" "$(cat <<EOF
+{
+  "schema_version": "1.0",
+  "run_id": "$RUN_ID",
+  "story_id": "$STORY_ID",
+  "started_at": "$(date -Iseconds)",
+  "finished_at": "$(date -Iseconds)",
+  "overall_status": "ERROR",
+  "gates": [],
+  "error": "Invalid manifest JSON or missing story_id"
 }
-with open(output_file, 'w') as f:
-    json.dump(result, f, indent=2)
-PYEOF
-  
+EOF
+)"
+
   echo "verify-result.json generated: $RUN_DIR/reports/verify-result.json"
   echo "OVERALL: ERROR"
   exit 2
 fi
 
-# Extract story ID (use argv to avoid shell interpolation of paths with spaces)
-STORY_ID=$("$PYTHON_BIN" -c "import json,sys; print(json.load(open(sys.argv[1]))['story_id'])" "$STORY_MANIFEST")
+# Extract story ID
+STORY_ID="$("$PYTHON_BIN" "$HARNESS_PY" validate "$STORY_MANIFEST" | sed 's/^OK://')"
 
 echo "=========================================="
 echo "AGENT LOOP - Story: $STORY_ID"
@@ -113,7 +104,7 @@ init_artifacts "$STORY_ID" > /dev/null
 while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
   echo ""
   echo "--- Iteration $ITERATION ---"
-  
+
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[DRY RUN] Skipping agent invocation"
   else
@@ -129,7 +120,7 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
       # TODO: invoke repair
     fi
   fi
-  
+
   # Verification step
   echo "[STEP 2] Verification..."
   # Export variables for subprocesses
@@ -140,7 +131,7 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
   if "$SCRIPT_DIR/verify-story.sh" "$STORY_MANIFEST"; then
     echo ""
     echo "VERIFICATION PASSED"
-    
+
     if [[ "$DRY_RUN" == "true" ]]; then
       echo "[DRY RUN] Skipping review"
     else
@@ -149,10 +140,10 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
       echo "  TODO: invoke OpenCode for independent review"
       # TODO: "$SCRIPT_DIR/review-story.sh" "$STORY_MANIFEST"
     fi
-    
+
     # Generate final report
     "$SCRIPT_DIR/report-story.sh" "$RUN_DIR"
-    
+
     echo ""
     echo "=========================================="
     echo "AGENT LOOP COMPLETE - ACCEPTED"
@@ -160,10 +151,10 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
     echo "Artifacts: $RUN_DIR"
     exit 0
   fi
-  
+
   echo ""
   echo "VERIFICATION FAILED"
-  
+
   # In dry-run mode, do not enter repair loop
   if [[ "$DRY_RUN" == "true" ]]; then
     echo "[DRY RUN] Skipping repair iterations"
@@ -175,16 +166,16 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
     echo "Artifacts: $RUN_DIR"
     exit 1
   fi
-  
+
   ITERATION=$((ITERATION + 1))
-  
+
   if [[ $ITERATION -gt $MAX_REPAIR_ITERATIONS ]]; then
     echo ""
     echo "MAX REPAIR ITERATIONS EXHAUSTED"
-    
+
     # Generate final report
     "$SCRIPT_DIR/report-story.sh" "$RUN_DIR"
-    
+
     echo ""
     echo "=========================================="
     echo "AGENT LOOP COMPLETE - REPAIR EXHAUSTED"
@@ -192,7 +183,7 @@ while [[ $ITERATION -le $MAX_REPAIR_ITERATIONS ]]; do
     echo "Artifacts: $RUN_DIR"
     exit 1
   fi
-  
+
   echo "Preparing repair iteration $ITERATION..."
   echo "  TODO: collect failure context and invoke repair agent"
 done
