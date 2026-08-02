@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.auth import router as auth_router
 from app.api.components import router as components_router
 from app.api.ingestion import router as ingestion_router
-from app.api.retrieval import router as retrieval_router
 from app.api.inventory import router as inventory_router
 from app.api.inventory_reservations import router as inventory_reservations_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
@@ -20,6 +19,7 @@ from app.api.production_orders import router as production_orders_router
 from app.api.production_plans import router as production_plans_router
 from app.api.products import router as products_router
 from app.api.purchase_orders import router as purchase_orders_router
+from app.api.retrieval import router as retrieval_router
 from app.api.risks import router as risks_router
 from app.api.suppliers import router as suppliers_router
 from app.api.warehouses import router as warehouses_router

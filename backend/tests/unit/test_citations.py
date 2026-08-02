@@ -5,7 +5,9 @@ Tests the Citation dataclass and build_citation function.
 
 from uuid import uuid4
 
-from app.ai.rag.citations import Citation, build_citation
+import pytest
+
+from app.ai.rag.citations import build_citation
 from app.ai.rag.retriever import RetrievalResult
 
 
@@ -107,9 +109,10 @@ def test_citation_immutable() -> None:
     # Attempting to modify should raise AttributeError
     try:
         citation.document_id = uuid4()  # type: ignore[misc]
-        assert False, "Should not be able to modify frozen dataclass"
     except AttributeError:
-        pass  # Expected
+        pass  # Expected — frozen dataclass rejects mutation
+    else:
+        pytest.fail("Should not be able to modify frozen dataclass")
 
 
 def test_citation_typed_fields() -> None:

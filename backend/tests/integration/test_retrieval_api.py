@@ -6,7 +6,7 @@ and citation construction.
 
 import re
 from collections.abc import AsyncIterator
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,7 +18,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.ai.rag.retriever import RetrievalService
 from app.main import app
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.user import Role, User, UserRole
@@ -571,8 +570,8 @@ async def test_restricted_chunk_never_appears(
         await session.commit()
 
         # Issue token
-        from app.services.auth_service import issue_token
         from app.models.user import User
+        from app.services.auth_service import issue_token
 
         user = await session.get(User, user_id)
         token = issue_token(user, [f"WP44C_RESTRICTED_ROLE_{suffix}"])

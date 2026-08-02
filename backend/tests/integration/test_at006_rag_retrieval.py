@@ -237,10 +237,8 @@ async def test_at006_mitigation_query_retrieves_approved_document_with_citations
     This test validates retrieval and citation evidence only — not LLM prose.
     No external embedding endpoint is contacted.
     """
-    doc_id: UUID = fixture_data["doc_id"]
     version_id: UUID = fixture_data["version_id"]
     version_number: str = fixture_data["version_number"]
-    role_id: UUID = fixture_data["role_id"]
     query_fixture: dict = fixture_data["query_fixture"]
     doc_fixture: dict = fixture_data["doc_fixture"]
 
@@ -269,7 +267,6 @@ async def test_at006_mitigation_query_retrieves_approved_document_with_citations
         expected_version_id = UUID(expected["version_id"])
         expected_chunk_id = UUID(expected["chunk_id"])
         expected_chunk_index: int = expected["chunk_index"]
-        expected_version_number: str = expected["version_number"]
 
         matching = [
             r for r in retrieval_results
@@ -376,7 +373,7 @@ async def test_at006_fixture_determinism(
     )
 
     assert len(results_1) == len(results_2)
-    for r1, r2 in zip(results_1, results_2):
+    for r1, r2 in zip(results_1, results_2, strict=True):
         assert r1.chunk_id == r2.chunk_id
         assert r1.document_id == r2.document_id
         assert r1.version_id == r2.version_id

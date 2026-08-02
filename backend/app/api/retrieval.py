@@ -65,9 +65,7 @@ async def _resolve_role_ids(
     # Query roles table for UUIDs matching the user's role codes
     stmt = select(Role.id).where(Role.code.in_(role_codes))
     result = await session.execute(stmt)
-    role_ids = {row[0] for row in result.fetchall()}
-
-    return role_ids
+    return {row[0] for row in result.fetchall()}
 
 
 @router.post(
