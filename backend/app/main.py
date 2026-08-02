@@ -19,6 +19,7 @@ from app.api.production_orders import router as production_orders_router
 from app.api.production_plans import router as production_plans_router
 from app.api.products import router as products_router
 from app.api.purchase_orders import router as purchase_orders_router
+from app.api.retrieval import router as retrieval_router
 from app.api.risks import router as risks_router
 from app.api.suppliers import router as suppliers_router
 from app.api.warehouses import router as warehouses_router
@@ -96,6 +97,9 @@ app.include_router(risks_router, prefix=settings.api_v1_prefix)
 
 # Document ingestion endpoint (WP-4.3B3)
 app.include_router(ingestion_router, prefix=settings.api_v1_prefix)
+
+# Document retrieval endpoint (WP-4.4C)
+app.include_router(retrieval_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
