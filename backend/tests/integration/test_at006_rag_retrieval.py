@@ -119,13 +119,13 @@ async def async_session() -> AsyncIterator[AsyncSession]:
 @pytest.fixture(scope="module")
 def rag_documents() -> dict[str, Any]:
     with open(FIXTURES_DIR / "rag_documents.json") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore[no-any-return]
 
 
 @pytest.fixture(scope="module")
 def rag_queries() -> dict[str, Any]:
     with open(FIXTURES_DIR / "rag_queries.json") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore[no-any-return]
 
 
 @pytest.fixture
@@ -240,13 +240,13 @@ async def test_at006_mitigation_query_retrieves_approved_document_with_citations
     """
     version_id: UUID = fixture_data["version_id"]
     version_number: str = fixture_data["version_number"]
-    query_fixture: dict = fixture_data["query_fixture"]
-    doc_fixture: dict = fixture_data["doc_fixture"]
+    query_fixture: dict[str, Any] = fixture_data["query_fixture"]
+    doc_fixture: dict[str, Any] = fixture_data["doc_fixture"]
 
     query_embedding: list[float] = query_fixture["embedding"]
     allowed_role_ids = {UUID(r) for r in query_fixture["allowed_role_ids"]}
     top_k: int = query_fixture["top_k"]
-    expected_results: list[dict] = query_fixture["expected_results"]
+    expected_results: list[dict[str, Any]] = query_fixture["expected_results"]
 
     service = RetrievalService()
     retrieval_results = await service.retrieve(
@@ -322,7 +322,7 @@ async def test_at006_retrieval_returns_no_results_without_permission(
     Proves access filtering works: the same query with a different role
     that lacks document permission returns zero results.
     """
-    query_fixture: dict = fixture_data["query_fixture"]
+    query_fixture: dict[str, Any] = fixture_data["query_fixture"]
     query_embedding: list[float] = query_fixture["embedding"]
 
     other_role_id = uuid4()
