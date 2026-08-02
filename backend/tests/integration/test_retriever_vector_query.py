@@ -7,7 +7,6 @@ Updated for WP-4.4B: all tests create matching DocumentPermission rows
 and pass allowed_role_ids to the retrieval service.
 """
 
-import re
 from collections.abc import AsyncIterator
 from uuid import UUID, uuid4
 
@@ -25,60 +24,14 @@ from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.user import Role
 from app.services.embedding_provider import FakeEmbeddingProvider
 from app.services.ingestion import IngestionOrchestrator
+from tests._db_url import get_test_database_url
 
 # ---------------------------------------------------------------------------
 # Integration-gate: skip entire module when no DB is reachable
 # ---------------------------------------------------------------------------
 
 
-def _get_test_database_url() -> str:
-    """Resolve database URL from .env with placeholder interpolation."""
-    import urllib.parse
-    from pathlib import Path
-
-    # Find .env relative to this test file's location
-    # Test file is at backend/tests/integration/test_retriever_vector_query.py
-    # .env is at the repo root: backend/../../.env
-    test_file_dir = Path(__file__).resolve().parent
-    env_file = test_file_dir.parent.parent.parent / ".env"
-
-    # Read .env and resolve placeholders
-    env_vars = {}
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            env_vars[key.strip()] = value.strip()
-
-    # Interpolate ${VAR} placeholders
-    def interpolate(value: str) -> str:
-        pattern = re.compile(r"\$\{(\w+)\}")
-
-        def replacer(match: re.Match[str]) -> str:
-            var_name: str = match.group(1)
-            return env_vars.get(var_name, match.group(0))
-
-        prev: str | None = None
-        while prev != value:
-            prev = value
-            value = pattern.sub(replacer, value)
-        return value
-
-    user = interpolate(env_vars.get("POSTGRES_USER", ""))
-    password = interpolate(env_vars.get("POSTGRES_PASSWORD", ""))
-    host = "localhost"  # Use localhost for tests
-    port = interpolate(env_vars.get("POSTGRES_PORT", "5432"))
-    db = interpolate(env_vars.get("POSTGRES_DB", ""))
-
-    # URL-encode password for special characters
-    password_encoded = urllib.parse.quote_plus(password)
-
-    return f"postgresql+asyncpg://{user}:{password_encoded}@{host}:{port}/{db}"
-
-
-INTEGRATION_DB_URL = _get_test_database_url()
+INTEGRATION_DB_URL = get_test_database_url()
 
 
 def _can_connect() -> bool:

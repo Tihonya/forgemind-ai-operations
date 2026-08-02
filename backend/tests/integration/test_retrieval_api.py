@@ -4,9 +4,9 @@ Tests the POST /api/v1/retrieval endpoint with authentication, authorization,
 and citation construction.
 """
 
-import re
 from collections.abc import AsyncIterator
-from uuid import UUID, uuid4
+from typing import Any
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,61 +18,20 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from app.ai.rag.retriever import RetrievalService
 from app.main import app
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.user import Role, User, UserRole
 from app.services.auth_service import issue_token
 from app.services.embedding_provider import FakeEmbeddingProvider
 from app.services.ingestion import IngestionOrchestrator
+from tests._db_url import get_test_database_url
 
 # ---------------------------------------------------------------------------
 # Integration-gate: skip entire module when no DB is reachable
 # ---------------------------------------------------------------------------
 
 
-def _get_test_database_url() -> str:
-    """Resolve database URL from .env with placeholder interpolation."""
-    import urllib.parse
-    from pathlib import Path
-
-    test_file_dir = Path(__file__).resolve().parent
-    env_file = test_file_dir.parent.parent.parent / ".env"
-
-    env_vars = {}
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, _, value = line.partition("=")
-            env_vars[key.strip()] = value.strip()
-
-    def interpolate(value: str) -> str:
-        pattern = re.compile(r"\$\{(\w+)\}")
-
-        def replacer(match: re.Match[str]) -> str:
-            var_name: str = match.group(1)
-            return env_vars.get(var_name, match.group(0))
-
-        prev: str | None = None
-        while prev != value:
-            prev = value
-            value = pattern.sub(replacer, value)
-        return value
-
-    user = interpolate(env_vars.get("POSTGRES_USER", ""))
-    password = interpolate(env_vars.get("POSTGRES_PASSWORD", ""))
-    host = "localhost"
-    port = interpolate(env_vars.get("POSTGRES_PORT", "5432"))
-    db = interpolate(env_vars.get("POSTGRES_DB", ""))
-
-    password_encoded = urllib.parse.quote_plus(password)
-
-    return f"postgresql+asyncpg://{user}:{password_encoded}@{host}:{port}/{db}"
-
-
-INTEGRATION_DB_URL = _get_test_database_url()
+INTEGRATION_DB_URL = get_test_database_url()
 
 
 def _can_connect() -> bool:
@@ -203,7 +162,7 @@ async def cleanup_residual_wp44c_data(async_session: AsyncSession) -> AsyncItera
 
 
 @pytest.fixture
-async def test_setup(async_session: AsyncSession) -> AsyncIterator[dict]:
+async def test_setup(async_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Create test user, role, document, and chunks for API testing."""
     import bcrypt
 
@@ -336,7 +295,7 @@ async def test_unauthenticated_request_rejected(client: AsyncClient) -> None:
 
 async def test_authenticated_caller_role_ids_derived_server_side(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Authenticated caller's role IDs are derived server-side."""
     response = await client.post(
@@ -491,7 +450,7 @@ async def test_request_provided_role_escalation_impossible(
 
 async def test_authorized_retrieval_returns_citation_data(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Authorized retrieval returns results with citation data."""
     response = await client.post(
@@ -524,7 +483,7 @@ async def test_authorized_retrieval_returns_citation_data(
 
 async def test_restricted_chunk_never_appears(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Restricted chunk (no permission) never appears in results."""
     # Create a second role with no permission
@@ -571,11 +530,11 @@ async def test_restricted_chunk_never_appears(
         await session.commit()
 
         # Issue token
-        from app.services.auth_service import issue_token
         from app.models.user import User
+        from app.services.auth_service import issue_token
 
         user = await session.get(User, user_id)
-        token = issue_token(user, [f"WP44C_RESTRICTED_ROLE_{suffix}"])
+        token = issue_token(user, [f"WP44C_RESTRICTED_ROLE_{suffix}"])  # type: ignore[arg-type]
 
         # Query with restricted role — should get no results
         response = await client.post(
@@ -675,7 +634,7 @@ async def test_empty_result_set_returns_successful_empty_response(
 
 async def test_top_k_reaches_service_correctly(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """top_k parameter is passed to service correctly."""
     response = await client.post(
@@ -694,7 +653,7 @@ async def test_top_k_reaches_service_correctly(
 
 async def test_invalid_embedding_returns_client_error(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Invalid embedding returns 400."""
     # Wrong dimension
@@ -895,7 +854,7 @@ async def test_deterministic_ordering_remains_intact(
 
 async def test_exact_document_version_chunk_ids_returned(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Exact document_id, version_id, chunk_id are returned."""
     response = await client.post(
