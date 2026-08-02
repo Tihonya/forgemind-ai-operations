@@ -6,6 +6,7 @@ and citation construction.
 
 import re
 from collections.abc import AsyncIterator
+from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -202,7 +203,7 @@ async def cleanup_residual_wp44c_data(async_session: AsyncSession) -> AsyncItera
 
 
 @pytest.fixture
-async def test_setup(async_session: AsyncSession) -> AsyncIterator[dict]:
+async def test_setup(async_session: AsyncSession) -> AsyncIterator[dict[str, Any]]:
     """Create test user, role, document, and chunks for API testing."""
     import bcrypt
 
@@ -335,7 +336,7 @@ async def test_unauthenticated_request_rejected(client: AsyncClient) -> None:
 
 async def test_authenticated_caller_role_ids_derived_server_side(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Authenticated caller's role IDs are derived server-side."""
     response = await client.post(
@@ -490,7 +491,7 @@ async def test_request_provided_role_escalation_impossible(
 
 async def test_authorized_retrieval_returns_citation_data(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Authorized retrieval returns results with citation data."""
     response = await client.post(
@@ -523,7 +524,7 @@ async def test_authorized_retrieval_returns_citation_data(
 
 async def test_restricted_chunk_never_appears(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Restricted chunk (no permission) never appears in results."""
     # Create a second role with no permission
@@ -574,7 +575,7 @@ async def test_restricted_chunk_never_appears(
         from app.services.auth_service import issue_token
 
         user = await session.get(User, user_id)
-        token = issue_token(user, [f"WP44C_RESTRICTED_ROLE_{suffix}"])
+        token = issue_token(user, [f"WP44C_RESTRICTED_ROLE_{suffix}"])  # type: ignore[arg-type]
 
         # Query with restricted role — should get no results
         response = await client.post(
@@ -674,7 +675,7 @@ async def test_empty_result_set_returns_successful_empty_response(
 
 async def test_top_k_reaches_service_correctly(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """top_k parameter is passed to service correctly."""
     response = await client.post(
@@ -693,7 +694,7 @@ async def test_top_k_reaches_service_correctly(
 
 async def test_invalid_embedding_returns_client_error(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Invalid embedding returns 400."""
     # Wrong dimension
@@ -894,7 +895,7 @@ async def test_deterministic_ordering_remains_intact(
 
 async def test_exact_document_version_chunk_ids_returned(
     client: AsyncClient,
-    test_setup: dict,
+    test_setup: dict[str, Any],
 ) -> None:
     """Exact document_id, version_id, chunk_id are returned."""
     response = await client.post(

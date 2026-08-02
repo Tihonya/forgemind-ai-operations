@@ -14,6 +14,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -116,13 +117,13 @@ async def async_session() -> AsyncIterator[AsyncSession]:
 
 
 @pytest.fixture(scope="module")
-def rag_documents() -> dict:
+def rag_documents() -> dict[str, Any]:
     with open(FIXTURES_DIR / "rag_documents.json") as f:
         return json.load(f)
 
 
 @pytest.fixture(scope="module")
-def rag_queries() -> dict:
+def rag_queries() -> dict[str, Any]:
     with open(FIXTURES_DIR / "rag_queries.json") as f:
         return json.load(f)
 
@@ -130,9 +131,9 @@ def rag_queries() -> dict:
 @pytest.fixture
 async def fixture_data(
     async_session: AsyncSession,
-    rag_documents: dict,
-    rag_queries: dict,
-) -> AsyncIterator[dict]:
+    rag_documents: dict[str, Any],
+    rag_queries: dict[str, Any],
+) -> AsyncIterator[dict[str, Any]]:
     doc_fixture = rag_documents["documents"][0]
     query_fixture = rag_queries["queries"][0]
 
@@ -226,7 +227,7 @@ async def fixture_data(
 
 async def test_at006_mitigation_query_retrieves_approved_document_with_citations(
     async_session: AsyncSession,
-    fixture_data: dict,
+    fixture_data: dict[str, Any],
 ) -> None:
     """AT-006: mitigation query retrieves approved component-alternative document.
 
@@ -314,7 +315,7 @@ async def test_at006_mitigation_query_retrieves_approved_document_with_citations
 
 async def test_at006_retrieval_returns_no_results_without_permission(
     async_session: AsyncSession,
-    fixture_data: dict,
+    fixture_data: dict[str, Any],
 ) -> None:
     """AT-006: unauthorized role receives zero results for the same query.
 
@@ -355,10 +356,10 @@ async def test_at006_retrieval_returns_no_results_without_permission(
 
 async def test_at006_fixture_determinism(
     async_session: AsyncSession,
-    fixture_data: dict,
+    fixture_data: dict[str, Any],
 ) -> None:
     """AT-006: repeated queries produce identical results (deterministic)."""
-    query_fixture: dict = fixture_data["query_fixture"]
+    query_fixture: dict[str, Any] = fixture_data["query_fixture"]
     query_embedding: list[float] = query_fixture["embedding"]
     allowed_role_ids = {UUID(r) for r in query_fixture["allowed_role_ids"]}
     top_k: int = query_fixture["top_k"]

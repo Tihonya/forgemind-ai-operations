@@ -22,6 +22,8 @@ Error handling:
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +47,7 @@ router = APIRouter(tags=["Retrieval"])
 async def _resolve_role_ids(
     session: AsyncSession,
     role_codes: frozenset[str],
-) -> set:
+) -> set[UUID]:
     """Resolve role codes to role UUIDs.
 
     Args:
