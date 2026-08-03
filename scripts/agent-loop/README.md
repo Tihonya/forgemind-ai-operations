@@ -45,17 +45,37 @@ cd /path/to/forgemind-agent-loop
 
 ### Configuration
 
-**config.sh** - Shared configuration:
+**config.sh** - Shared configuration loader:
+- Derives FORGEMIND_AGENT_LOOP_ROOT from Git repository root
+- Validates required environment: AGENTLAB_ROOT, FORGEMIND_MAIN_ROOT
+- Loads .agent-loop/project.json and .agent-loop/gates.json via config_loader.py
+- Parses NUL-delimited output to export resolved paths and policy
+- Auto-detects Python/pytest/ruff/mypy binaries from .venv or PATH
 - Agent binaries (override via RALPH_BIN, OPENCODE_BIN environment variables)
-- Python/pytest/ruff/mypy binaries (auto-detect via command -v or MAIN_REPO/.venv)
-- State directories
-- Loop limits
-- Forbidden/allowed path patterns
+- State directories and loop limits
 
-**config.gates.json** - Gate definitions:
-- Which gates to run (enabled/disabled)
-- Gate required/optional status
-- Gate-specific options (scope_to_diff, assertion_gate)
+**scripts/agent-loop/lib/config_loader.py** - Configuration validator and emitter:
+- CLI: `validate-project <path>`, `validate-gates <path>`, `emit-null-env <path>`
+- Validates schema_version, project_id, required fields
+- Resolves environment variable placeholders (${AGENTLAB_ROOT}, ${FORGEMIND_MAIN_ROOT}, ${FORGEMIND_AGENT_LOOP_ROOT})
+- Validates path existence (existing roots) and distinctness (all roots pairwise distinct)
+- Emits NUL-delimited key-value pairs (safe for paths with spaces)
+- Exit codes: 0=success, 1=validation error, 2=configuration error
+- No eval, no shell code generation, no secrets in error messages
+
+**.agent-loop/project.json** - Project structure and runtime policy:
+- schema_version, project_id, repository_name
+- structure: main_control_plane_root, infrastructure_root, source_worktree_root, validation_worktree_root, runs_root
+- roles: allowed agent roles
+- workspaces: allowed workspace types
+- runtime_policy: max_repair_iterations, auto_commit, auto_push, auto_merge, concurrency_limit
+- secret_handling: never_log_secrets, never_commit_secrets, redact_in_reports
+- path_policy: pattern_type (gitwildmatch), globally_forbidden_paths, approval_required_paths
+
+**.agent-loop/gates.json** - Gate definitions:
+- schema_version, project_id
+- gates: dict of gate definitions
+- Each gate: enabled, required, description, optional assertion_gate or scope_to_diff
 - No command fields — gate logic is in verify-story.sh
 
 ### Story Manifest
