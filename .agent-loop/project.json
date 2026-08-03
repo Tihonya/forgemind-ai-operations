@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "project_id": "forgemind",
+  "repository_name": "forgemind-agent-loop",
+  "structure": {
+    "main_control_plane_root": "${FORGEMIND_MAIN_ROOT}",
+    "infrastructure_root": "${FORGEMIND_AGENT_LOOP_ROOT}",
+    "source_worktree_root": "${AGENTLAB_ROOT}/worktrees/forgemind-agent-loop",
+    "validation_worktree_root": "${AGENTLAB_ROOT}/worktrees/forgemind-validation",
+    "runs_root": "${AGENTLAB_ROOT}/runs"
+  },
+  "roles": {
+    "allowed": ["manager", "implementer", "verifier", "reviewer", "repair", "reporter"]
+  },
+  "workspaces": {
+    "allowed_types": ["source", "validation", "control-plane"]
+  },
+  "runtime_policy": {
+    "max_repair_iterations": 3,
+    "auto_commit": false,
+    "auto_push": false,
+    "auto_merge": false,
+    "concurrency_limit": 1
+  },
+  "secret_handling": {
+    "never_log_secrets": true,
+    "never_commit_secrets": true,
+    "redact_in_reports": true
+  },
+  "path_policy": {
+    "pattern_type": "gitwildmatch",
+    "globally_forbidden_paths": [
+      ".env",
+      ".env.*",
+      "*.pem",
+      "*.key",
+      "forgemind_project_source_of_truth/**"
+    ],
+    "approval_required_paths": [
+      ".agent-loop/**",
+      "scripts/agent-loop/**"
+    ]
+  }
+}

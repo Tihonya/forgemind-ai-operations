@@ -13,6 +13,13 @@ eggs/
 lib/
 !frontend/src/lib/
 !frontend/src/lib/**
+!scripts/agent-loop/lib/
+!scripts/agent-loop/lib/**
+!scripts/agent-loop/tests/lib/
+!scripts/agent-loop/tests/lib/**
+scripts/agent-loop/**/__pycache__/
+scripts/agent-loop/**/*.pyc
+scripts/agent-loop/**/*.pyo
 lib64/
 parts/
 sdist/
@@ -93,3 +100,6 @@ frontend/.vite/
 *.key
 *.cert
 secrets/
+
+# Agent loop artifacts
+.ralph-tui/artifacts/

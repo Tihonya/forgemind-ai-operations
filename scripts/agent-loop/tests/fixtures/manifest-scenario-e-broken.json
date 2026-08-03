@@ -1,0 +1,4 @@
+{this is intentionally broken JSON for scenario E testing
+  "schema_version": "1.0",
+  "project_id": "forgemind",
+  "story_id": "HARNESS-E-BROKEN"
