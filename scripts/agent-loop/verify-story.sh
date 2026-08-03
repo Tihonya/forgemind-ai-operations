@@ -35,6 +35,21 @@ trap 'exit 143' TERM
 STORY_MANIFEST="${1:-}"
 STORY_ID="${STORY_ID:-}"
 RUN_ID="${RUN_ID:-}"
+PASSPORT_FILE="${PASSPORT_FILE:-}"
+
+# If passport file provided, validate it
+if [[ -n "$PASSPORT_FILE" ]]; then
+  source "$SCRIPT_DIR/lib/guard.sh"
+
+  # Run phase guard for verify phase
+  if ! phase_guard "$PASSPORT_FILE" "verify" "validation" "verifier" "${RUN_DIR:-.}"; then
+    echo "VERIFICATION GATES BLOCKED BY IDENTITY GUARD"
+    echo "See guard-error.json for details"
+    exit 2
+  fi
+
+  echo "Identity guard validation passed for verify phase"
+fi
 
 # Early manifest validation — must happen BEFORE init_artifacts
 MANIFEST_VALID="true"

@@ -385,6 +385,263 @@ fi
 
 rm -f /tmp/harness-o.log "$MANIFEST_O"
 
+# --- Scenario P: Missing passport at verify phase ---
+echo ""
+echo "================================================================"
+echo "Scenario P: Missing passport at verify phase"
+echo "================================================================"
+
+# Create a simple manifest for testing
+MANIFEST_P="$(mktemp /tmp/harness-manifest-P-XXXXXX.json)"
+cat > "$MANIFEST_P" <<EOF
+{
+  "schema_version": "1.0",
+  "story_id": "HARNESS-P",
+  "title": "Test Scenario P - Missing Passport",
+  "description": "Should fail with INFRASTRUCTURE_ERROR",
+  "branch": "main",
+  "gates": {
+    "scope": {"required": true, "enabled": true},
+    "json_syntax": {"required": true, "enabled": true},
+    "targeted_tests": {"required": true, "enabled": true},
+    "lint": {"required": true, "enabled": true},
+    "secrets": {"required": true, "enabled": true},
+    "git_diff_check": {"required": true, "enabled": true}
+  },
+  "test_commands": {
+    "targeted_args": ["tests/synthetic/test_harness_a.py", "-v"]
+  }
+}
+EOF
+
+# Ensure no passport is set
+unset PASSPORT_FILE 2>/dev/null || true
+
+# Set PASSPORT_FILE to a nonexistent path to trigger guard's PASSPORT_MISSING check
+export PASSPORT_FILE="/tmp/nonexistent-passport-for-scenario-P.json"
+
+# Run verify-story.sh with manifest and a missing passport file
+# Guard will detect passport file doesn't exist → INFRASTRUCTURE_ERROR → exit 2
+"$REPO_ROOT/scripts/agent-loop/verify-story.sh" "$MANIFEST_P" > /tmp/scenario-p.log 2>&1
+P_EXIT=$?
+
+# Should fail with exit 2
+if [[ $P_EXIT -eq 2 ]]; then
+  echo "  PASS (exit code 2: INFRASTRUCTURE_ERROR)"
+else
+  echo "  FAIL (expected exit 2, got $P_EXIT)"
+fi
+
+unset PASSPORT_FILE
+rm -f "$MANIFEST_P" /tmp/scenario-p.log
+
+# --- Scenario Q: Wrong branch in passport ---
+echo ""
+echo "================================================================"
+echo "Scenario Q: Identity guard with wrong branch"
+echo "================================================================"
+
+MANIFEST_Q="$(mktemp /tmp/harness-manifest-Q-XXXXXX.json)"
+PASSPORT_Q="$(mktemp /tmp/passport-Q-XXXXXX.json)"
+
+# Create manifest
+cat > "$MANIFEST_Q" <<EOF
+{
+  "schema_version": "1.0",
+  "story_id": "HARNESS-Q",
+  "title": "Test Scenario Q - Wrong Branch",
+  "description": "Should fail with branch mismatch",
+  "branch": "main",
+  "gates": {
+    "scope": {"required": true, "enabled": true},
+    "json_syntax": {"required": true, "enabled": true},
+    "targeted_tests": {"required": true, "enabled": true},
+    "lint": {"required": true, "enabled": true},
+    "secrets": {"required": true, "enabled": true},
+    "git_diff_check": {"required": true, "enabled": true}
+  },
+  "test_commands": {
+    "targeted_args": ["tests/synthetic/test_harness_a.py", "-v"]
+  }
+}
+EOF
+
+# Create passport with wrong branch
+CURRENT_BRANCH=$(git branch --show-current)
+cat > "$PASSPORT_Q" <<EOF
+{
+  "schema_version": "1.0",
+  "project_id": "test",
+  "run_id": "test-run-q",
+  "slot_id": "test-slot-q",
+  "story_id": "HARNESS-Q",
+  "role": "implement",
+  "phase": "implement",
+  "workspace_type": "source",
+  "workspace_root": "$REPO_ROOT",
+  "expected_branch": "nonexistent-branch-xyz",
+  "base_commit": "HEAD",
+  "artifact_root": "/tmp/artifacts-q"
+}
+EOF
+
+export PASSPORT_FILE="$PASSPORT_Q"
+
+# Run verify-story.sh - should fail with exit 2 (INFRASTRUCTURE_ERROR)
+export RUN_ID="test-run-q"
+export SLOT_ID="test-slot-q"
+export STORY_ID="HARNESS-Q"
+export PROJECT_ID="test"
+"$REPO_ROOT/scripts/agent-loop/verify-story.sh" "$MANIFEST_Q" > /tmp/scenario-q.log 2>&1
+Q_EXIT=$?
+
+# Should fail with exit 2
+if [[ $Q_EXIT -eq 2 ]]; then
+  echo "  PASS (exit code 2: branch mismatch detected)"
+else
+  echo "  FAIL (expected exit 2, got $Q_EXIT)"
+fi
+
+unset PASSPORT_FILE
+rm -f "$MANIFEST_Q" "$PASSPORT_Q" /tmp/scenario-q.log
+
+# --- Scenario R: Wrong workspace type for phase ---
+echo ""
+echo "================================================================"
+echo "Scenario R: Identity guard with wrong workspace type"
+echo "================================================================"
+
+MANIFEST_R="$(mktemp /tmp/harness-manifest-R-XXXXXX.json)"
+PASSPORT_R="$(mktemp /tmp/passport-R-XXXXXX.json)"
+
+# Create manifest
+cat > "$MANIFEST_R" <<EOF
+{
+  "schema_version": "1.0",
+  "story_id": "HARNESS-R",
+  "title": "Test Scenario R - Wrong Workspace Type",
+  "description": "Should fail with workspace type mismatch",
+  "branch": "main",
+  "gates": {
+    "scope": {"required": true, "enabled": true},
+    "json_syntax": {"required": true, "enabled": true},
+    "targeted_tests": {"required": true, "enabled": true},
+    "lint": {"required": true, "enabled": true},
+    "secrets": {"required": true, "enabled": true},
+    "git_diff_check": {"required": true, "enabled": true}
+  },
+  "test_commands": {
+    "targeted_args": ["tests/synthetic/test_harness_a.py", "-v"]
+  }
+}
+EOF
+
+# Create passport with wrong workspace type (validation instead of source)
+cat > "$PASSPORT_R" <<EOF
+{
+  "schema_version": "1.0",
+  "project_id": "test",
+  "run_id": "test-run-r",
+  "slot_id": "test-slot-r",
+  "story_id": "HARNESS-R",
+  "role": "implement",
+  "phase": "implement",
+  "workspace_type": "validation",
+  "workspace_root": "$REPO_ROOT",
+  "expected_branch": "$CURRENT_BRANCH",
+  "base_commit": "HEAD",
+  "artifact_root": "/tmp/artifacts-r"
+}
+EOF
+
+export PASSPORT_FILE="$PASSPORT_R"
+export RUN_ID="test-run-r"
+export SLOT_ID="test-slot-r"
+export STORY_ID="HARNESS-R"
+export PROJECT_ID="test"
+
+# Run verify-story.sh - should fail with exit 2 (INFRASTRUCTURE_ERROR)
+"$REPO_ROOT/scripts/agent-loop/verify-story.sh" "$MANIFEST_R" > /tmp/scenario-r.log 2>&1
+R_EXIT=$?
+
+# Should fail with exit 2
+if [[ $R_EXIT -eq 2 ]]; then
+  echo "  PASS (exit code 2: workspace type mismatch detected)"
+else
+  echo "  FAIL (expected exit 2, got $R_EXIT)"
+fi
+
+unset PASSPORT_FILE
+rm -f "$MANIFEST_R" "$PASSPORT_R" /tmp/scenario-r.log
+
+# --- Scenario S: Missing required passport field ---
+echo ""
+echo "================================================================"
+echo "Scenario S: Identity guard with malformed passport"
+echo "================================================================"
+
+MANIFEST_S="$(mktemp /tmp/harness-manifest-S-XXXXXX.json)"
+PASSPORT_S="$(mktemp /tmp/passport-S-XXXXXX.json)"
+
+# Create manifest
+cat > "$MANIFEST_S" <<EOF
+{
+  "schema_version": "1.0",
+  "story_id": "HARNESS-S",
+  "title": "Test Scenario S - Malformed Passport",
+  "description": "Should fail with missing field error",
+  "branch": "main",
+  "gates": {
+    "scope": {"required": true, "enabled": true},
+    "json_syntax": {"required": true, "enabled": true},
+    "targeted_tests": {"required": true, "enabled": true},
+    "lint": {"required": true, "enabled": true},
+    "secrets": {"required": true, "enabled": true},
+    "git_diff_check": {"required": true, "enabled": true}
+  },
+  "test_commands": {
+    "targeted_args": ["tests/synthetic/test_harness_a.py", "-v"]
+  }
+}
+EOF
+
+# Create passport missing required field (artifact_root)
+cat > "$PASSPORT_S" <<EOF
+{
+  "schema_version": "1.0",
+  "project_id": "test",
+  "run_id": "test-run-s",
+  "slot_id": "test-slot-s",
+  "story_id": "HARNESS-S",
+  "role": "implement",
+  "phase": "implement",
+  "workspace_type": "source",
+  "workspace_root": "$REPO_ROOT",
+  "expected_branch": "$CURRENT_BRANCH",
+  "base_commit": "HEAD"
+}
+EOF
+
+export PASSPORT_FILE="$PASSPORT_S"
+export RUN_ID="test-run-s"
+export SLOT_ID="test-slot-s"
+export STORY_ID="HARNESS-S"
+export PROJECT_ID="test"
+
+# Run verify-story.sh - should fail with exit 2 (INFRASTRUCTURE_ERROR)
+"$REPO_ROOT/scripts/agent-loop/verify-story.sh" "$MANIFEST_S" > /tmp/scenario-s.log 2>&1
+S_EXIT=$?
+
+# Should fail with exit 2
+if [[ $S_EXIT -eq 2 ]]; then
+  echo "  PASS (exit code 2: missing field detected)"
+else
+  echo "  FAIL (expected exit 2, got $S_EXIT)"
+fi
+
+unset PASSPORT_FILE
+rm -f "$MANIFEST_S" "$PASSPORT_S" /tmp/scenario-s.log
+
 echo ""
 echo "================================================================"
 echo "SUMMARY"
@@ -404,11 +661,16 @@ echo "Scenario L exit code: $L_EXIT (expected: 2)"
 echo "Scenario M exit code: $M_EXIT (expected: 0)"
 echo "Scenario N exit code: $N_EXIT (expected: 0)"
 echo "Scenario O exit code: $O_EXIT (expected: 0)"
+echo "Scenario P exit code: $P_EXIT (expected: 2)"
+echo "Scenario Q exit code: $Q_EXIT (expected: 2)"
+echo "Scenario R exit code: $R_EXIT (expected: 2)"
+echo "Scenario S exit code: $S_EXIT (expected: 2)"
 echo ""
 
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
-      $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 ]]; then
+      $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
+      $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 ]]; then
   echo "ALL SCENARIOS PASSED"
   exit 0
 else

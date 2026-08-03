@@ -36,13 +36,25 @@ report = {
     "metadata": {
         "run_directory": run_dir,
         "generated_at": datetime.now().isoformat(),
-        "version": "1.0"
+        "version": "1.0",
+        "passport_included": False
     },
     "verification": None,
     "review": None,
     "repair": None,
-    "final_status": "UNKNOWN"
+    "final_status": "UNKNOWN",
+    "passport": None
 }
+
+# Load passport if it exists
+passport_file = reports_dir / "passport.json"
+if passport_file.exists():
+    try:
+        with open(passport_file) as f:
+            report["passport"] = json.load(f)
+        report["metadata"]["passport_included"] = True
+    except (json.JSONDecodeError, IOError) as e:
+        report["passport_error"] = f"Failed to load passport.json: {e}"
 
 # Load verification result
 verify_file = reports_dir / "verify-result.json"
