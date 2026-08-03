@@ -13,6 +13,13 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Isolated test repos may override the source root explicitly
+# (production callers never set this).
+if [[ -n "${AGENT_LOOP_SOURCE_ROOT:-}" ]]; then
+  REPO_ROOT="$AGENT_LOOP_SOURCE_ROOT"
+  export REPO_ROOT
+fi
+
 # Derive infrastructure root from actual Git root
 _INFRA_ROOT="$(git -C "$REPO_ROOT" rev-parse --show-toplevel 2>/dev/null)" || {
   echo "INFRASTRUCTURE_ERROR: Cannot determine Git root for $REPO_ROOT" >&2
@@ -141,27 +148,47 @@ if command -v git &>/dev/null; then
 fi
 unset _COMMON_DIR
 
-if [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/python" ]]; then
+# Tool binaries: honor pre-set values (isolated test environments), else detect.
+# Missing required binary -> deterministic infrastructure error.
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  if [[ ! -x "$PYTHON_BIN" ]]; then
+    echo "INFRASTRUCTURE_ERROR: PYTHON_BIN is set but not executable: $PYTHON_BIN" >&2
+    return 2 2>/dev/null || exit 2
+  fi
+  export PYTHON_BIN
+elif [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/python" ]]; then
   export PYTHON_BIN="$_MAIN_REPO/.venv/bin/python"
 elif command -v python3 &>/dev/null; then
   export PYTHON_BIN="$(command -v python3)"
 else
-  echo "ERROR: Python not found. Set PYTHON_BIN or ensure python3 is in PATH" >&2
+  echo "INFRASTRUCTURE_ERROR: Python not found. Set PYTHON_BIN or ensure python3 is in PATH" >&2
   unset _MAIN_REPO
   return 2 2>/dev/null || exit 2
 fi
 
-if [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/pytest" ]]; then
+if [[ -n "${PYTEST_BIN:-}" ]]; then
+  if [[ ! -x "$PYTEST_BIN" ]]; then
+    echo "INFRASTRUCTURE_ERROR: PYTEST_BIN is set but not executable: $PYTEST_BIN" >&2
+    return 2 2>/dev/null || exit 2
+  fi
+  export PYTEST_BIN
+elif [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/pytest" ]]; then
   export PYTEST_BIN="$_MAIN_REPO/.venv/bin/pytest"
 elif command -v pytest &>/dev/null; then
   export PYTEST_BIN="$(command -v pytest)"
 else
-  echo "ERROR: pytest not found. Set PYTEST_BIN or ensure pytest is in PATH" >&2
+  echo "INFRASTRUCTURE_ERROR: pytest not found. Set PYTEST_BIN or ensure pytest is in PATH" >&2
   unset _MAIN_REPO
   return 2 2>/dev/null || exit 2
 fi
 
-if [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/ruff" ]]; then
+if [[ -n "${RUFF_BIN:-}" ]]; then
+  if [[ ! -x "$RUFF_BIN" ]]; then
+    echo "INFRASTRUCTURE_ERROR: RUFF_BIN is set but not executable: $RUFF_BIN" >&2
+    return 2 2>/dev/null || exit 2
+  fi
+  export RUFF_BIN
+elif [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/ruff" ]]; then
   export RUFF_BIN="$_MAIN_REPO/.venv/bin/ruff"
 elif command -v ruff &>/dev/null; then
   export RUFF_BIN="$(command -v ruff)"
@@ -169,7 +196,13 @@ else
   export RUFF_BIN=""
 fi
 
-if [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/mypy" ]]; then
+if [[ -n "${MYPY_BIN:-}" ]]; then
+  if [[ ! -x "$MYPY_BIN" ]]; then
+    echo "INFRASTRUCTURE_ERROR: MYPY_BIN is set but not executable: $MYPY_BIN" >&2
+    return 2 2>/dev/null || exit 2
+  fi
+  export MYPY_BIN
+elif [[ -n "$_MAIN_REPO" && -x "$_MAIN_REPO/.venv/bin/mypy" ]]; then
   export MYPY_BIN="$_MAIN_REPO/.venv/bin/mypy"
 elif command -v mypy &>/dev/null; then
   export MYPY_BIN="$(command -v mypy)"

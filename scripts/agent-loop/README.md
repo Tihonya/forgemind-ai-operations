@@ -78,16 +78,38 @@ cd /path/to/forgemind-agent-loop
 - Each gate: enabled, required, description, optional assertion_gate or scope_to_diff
 - No command fields — gate logic is in verify-story.sh
 
-### Story Manifest
+### Story Manifest (Canonical Schema v1.0)
 
-Each story has a JSON manifest defining:
+Each story has a JSON manifest defining the canonical schema v1.0:
+
+**Required Fields:**
+- `schema_version` - Must be "1.0"
+- `project_id` - Must be "forgemind"
 - `story_id` - Unique identifier
-- `allowed_paths` - Regex patterns for files agent can modify
-- `forbidden_paths` - Regex patterns for files agent cannot touch
-- `gates` - Dict with per-gate {required, enabled, scope_to_diff} config
+- `title` - Story title
+- `description` - Story description
+- `base_commit` - Concrete 40-char hex SHA (no symbolic refs like HEAD/main)
+- `expected_branch` - Branch name for the story
+- `path_pattern_type` - Must be "gitwildmatch"
+- `allowed_paths` - Gitwildmatch patterns for files agent can modify (repo-relative)
+- `forbidden_paths` - Gitwildmatch patterns for files agent cannot touch (repo-relative)
+- `required_gates` - Array of all 7 canonical gate IDs: scope, json_syntax, yaml_syntax, targeted_tests, lint, secrets, git_diff_check
 - `test_commands.targeted_args` - JSON array of pytest arguments (no shell interpolation)
-- `acceptance_criteria` - Human-readable requirements
-- `repair_hints` - Context for repair iterations
+- `environment_requirements` - Structured object with database/redis/network config
+- `expected_outputs` - Array of repo-relative output paths
+- `acceptance_criteria` - Human-readable requirements (non-empty array)
+- `repair_budget` - Integer (0 ≤ value ≤ 3), can only narrow global limit
+- `model_routing_hints` - Abstract roles only (implementer/reviewer), not tool names
+- `dependencies` - Array of story IDs (no duplicates, no empty strings)
+- `conflict_domains` - Array of domain labels (no duplicates, no empty strings)
+
+**Optional Fields:**
+- `gate_overrides` - Allowlisted overrides only (assertion_gate, scope_to_diff). Cannot override required/enabled
+- `repair_guidance` - Array of repair hints
+
+**Rejected Fields:**
+- Runtime fields: run_id, slot_id, workspace_root, artifact_root, phase, role
+- Legacy fields: gates (dict), branch
 
 Example: `scripts/agent-loop/templates/story-prd.json`
 
@@ -112,20 +134,29 @@ This prevents false positives from all-skipped test suites.
 
 ### Scope Gate
 
-Checks that changes are within allowed paths and don't touch forbidden files.
+Manifest-driven (WP-AL-1B2B): `allowed_paths` and `forbidden_paths` come from
+the validated story manifest; matching uses native gitwildmatch semantics
+implemented once in `lib/harness.py` (no duplicated pattern logic in Bash).
 
-**Behavior on clean working tree**: SKIP (acceptable for required gates — nothing to verify).
+Candidate diff = committed/staged/working-tree changes plus untracked files
+vs the manifest `base_commit`.
 
-Forbidden by default:
-- `.env*` files
-- Credentials/secrets
-- Source of Truth documents
-- Docker compose files
-- Database migrations
+Decisions:
+- NO_CHANGES (no candidate changes) → SKIP (acceptable for required gates)
+- SCOPE_OK → PASS
+- SCOPE_VIOLATIONS → FAIL (forbidden wins over allowed)
+- infrastructure error → ERROR (never masked)
+
+Forbidden paths take precedence over allowed paths.
 
 ### JSON Syntax Gate
 
-Validates syntax of all modified/created JSON files.
+Validates syntax of JSON files in the candidate diff.
+
+### YAML Syntax Gate
+
+Validates syntax of YAML files in the candidate diff.
+SKIP when the candidate diff contains no YAML files.
 
 ### Targeted Tests Gate
 
@@ -133,21 +164,31 @@ Runs tests specified in story manifest (`test_commands.targeted_args` as JSON ar
 
 Uses built-in pytest `--junitxml` for structured output (no pytest-json-report plugin required).
 
+`gate_overrides.targeted_tests.assertion_gate` (allowlisted) controls whether
+zero-collected/all-skipped runs fail (default true) or pass (false). Actual
+test failures/errors always fail.
+
 ### Lint Gate
 
 Runs `ruff` and `mypy` on backend code.
 
-Can be scoped to diff via `scope_to_diff: true` in gate config.
+With `scope_to_diff: true` only the changed Python files of the candidate
+diff are linted (`ruff check <files>`, never `ruff check .`). With
+`scope_to_diff: false` full-project lint semantics apply.
 
 ### Secrets Gate
 
-Scans for accidentally committed secrets using inline regex patterns:
-- Stripe keys (sk_live_, sk_test_)
-- GitHub tokens (ghp_)
-- Private keys (BEGIN PRIVATE KEY)
-- Password/API key/secret assignments
+Scans for accidentally committed secrets using an ordered rule table:
+- stripe_live_key, stripe_test_key
+- github_personal_token
+- private_key_block
+- password_assignment, api_key_assignment, secret_assignment
 
-Can be scoped to diff via `scope_to_diff: true` in gate config.
+With `scope_to_diff: true` only candidate-diff files are scanned; otherwise
+all tracked files plus candidate-diff files.
+
+Evidence reports file, rule identifier, line number and classification only —
+matched secret values are never printed.
 
 ### Git Diff Check Gate
 
@@ -205,20 +246,21 @@ The system loads `.env` safely using Python (no `source .env`):
 ### Phase 1 (Implemented)
 
 - [x] Worktree isolation
-- [x] Configuration system (env overrides, command -v fallback)
+- [x] Configuration system (env overrides, command -v fallback, pre-set tool binaries)
 - [x] Artifact management (collision-resistant RUN_ID with nanoseconds+PID)
 - [x] Environment loading (safe Python parser)
-- [x] Scope verification (SKIP on clean tree = PASS)
-- [x] JSON syntax checks
+- [x] Scope verification (manifest-driven, gitwildmatch, failure propagates)
+- [x] JSON syntax checks (candidate diff)
+- [x] YAML syntax checks (candidate diff)
 - [x] Test execution with assertion gate (JSON array args, no shell splitting)
-- [x] Lint checks (ruff + mypy, optional if not installed)
-- [x] Secrets scanning (inline regex, portable [[:space:]])
+- [x] Lint checks (ruff + mypy, diff-scoped or full-project)
+- [x] Secrets scanning (rule identifiers, diff-scoped or full repo, no value printing)
 - [x] Main loop orchestrator
 - [x] Dry-run mode
 - [x] Machine-readable reports (atomic JSON writes)
 - [x] Cleanup traps (EXIT/INT/TERM)
 - [x] Shared Python harness module (lib/harness.py)
-- [x] Comprehensive test scenarios A-O (15 scenarios)
+- [x] Comprehensive test scenarios A-O in isolated temp Git repositories (15 scenarios)
 
 ### Phase 2 (Next)
 
@@ -237,22 +279,37 @@ cd /path/to/forgemind-agent-loop
 ./scripts/agent-loop/tests/run_harness_scenarios.sh
 ```
 
+WP-AL-1B2B isolation: every scenario A-O runs inside its own disposable
+temporary Git repository built by `tests/lib/temp_repo_fixture.py` (deterministic
+base commit, scenario-local uncommitted candidate changes). The real
+infrastructure worktree is never mutated — no stash, no registered worktrees,
+no synthetic files in the real backend tree. Tool binaries (PYTHON_BIN,
+PYTEST_BIN, RUFF_BIN, MYPY_BIN) may be pre-set; config.sh honors them.
+
 Scenarios A-O test:
 - A: required test passes
 - B: required test missing
-- C: all tests skipped
+- C: all tests skipped (assertion gate)
 - D: real tests pass
 - E: malformed manifest (ERROR)
-- F: zero tests collected
+- F: zero tests collected (assertion gate)
 - G: pytest collection error
 - H: pytest failure
 - I: mixed passed + skipped
-- J: optional gate skipped (does not block)
+- J: allowlisted gate override honored (assertion_gate)
 - K: malformed JUnit XML
 - L: missing manifest file
 - M: test path with spaces
 - N: concurrent runs (collision-resistant RUN_ID)
 - O: interruption cleanup
+
+Unit/integration test files:
+- `tests/test_manifest_loader.py` — canonical schema v1.0 validation
+- `tests/test_config_loader.py` — project/gates config validation
+- `tests/test_passport.py` — cycle passport
+- `tests/test_scope_gate.py` — gitwildmatch, scope decisions, exit codes
+- `tests/test_gate_wiring.py` — yaml gate, lint/secrets scoping, assertion gate
+- `tests/test_identity_guard_integration.sh` — identity guard P-S style checks
 
 ## Troubleshooting
 

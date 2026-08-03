@@ -1,42 +1,58 @@
 {
+  "schema_version": "1.0",
+  "project_id": "forgemind",
   "story_id": "HARNESS-D",
-  "title": "Harness Validation: Scenario D — real tests pass",
-  "description": "Validates PASS when real targeted tests execute and pass",
-  "branch": "chore/agent-loop-infrastructure",
-  "gates": {
-    "scope": {
-      "required": true,
-      "enabled": true
-    },
-    "json_syntax": {
-      "required": true,
-      "enabled": true
-    },
-    "targeted_tests": {
-      "required": true,
-      "enabled": true,
-      "assertion_gate": true
-    },
-    "lint": {
-      "required": true,
-      "enabled": true,
-      "scope_to_diff": true
-    },
-    "secrets": {
-      "required": true,
-      "enabled": true,
-      "scope_to_diff": true
-    },
-    "git_diff_check": {
-      "required": false,
-      "enabled": true
-    }
-  },
+  "title": "Harness Validation: Scenario D",
+  "description": "Validates gate aggregation with mixed test results",
+  "base_commit": "000000000000000000000000000000000000000d",
+  "expected_branch": "chore/agent-loop-infrastructure",
+  "path_pattern_type": "gitwildmatch",
+  "allowed_paths": [
+    "scripts/agent-loop/**"
+  ],
+  "forbidden_paths": [
+    "forgemind_project_source_of_truth/**"
+  ],
+  "required_gates": [
+    "scope",
+    "json_syntax",
+    "yaml_syntax",
+    "targeted_tests",
+    "lint",
+    "secrets",
+    "git_diff_check"
+  ],
   "test_commands": {
     "targeted_args": [
       "tests/synthetic/test_harness_d.py",
       "-v",
       "--junitxml={report_file}"
     ]
+  },
+  "environment_requirements": {
+    "database": {"required": false, "auto_start": false},
+    "redis": {"required": false, "auto_start": false},
+    "external_network": {"allowed": false}
+  },
+  "expected_outputs": [
+    "tests/synthetic/test_harness_d.py"
+  ],
+  "acceptance_criteria": [
+    "Mixed test results handled correctly",
+    "Gate aggregation produces FAIL status when any test fails"
+  ],
+  "repair_budget": 3,
+  "model_routing_hints": {
+    "implementation_role": "implementer",
+    "review_role": "reviewer",
+    "complexity": "low",
+    "local_worker_allowed": true
+  },
+  "dependencies": [],
+  "conflict_domains": [],
+  "gate_overrides": {
+    "targeted_tests": {"assertion_gate": true},
+    "lint": {"scope_to_diff": true},
+    "secrets": {"scope_to_diff": true}
   }
 }

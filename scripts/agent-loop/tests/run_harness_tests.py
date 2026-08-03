@@ -1,13 +1,25 @@
 #!/usr/bin/env python3
 """
-Harness validation script for agent-loop verify-story.sh.
+Harness validation script for agent-loop verify-story.sh (WP-AL-1B2B).
 
-Tests scenarios A-E with synthetic fixtures:
-A. Required test exists and passes → PASS, VERIFIED
-B. Required test missing → FAIL, NOT_VERIFIED, exit!=0
-C. All tests skipped → FAIL, passed=0, skipped>0
-D. Real test passed → PASS, passed>0
-E. Internal harness error → ERROR, error object present
+Isolation design: every scenario runs inside its own disposable temporary
+Git repository (tests/lib/temp_repo_fixture.py). The real infrastructure
+worktree is never mutated — no stash, no registered worktrees, no synthetic
+files in the real backend tree.
+
+final-report contract: run-story.sh (the documented pipeline) invokes
+report-story.sh after verify-story.sh to produce final-report.json. These
+tests therefore run report-story.sh inside the isolated repo after
+verify-story.sh and assert final-report.json, matching the documented
+harness contract rather than asserting an artifact verify-story.sh alone
+never creates.
+
+Scenarios:
+A. Required test exists and passes -> PASS, VERIFIED, exit 0
+B. Required test missing           -> FAIL, VERIFICATION_FAILED, exit != 0
+C. All tests skipped               -> FAIL (assertion gate), exit != 0
+D. Real tests pass                 -> PASS, exit 0, passed > 0
+E. Internal harness error          -> ERROR, error object present, exit 2
 
 Usage:
     python3 run_harness_tests.py
@@ -15,430 +27,474 @@ Usage:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from datetime import datetime
-
 
 # Configuration
 SCRIPT_DIR = Path(__file__).parent.parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
-VERIFY_SCRIPT = SCRIPT_DIR / "verify-story.sh"
-PYTHON_BIN = REPO_ROOT.parent / "VScode/AIAutomation/.venv/bin/python"
+FIXTURE_LIB = Path(__file__).parent / "lib"
+
+sys.path.insert(0, str(FIXTURE_LIB))
+import temp_repo_fixture  # noqa: E402
 
 
-def create_temp_manifest(story_id: str, test_command: str = None, gate_config: dict = None):
-    """Create a temporary manifest file."""
-    manifest = {
-        "story_id": story_id,
-        "title": f"Test Story {story_id}",
-        "description": "Synthetic test for harness validation",
-        "branch": "test/harness-validation",
-        "gates": gate_config or {
-            "scope": {"required": True, "enabled": True},
-            "json_syntax": {"required": True, "enabled": True},
-            "targeted_tests": {"required": True, "enabled": True, "assertion_gate": True},
-            "lint": {"required": True, "enabled": True, "scope_to_diff": True},
-            "secrets": {"required": True, "enabled": True, "scope_to_diff": True},
-            "git_diff_check": {"required": False, "enabled": True}
-        },
-        "test_commands": {
-            "targeted_args": test_command or "",
-            "related_unit_args": ""
-        }
-    }
-    
-    fd, path = tempfile.mkstemp(suffix=".json")
-    with open(path, 'w') as f:
-        json.dump(manifest, f, indent=2)
-    return path
+def _resolve_python_bin() -> str:
+    """Resolve Python binary path without machine-specific hardcoded paths."""
+    # Honour pre-set binary (isolated environments)
+    preset = os.environ.get("PYTHON_BIN")
+    if preset and os.access(preset, os.X_OK):
+        return preset
+
+    # Try to find .venv from git common dir
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--git-common-dir"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        common_dir = Path(result.stdout.strip())
+        if not common_dir.is_absolute():
+            common_dir = REPO_ROOT / common_dir
+        main_repo = common_dir.parent
+        venv_python = main_repo / ".venv" / "bin" / "python"
+        if venv_python.exists() and os.access(venv_python, os.X_OK):
+            return str(venv_python)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # Fall back to python3 in PATH
+    python3_path = shutil.which("python3")
+    if python3_path:
+        return python3_path
+    raise RuntimeError("Python not found. Ensure python3 is in PATH or .venv exists")
 
 
-def create_synthetic_test_file(test_name: str, content: str):
-    """Create a synthetic test file in a temporary location."""
-    backend_dir = REPO_ROOT / "backend"
-    test_dir = backend_dir / "tests" / "synthetic"
-    test_dir.mkdir(parents=True, exist_ok=True)
-    
-    test_file = test_dir / test_name
-    test_file.write_text(content)
-    return test_file
+PYTHON_BIN = _resolve_python_bin()
+
+# Tool binaries for isolated repos (detected once from the host environment)
+PYTEST_BIN = os.environ.get("PYTEST_BIN") or shutil.which("pytest") or ""
+RUFF_BIN = os.environ.get("RUFF_BIN") or shutil.which("ruff") or ""
+MYPY_BIN = os.environ.get("MYPY_BIN") or shutil.which("mypy") or ""
+
+# Shared isolated roots for config.sh requirements
+_ISOLATED_AGENTLAB = Path("/tmp/agent-loop-harness-python-agentlab")
+_ISOLATED_MAIN = Path("/tmp/agent-loop-harness-python-main")
+
+_TEMP_REPOS: list[Path] = []
 
 
-def run_verify(manifest_path: str):
-    """Run verify-story.sh and capture results."""
+def _create_isolated_repo(scenario: str) -> tuple[Path, str]:
+    repo = temp_repo_fixture.create_temp_repo(REPO_ROOT, scenario)
+    _TEMP_REPOS.append(repo)
+    base = temp_repo_fixture.base_sha(repo)
+    _ISOLATED_AGENTLAB.mkdir(parents=True, exist_ok=True)
+    _ISOLATED_MAIN.mkdir(parents=True, exist_ok=True)
+    return repo, base
+
+
+def _cleanup_temp_repos() -> None:
+    for repo in _TEMP_REPOS:
+        try:
+            temp_repo_fixture.remove_temp_repo(repo)
+        except Exception as e:  # noqa: BLE001 - visibility over silence
+            print(f"CLEANUP_WARNING: {repo}: {e}")
+
+
+def _isolated_env() -> dict:
     env = os.environ.copy()
     env["DRY_RUN"] = "false"
-    
+    env["PYTHON_BIN"] = PYTHON_BIN
+    env["PYTEST_BIN"] = PYTEST_BIN
+    env["RUFF_BIN"] = RUFF_BIN
+    env["MYPY_BIN"] = MYPY_BIN
+    env["AGENTLAB_ROOT"] = str(_ISOLATED_AGENTLAB)
+    env["FORGEMIND_MAIN_ROOT"] = str(_ISOLATED_MAIN)
+    return env
+
+
+def create_isolated_manifest(
+    repo: Path,
+    base_sha: str,
+    story_id: str,
+    targeted_args: list,
+) -> Path:
+    """Create a canonical schema v1.0 manifest inside the isolated repo."""
+    manifest = temp_repo_fixture.canonical_manifest(
+        story_id=story_id,
+        targeted_args=targeted_args,
+        allowed_paths=["backend/**"],
+        forbidden_paths=[".env"],
+        base_commit=base_sha,
+        expected_branch="harness-test",
+        gate_overrides={
+            "targeted_tests": {"assertion_gate": True},
+            "lint": {"scope_to_diff": True},
+            "secrets": {"scope_to_diff": True},
+        },
+    )
+    return temp_repo_fixture.write_manifest(repo, manifest)
+
+
+def run_verify(repo: Path, manifest_path: Path):
+    """Run the isolated repo's own verify-story.sh."""
     result = subprocess.run(
-        ["bash", str(VERIFY_SCRIPT), manifest_path],
+        ["bash", str(repo / "scripts" / "agent-loop" / "verify-story.sh"),
+         str(manifest_path)],
         capture_output=True,
         text=True,
-        env=env,
-        cwd=REPO_ROOT
+        env=_isolated_env(),
+        cwd=repo,
     )
-    
     return result
 
 
-def load_verify_result(run_dir: Path):
-    """Load verify-result.json from run directory."""
-    verify_file = run_dir / "reports" / "verify-result.json"
-    if not verify_file.exists():
-        return None
-    
-    with open(verify_file) as f:
-        return json.load(f)
-
-
-def load_final_report(run_dir: Path):
-    """Load final-report.json from run directory."""
-    report_file = run_dir / "reports" / "final-report.json"
-    if not report_file.exists():
-        return None
-    
-    with open(report_file) as f:
-        return json.load(f)
+def run_report(repo: Path, run_dir: Path):
+    """Run the isolated repo's own report-story.sh (final-report contract)."""
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "agent-loop" / "report-story.sh"),
+         str(run_dir)],
+        capture_output=True,
+        text=True,
+        env=_isolated_env(),
+        cwd=repo,
+    )
+    return result
 
 
 def extract_run_dir(stdout: str):
     """Extract run directory from verify-story.sh output."""
-    for line in stdout.split('\n'):
+    for line in stdout.split("\n"):
         if "Run directory:" in line:
             return Path(line.split("Run directory:")[-1].strip())
     return None
 
 
+def load_verify_result(run_dir: Path):
+    verify_file = run_dir / "reports" / "verify-result.json"
+    if not verify_file.exists():
+        return None
+    with open(verify_file) as f:
+        return json.load(f)
+
+
+def load_final_report(run_dir: Path):
+    report_file = run_dir / "reports" / "final-report.json"
+    if not report_file.exists():
+        return None
+    with open(report_file) as f:
+        return json.load(f)
+
+
+def _add_synthetic_test(repo: Path, rel_path: str, content: str) -> None:
+    temp_repo_fixture.add_candidate_file(repo, rel_path, content)
+
+
 def test_scenario_A():
     """Scenario A: Required test exists and passes."""
     print("\n=== Scenario A: Required test exists and passes ===")
-    
-    # Create a passing test
-    test_content = """
-def test_passing():
-    assert True
-"""
-    test_file = create_synthetic_test_file("test_passing.py", test_content)
-    
-    # Create manifest with required targeted_tests
-    manifest = create_temp_manifest(
-        "SCENARIO_A",
-        "tests/synthetic/test_passing.py -v --junitxml={report_file}"
+
+    repo, base = _create_isolated_repo("PYA")
+    _add_synthetic_test(
+        repo,
+        "backend/tests/synthetic/test_passing.py",
+        "\ndef test_passing():\n    assert True\n",
     )
-    
-    # Run verification
-    result = run_verify(manifest)
+    manifest = create_isolated_manifest(
+        repo, base, "SCENARIO_A",
+        ["tests/synthetic/test_passing.py", "-v", "--junitxml={report_file}"],
+    )
+
+    result = run_verify(repo, manifest)
     run_dir = extract_run_dir(result.stdout)
-    
     if not run_dir:
         print("FAIL: Could not extract run directory")
         return False
-    
-    # Load results
+
     verify_result = load_verify_result(run_dir)
-    final_report = load_final_report(run_dir)
-    
-    if not verify_result or not final_report:
-        print("FAIL: Could not load verification or final report")
+    if not verify_result:
+        print("FAIL: Could not load verification report")
         return False
-    
-    # Validate
+
+    # final-report contract: run report-story.sh like run-story.sh does
+    report_result = run_report(repo, run_dir)
+    final_report = load_final_report(run_dir)
+    if report_result.returncode != 0 or not final_report:
+        print("FAIL: report-story.sh did not produce final-report.json")
+        return False
+
     success = True
     print(f"Exit code: {result.returncode} (expected: 0)")
     if result.returncode != 0:
         print("FAIL: Exit code should be 0")
         success = False
-    
+
     print(f"Overall status: {verify_result['overall_status']} (expected: PASS)")
-    if verify_result['overall_status'] != 'PASS':
+    if verify_result["overall_status"] != "PASS":
         print("FAIL: Overall status should be PASS")
         success = False
-    
+
     print(f"Final status: {final_report['final_status']} (expected: VERIFIED)")
-    if final_report['final_status'] != 'VERIFIED':
+    if final_report["final_status"] != "VERIFIED":
         print("FAIL: Final status should be VERIFIED")
         success = False
-    
-    # Check targeted_tests gate
-    targeted_gate = next((g for g in verify_result['gates'] if g['name'] == 'targeted_tests'), None)
+
+    targeted_gate = next(
+        (g for g in verify_result["gates"] if g["name"] == "targeted_tests"), None
+    )
     if targeted_gate:
         print(f"Targeted tests gate: {targeted_gate['status']} (expected: PASS)")
-        if targeted_gate['status'] != 'PASS':
+        if targeted_gate["status"] != "PASS":
             print("FAIL: Targeted tests gate should be PASS")
             success = False
-    
-    # Cleanup
-    test_file.unlink()
-    Path(manifest).unlink()
-    
+
     return success
 
 
 def test_scenario_B():
     """Scenario B: Required test missing."""
     print("\n=== Scenario B: Required test missing ===")
-    
-    # Create manifest pointing to non-existent test
-    manifest = create_temp_manifest(
-        "SCENARIO_B",
-        "tests/synthetic/test_nonexistent.py -v --junitxml={report_file}"
+
+    repo, base = _create_isolated_repo("PYB")
+    manifest = create_isolated_manifest(
+        repo, base, "SCENARIO_B",
+        ["tests/synthetic/test_nonexistent.py", "-v", "--junitxml={report_file}"],
     )
-    
-    # Run verification
-    result = run_verify(manifest)
+
+    result = run_verify(repo, manifest)
     run_dir = extract_run_dir(result.stdout)
-    
     if not run_dir:
         print("FAIL: Could not extract run directory")
         return False
-    
-    # Load results
+
     verify_result = load_verify_result(run_dir)
-    final_report = load_final_report(run_dir)
-    
-    if not verify_result or not final_report:
-        print("FAIL: Could not load verification or final report")
+    if not verify_result:
+        print("FAIL: Could not load verification report")
         return False
-    
-    # Validate
+
+    run_report(repo, run_dir)
+    final_report = load_final_report(run_dir)
+    if not final_report:
+        print("FAIL: Could not load final report")
+        return False
+
     success = True
     print(f"Exit code: {result.returncode} (expected: non-zero)")
     if result.returncode == 0:
         print("FAIL: Exit code should be non-zero")
         success = False
-    
+
     print(f"Overall status: {verify_result['overall_status']} (expected: FAIL)")
-    if verify_result['overall_status'] != 'FAIL':
+    if verify_result["overall_status"] != "FAIL":
         print("FAIL: Overall status should be FAIL")
         success = False
-    
-    print(f"Final status: {final_report['final_status']} (expected: VERIFICATION_FAILED or NOT_VERIFIED)")
-    if final_report['final_status'] not in ['VERIFICATION_FAILED', 'NOT_VERIFIED']:
+
+    print(
+        f"Final status: {final_report['final_status']} "
+        "(expected: VERIFICATION_FAILED or NOT_VERIFIED)"
+    )
+    if final_report["final_status"] not in ["VERIFICATION_FAILED", "NOT_VERIFIED"]:
         print("FAIL: Final status should be VERIFICATION_FAILED or NOT_VERIFIED")
         success = False
-    
-    # Check targeted_tests gate
-    targeted_gate = next((g for g in verify_result['gates'] if g['name'] == 'targeted_tests'), None)
+
+    targeted_gate = next(
+        (g for g in verify_result["gates"] if g["name"] == "targeted_tests"), None
+    )
     if targeted_gate:
         print(f"Targeted tests gate: {targeted_gate['status']} (expected: FAIL)")
-        if targeted_gate['status'] != 'FAIL':
+        if targeted_gate["status"] != "FAIL":
             print("FAIL: Targeted tests gate should be FAIL")
             success = False
-    
-    # Cleanup
-    Path(manifest).unlink()
-    
+
     return success
 
 
 def test_scenario_C():
-    """Scenario C: All tests skipped."""
+    """Scenario C: All tests skipped (assertion gate must FAIL)."""
     print("\n=== Scenario C: All tests skipped ===")
-    
-    # Create a test that's all skipped
-    test_content = """
-import pytest
 
-@pytest.mark.skip(reason="Test skip scenario")
-def test_skipped():
-    assert True
-"""
-    test_file = create_synthetic_test_file("test_all_skipped.py", test_content)
-    
-    # Create manifest
-    manifest = create_temp_manifest(
-        "SCENARIO_C",
-        "tests/synthetic/test_all_skipped.py -v --junitxml={report_file}"
+    repo, base = _create_isolated_repo("PYC")
+    _add_synthetic_test(
+        repo,
+        "backend/tests/synthetic/test_all_skipped.py",
+        "\nimport pytest\n\n\n"
+        '@pytest.mark.skip(reason="Test skip scenario")\n'
+        "def test_skipped():\n    assert True\n",
     )
-    
-    # Run verification
-    result = run_verify(manifest)
+    manifest = create_isolated_manifest(
+        repo, base, "SCENARIO_C",
+        ["tests/synthetic/test_all_skipped.py", "-v", "--junitxml={report_file}"],
+    )
+
+    result = run_verify(repo, manifest)
     run_dir = extract_run_dir(result.stdout)
-    
     if not run_dir:
         print("FAIL: Could not extract run directory")
         return False
-    
-    # Load results
+
     verify_result = load_verify_result(run_dir)
-    
     if not verify_result:
         print("FAIL: Could not load verification report")
         return False
-    
-    # Validate
+
     success = True
     print(f"Exit code: {result.returncode} (expected: non-zero)")
     if result.returncode == 0:
         print("FAIL: Exit code should be non-zero")
         success = False
-    
+
     print(f"Overall status: {verify_result['overall_status']} (expected: FAIL)")
-    if verify_result['overall_status'] != 'FAIL':
+    if verify_result["overall_status"] != "FAIL":
         print("FAIL: Overall status should be FAIL")
         success = False
-    
-    # Check pytest report for passed=0, skipped>0
+
     pytest_report = run_dir / "verify" / "pytest-report.xml"
     if pytest_report.exists():
         import xml.etree.ElementTree as ET
+
         tree = ET.parse(pytest_report)
         root = tree.getroot()
-        
+
         passed = 0
         skipped = 0
-        for ts in root.findall('.//testsuite'):
-            passed += int(ts.get('tests', 0)) - int(ts.get('failures', 0)) - int(ts.get('errors', 0)) - int(ts.get('skipped', 0))
-            skipped += int(ts.get('skipped', 0))
-        
+        for ts in root.findall(".//testsuite"):
+            passed += (
+                int(ts.get("tests", 0))
+                - int(ts.get("failures", 0))
+                - int(ts.get("errors", 0))
+                - int(ts.get("skipped", 0))
+            )
+            skipped += int(ts.get("skipped", 0))
+
         print(f"Pytest passed: {passed} (expected: 0)")
         print(f"Pytest skipped: {skipped} (expected: >0)")
-        
+
         if passed != 0:
             print("FAIL: Passed should be 0")
             success = False
         if skipped <= 0:
             print("FAIL: Skipped should be >0")
             success = False
-    
-    # Cleanup
-    test_file.unlink()
-    Path(manifest).unlink()
-    
+
     return success
 
 
 def test_scenario_D():
-    """Scenario D: Real test passed."""
+    """Scenario D: Real tests pass with meaningful assertions."""
     print("\n=== Scenario D: Real test passed ===")
-    
-    # Create a real passing test with assertions
-    test_content = """
-def test_real_passing():
-    result = 2 + 2
-    assert result == 4, f"Expected 4, got {result}"
-    
-def test_another_passing():
-    data = {"key": "value"}
-    assert "key" in data
-    assert data["key"] == "value"
-"""
-    test_file = create_synthetic_test_file("test_real_passing.py", test_content)
-    
-    # Create manifest
-    manifest = create_temp_manifest(
-        "SCENARIO_D",
-        "tests/synthetic/test_real_passing.py -v --junitxml={report_file}"
+
+    repo, base = _create_isolated_repo("PYD")
+    _add_synthetic_test(
+        repo,
+        "backend/tests/synthetic/test_real_passing.py",
+        "\ndef test_real_passing():\n"
+        "    result = 2 + 2\n"
+        '    assert result == 4, f"Expected 4, got {result}"\n'
+        "\n\n"
+        "def test_another_passing():\n"
+        '    data = {"key": "value"}\n'
+        '    assert "key" in data\n'
+        '    assert data["key"] == "value"\n',
     )
-    
-    # Run verification
-    result = run_verify(manifest)
+    manifest = create_isolated_manifest(
+        repo, base, "SCENARIO_D",
+        ["tests/synthetic/test_real_passing.py", "-v", "--junitxml={report_file}"],
+    )
+
+    result = run_verify(repo, manifest)
     run_dir = extract_run_dir(result.stdout)
-    
     if not run_dir:
         print("FAIL: Could not extract run directory")
         return False
-    
-    # Load results
+
     verify_result = load_verify_result(run_dir)
-    
     if not verify_result:
         print("FAIL: Could not load verification report")
         return False
-    
-    # Validate
+
     success = True
     print(f"Exit code: {result.returncode} (expected: 0)")
     if result.returncode != 0:
         print("FAIL: Exit code should be 0")
         success = False
-    
+
     print(f"Overall status: {verify_result['overall_status']} (expected: PASS)")
-    if verify_result['overall_status'] != 'PASS':
+    if verify_result["overall_status"] != "PASS":
         print("FAIL: Overall status should be PASS")
         success = False
-    
-    # Check pytest report for passed>0
+
     pytest_report = run_dir / "verify" / "pytest-report.xml"
     if pytest_report.exists():
         import xml.etree.ElementTree as ET
+
         tree = ET.parse(pytest_report)
         root = tree.getroot()
-        
+
         passed = 0
-        for ts in root.findall('.//testsuite'):
-            passed += int(ts.get('tests', 0)) - int(ts.get('failures', 0)) - int(ts.get('errors', 0)) - int(ts.get('skipped', 0))
-        
+        for ts in root.findall(".//testsuite"):
+            passed += (
+                int(ts.get("tests", 0))
+                - int(ts.get("failures", 0))
+                - int(ts.get("errors", 0))
+                - int(ts.get("skipped", 0))
+            )
+
         print(f"Pytest passed: {passed} (expected: >0)")
-        
         if passed <= 0:
             print("FAIL: Passed should be >0")
             success = False
-    
-    # Cleanup
-    test_file.unlink()
-    Path(manifest).unlink()
-    
+
     return success
 
 
 def test_scenario_E():
-    """Scenario E: Internal harness error."""
+    """Scenario E: Internal harness error (broken manifest JSON)."""
     print("\n=== Scenario E: Internal harness error ===")
-    
-    # Create a manifest with invalid JSON to trigger parse error
-    fd, manifest = tempfile.mkstemp(suffix=".json")
-    with open(manifest, 'w') as f:
-        f.write("{invalid json")
-    
-    # Run verification
-    result = run_verify(manifest)
+
+    repo, _base = _create_isolated_repo("PYE")
+    broken_manifest = repo / "broken-manifest.json"
+    broken_manifest.write_text("{invalid json")
+
+    result = run_verify(repo, broken_manifest)
     run_dir = extract_run_dir(result.stdout)
-    
     if not run_dir:
         print("FAIL: Could not extract run directory")
         return False
-    
-    # Load results
+
     verify_result = load_verify_result(run_dir)
-    
     if not verify_result:
         print("FAIL: Could not load verification report")
         return False
-    
-    # Validate
+
     success = True
     print(f"Exit code: {result.returncode} (expected: 2 for ERROR)")
     if result.returncode != 2:
         print(f"FAIL: Exit code should be 2, got {result.returncode}")
         success = False
-    
+
     print(f"Overall status: {verify_result['overall_status']} (expected: ERROR)")
-    if verify_result['overall_status'] != 'ERROR':
+    if verify_result["overall_status"] != "ERROR":
         print("FAIL: Overall status should be ERROR")
         success = False
-    
-    # Check for error object
-    if 'error' not in verify_result:
+
+    if "error" not in verify_result:
         print("FAIL: Error object should be present")
         success = False
     else:
         print(f"Error object present: {verify_result['error']}")
-    
-    # Cleanup
-    Path(manifest).unlink()
-    
+
     return success
 
 
-def main():
-    """Run all harness validation scenarios."""
+def main() -> int:
     print("=" * 70)
-    print("HARNESS VALIDATION - Agent Loop Phase 1")
+    print("HARNESS VALIDATION - Agent Loop Phase 1 (isolated repos)")
     print("=" * 70)
-    
+
     scenarios = [
         ("A", test_scenario_A, "Required test exists and passes"),
         ("B", test_scenario_B, "Required test missing"),
@@ -446,41 +502,34 @@ def main():
         ("D", test_scenario_D, "Real test passed"),
         ("E", test_scenario_E, "Internal harness error"),
     ]
-    
-    results = []
-    
-    for scenario_id, test_func, description in scenarios:
-        print(f"\n{'='*70}")
-        print(f"Scenario {scenario_id}: {description}")
-        print(f"{'='*70}")
-        
-        try:
-            success = test_func()
-            results.append((scenario_id, description, success))
-        except Exception as e:
-            print(f"EXCEPTION: {e}")
-            results.append((scenario_id, description, False))
-    
-    # Summary
+
+    results = {}
+    try:
+        for name, fn, description in scenarios:
+            print(f"\n--- Running scenario {name}: {description} ---")
+            try:
+                results[name] = fn()
+            except Exception as e:  # noqa: BLE001 - capture, do not abort suite
+                print(f"FAIL: Scenario {name} raised: {type(e).__name__}: {e}")
+                results[name] = False
+    finally:
+        _cleanup_temp_repos()
+
     print("\n" + "=" * 70)
-    print("SUMMARY")
+    print("RESULTS")
     print("=" * 70)
-    
-    for scenario_id, description, success in results:
-        status = "PASS" if success else "FAIL"
-        print(f"Scenario {scenario_id}: {status} - {description}")
-    
-    passed = sum(1 for _, _, success in results if success)
-    total = len(results)
-    
-    print(f"\nTotal: {passed}/{total} scenarios passed")
-    
-    if passed == total:
-        print("\nALL SCENARIOS PASSED")
+    all_pass = True
+    for name, fn, description in scenarios:
+        status = "PASS" if results.get(name) else "FAIL"
+        print(f"Scenario {name} ({description}): {status}")
+        if not results.get(name):
+            all_pass = False
+
+    if all_pass:
+        print("\nALL PYTHON HARNESS TESTS PASSED")
         return 0
-    else:
-        print("\nSOME SCENARIOS FAILED")
-        return 1
+    print("\nSOME PYTHON HARNESS TESTS FAILED")
+    return 1
 
 
 if __name__ == "__main__":

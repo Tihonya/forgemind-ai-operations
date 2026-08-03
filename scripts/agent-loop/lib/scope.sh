@@ -1,59 +1,76 @@
 #!/usr/bin/env bash
-# Scope verification: diff, forbidden files, allowed paths
-
-# NOTE: no set -euo pipefail here — this file is sourced, not executed directly
+# Scope verification: manifest-driven candidate-diff scope gate.
+#
+# WP-AL-1B2B: the scope gate is delegated to harness.py scope_check:
+#   - allowed_paths / forbidden_paths come from the validated story manifest;
+#   - gitwildmatch semantics are implemented natively in harness.py (single
+#     implementation, no duplicated pattern logic in Bash);
+#   - candidate diff = committed/staged/working-tree changes + untracked
+#     files vs the manifest base_commit.
+#
+# check_scope exit codes:
+#   0 = NO_CHANGES or SCOPE_OK (status is the first output line)
+#   1 = SCOPE_VIOLATIONS
+#   2 = infrastructure error (missing manifest, git failure, bad base commit)
+#
+# NOTE: no set -euo pipefail here — this file is sourced, not executed.
 
 check_scope() {
   local manifest_file="${1:-}"
 
-  # Load allowed/forbidden from manifest if provided
-  if [[ -n "$manifest_file" && -f "$manifest_file" ]]; then
-    # TODO: parse JSON manifest for story-specific allowed/forbidden
-    echo "Using story manifest: $manifest_file"
+  if [[ -z "$manifest_file" || ! -f "$manifest_file" ]]; then
+    echo "SCOPE_ERROR"
+    echo "ERROR_DETAIL: No validated story manifest provided"
+    return 2
   fi
 
-  # Get diff since last commit
-  local diff_files
-  diff_files="$(git diff --name-only HEAD 2>/dev/null || echo "")"
+  local verdict_json scope_exit
+  verdict_json="$("$PYTHON_BIN" "$HARNESS_PY" scope_check "$manifest_file" "$REPO_ROOT" 2>/dev/null)"
+  scope_exit=$?
 
-  if [[ -z "$diff_files" ]]; then
-    echo "NO_CHANGES (clean working tree)"
-    return 0
+  # Normalize unexpected crashes to infrastructure error
+  if [[ $scope_exit -ne 0 && $scope_exit -ne 1 ]]; then
+    scope_exit=2
   fi
 
-  local violations=()
-
-  while IFS= read -r file; do
-    # Check forbidden patterns
-    for pattern in "${FORBIDDEN_PATHS[@]}"; do
-      if [[ "$file" =~ $pattern ]]; then
-        violations+=("FORBIDDEN: $file (matches $pattern)")
-      fi
-    done
-
-    # Check if file is in allowed paths
-    local allowed=false
-    for pattern in "${ALLOWED_PATHS[@]}"; do
-      if [[ "$file" =~ $pattern ]]; then
-        allowed=true
-        break
-      fi
-    done
-
-    if [[ "$allowed" == "false" ]]; then
-      violations+=("NOT_ALLOWED: $file (not in ALLOWED_PATHS)")
-    fi
-  done <<< "$diff_files"
-
-  if [[ ${#violations[@]} -gt 0 ]]; then
-    echo "SCOPE_VIOLATIONS:"
-    printf '%s\n' "${violations[@]}"
-    return 1
+  if [[ -z "$verdict_json" ]]; then
+    echo "SCOPE_ERROR"
+    echo "ERROR_DETAIL: scope_check produced no verdict"
+    return 2
   fi
 
-  echo "SCOPE_OK"
-  echo "$diff_files"
-  return 0
+  # Render human-readable verdict (paths + reasons only, no secret values).
+  local rendered
+  rendered="$("$PYTHON_BIN" - "$verdict_json" <<'PYEOF'
+import json
+import sys
+
+try:
+    verdict = json.loads(sys.argv[1])
+except Exception:
+    print("SCOPE_ERROR")
+    print("ERROR_DETAIL: unreadable scope verdict")
+    sys.exit(2)
+print(verdict.get("status", "SCOPE_ERROR"))
+if verdict.get("file_count"):
+    print("candidate_diff_files: {}".format(verdict["file_count"]))
+for v in verdict.get("violations", []):
+    suffix = " (matches {})".format(v["pattern"]) if v.get("pattern") else ""
+    print("{}: {}{}".format(v["reason"], v["file"], suffix))
+if verdict.get("error"):
+    print("ERROR_DETAIL: {}".format(verdict["error"]))
+PYEOF
+)"
+
+  if [[ -n "$rendered" ]]; then
+    echo "$rendered"
+  else
+    echo "SCOPE_ERROR"
+    echo "ERROR_DETAIL: scope verdict rendering failed"
+    return 2
+  fi
+
+  return "$scope_exit"
 }
 
 check_untracked() {
