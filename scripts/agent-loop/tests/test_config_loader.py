@@ -93,30 +93,30 @@ def write_temp_json(data):
 
 def create_test_environment():
     """Create temporary directories for testing.
-    
+
     Returns: (tmp_root, env_dict, cleanup_func)
     """
     import shutil
     tmp_root = tempfile.mkdtemp(prefix="agent_loop_test_")
-    
+
     main_root = os.path.join(tmp_root, "main")
     agentlab_root = os.path.join(tmp_root, "agentlab")
     worktree_root = os.path.join(tmp_root, "worktrees", "forgemind-agent-loop")
-    
+
     os.makedirs(main_root)
     os.makedirs(agentlab_root)
     os.makedirs(worktree_root)
-    
+
     env = os.environ.copy()
     env.update({
         "AGENTLAB_ROOT": agentlab_root,
         "FORGEMIND_MAIN_ROOT": main_root,
         "FORGEMIND_AGENT_LOOP_ROOT": worktree_root
     })
-    
+
     def cleanup():
         shutil.rmtree(tmp_root, ignore_errors=True)
-    
+
     return tmp_root, env, cleanup
 
 
@@ -140,11 +140,11 @@ def test_02_placeholders_resolve():
     """Test 2: Placeholders resolve correctly."""
     path = write_temp_json(VALID_PROJECT)
     tmp_root, env, cleanup = create_test_environment()
-    
+
     try:
         result = run_loader("emit-null-env", path, env=env)
         assert result.returncode == 0, f"Exit {result.returncode}: {result.stderr}"
-        
+
         # Parse NUL-delimited output
         parts = result.stdout.split('\0')
         # Find FORGEMIND_MAIN_ROOT value
@@ -158,7 +158,7 @@ def test_02_placeholders_resolve():
     finally:
         cleanup()
         Path(path).unlink()
-    
+
     print("PASS: test_02_placeholders_resolve")
 
 
@@ -175,7 +175,7 @@ def test_03_unknown_placeholder_rejected():
     path = write_temp_json(bad_project)
     tmp_root, env, cleanup = create_test_environment()
     env["UNKNOWN_VAR"] = os.path.join(tmp_root, "unknown")
-    
+
     try:
         result = run_loader("validate-project", path, env=env)
         assert result.returncode != 0, "Expected non-zero exit for unknown placeholder"
@@ -340,7 +340,7 @@ def test_12_old_config_not_used():
     old_existed = old_path.exists()
     if old_existed:
         old_path.unlink()
-    
+
     new_path = Path("/nonexistent/.agent-loop/gates.json")
     try:
         result = run_loader("validate-gates", str(new_path))
@@ -410,12 +410,12 @@ def test_16_paths_with_spaces_round_trip():
     # Override with paths containing spaces
     env["AGENTLAB_ROOT"] = os.path.join(tmp_root, "path with spaces")
     os.makedirs(env["AGENTLAB_ROOT"], exist_ok=True)
-    
+
     project = VALID_PROJECT.copy()
     project["structure"]["source_worktree_root"] = "${AGENTLAB_ROOT}/worktrees"
     project["structure"]["validation_worktree_root"] = "${AGENTLAB_ROOT}/validation"
     project["structure"]["runs_root"] = "${AGENTLAB_ROOT}/runs"
-    
+
     path = write_temp_json(project)
     try:
         result = run_loader("emit-null-env", path, env=env)
@@ -439,7 +439,7 @@ def test_17_malicious_shell_syntax_remains_data():
     # Append a marker that would be dangerous if eval'd
     marker = "$(_INJECTION_MARKER)"
     env["FORGEMIND_MAIN_ROOT"] = env["FORGEMIND_MAIN_ROOT"] + marker
-    
+
     path = write_temp_json(VALID_PROJECT)
     try:
         result = run_loader("emit-null-env", path, env=env)
@@ -491,7 +491,7 @@ def test_20_infrastructure_root_derives_from_git():
     # This is tested implicitly: config_loader uses FORGEMIND_AGENT_LOOP_ROOT from env
     # which should be set from Git root by config.sh
     tmp_root, env, cleanup = create_test_environment()
-    
+
     path = write_temp_json(VALID_PROJECT)
     try:
         result = run_loader("emit-null-env", path, env=env)
@@ -526,12 +526,12 @@ def test_21_unsupported_path_pattern_type_rejected():
 def test_22_future_validation_runs_roots_may_be_absent():
     """Test 22: Future validation/runs roots may not exist yet."""
     tmp_root, env, cleanup = create_test_environment()
-    
+
     # Modify project to point validation/runs roots to non-existent paths
     project = VALID_PROJECT.copy()
     project["structure"]["validation_worktree_root"] = "${AGENTLAB_ROOT}/nonexistent-validation"
     project["structure"]["runs_root"] = "${AGENTLAB_ROOT}/nonexistent-runs"
-    
+
     path = write_temp_json(project)
     try:
         # validation and runs roots don't exist, but should not fail
@@ -556,7 +556,7 @@ def test_23_symlinked_ancestor_escape_rejected():
             real_dir.mkdir()
             symlink = tmpdir / "symlink"
             symlink.symlink_to(real_dir)
-            
+
             # Test that paths are validated correctly
             # This is a placeholder - full symlink escape test requires more setup
             pass
@@ -624,14 +624,14 @@ def run_all_tests():
         test_23_symlinked_ancestor_escape_rejected,
         test_24_all_five_roots_pairwise_distinct,
     ]
-    
+
     print("=" * 70)
     print("CONFIG LOADER TEST SUITE (WP-AL-1B1)")
     print("=" * 70)
-    
+
     passed = 0
     failed = 0
-    
+
     for test_func in tests:
         try:
             test_func()
@@ -642,11 +642,11 @@ def run_all_tests():
         except Exception as e:
             print(f"ERROR: {test_func.__name__}: {e}")
             failed += 1
-    
+
     print("\n" + "=" * 70)
     print(f"SUMMARY: {passed}/{len(tests)} tests passed")
     print("=" * 70)
-    
+
     return 0 if failed == 0 else 1
 
 

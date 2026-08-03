@@ -5,9 +5,6 @@
 # Do NOT set -e here — this file is sourced.
 set -uo pipefail
 
-# Main ForgeMind worktree path (forbidden for agent-loop execution)
-FORBIDDEN_MAIN_WORKTREE="${FORBIDDEN_MAIN_WORKTREE:-/run/media/toha/Virtual Staff/VScode/AIAutomation}"
-
 # Resolve path safely (no symlink following for security, but canonicalize . and ..)
 resolve_path_strict() {
   local path="$1"
@@ -25,11 +22,35 @@ resolve_path_strict() {
   echo "$resolved"
 }
 
+# Resolve main ForgeMind worktree path (forbidden for agent-loop execution)
+# Resolution order:
+#   1. Explicit FORBIDDEN_MAIN_WORKTREE env var
+#   2. FORGEMIND_MAIN_ROOT env var (canonical project config)
+#   3. Fail-closed: INFRASTRUCTURE_ERROR if neither resolves to existing path
+
+if [[ -n "${FORBIDDEN_MAIN_WORKTREE:-}" ]]; then
+  _resolved_forbidden="$(resolve_path_strict "$FORBIDDEN_MAIN_WORKTREE")" || _resolved_forbidden=""
+  if [[ -z "$_resolved_forbidden" ]]; then
+    echo "INFRASTRUCTURE_ERROR: FORBIDDEN_MAIN_WORKTREE='$FORBIDDEN_MAIN_WORKTREE' does not resolve to existing path" >&2
+    exit 2
+  fi
+elif [[ -n "${FORGEMIND_MAIN_ROOT:-}" ]]; then
+  _resolved_forbidden="$(resolve_path_strict "$FORGEMIND_MAIN_ROOT")" || _resolved_forbidden=""
+  if [[ -z "$_resolved_forbidden" ]]; then
+    echo "INFRASTRUCTURE_ERROR: FORGEMIND_MAIN_ROOT='$FORGEMIND_MAIN_ROOT' does not resolve to existing path" >&2
+    exit 2
+  fi
+  FORBIDDEN_MAIN_WORKTREE="$FORGEMIND_MAIN_ROOT"
+else
+  echo "INFRASTRUCTURE_ERROR: neither FORBIDDEN_MAIN_WORKTREE nor FORGEMIND_MAIN_ROOT is set" >&2
+  exit 2
+fi
+
 # Check for path traversal or symlink escape
 check_path_safety() {
   local path="$1"
   local workspace_root="$2"
-  
+
   # Resolve both paths
   local resolved_path resolved_ws
   resolved_path="$(resolve_path_strict "$path")" || {
@@ -40,13 +61,13 @@ check_path_safety() {
     echo "WORKSPACE_NOT_RESOLVABLE|$workspace_root"
     return 1
   }
-  
+
   # Check that resolved path starts with resolved workspace
   if [[ "$resolved_path" != "$resolved_ws" && "$resolved_path" != "$resolved_ws"/* ]]; then
     echo "PATH_TRAVERSAL|$path escapes $workspace_root"
     return 1
   fi
-  
+
   # Check for symlink component that escapes workspace
   local original_resolved
   original_resolved="$(cd "$path" 2>/dev/null && pwd -L)" || original_resolved=""
@@ -59,7 +80,7 @@ check_path_safety() {
       return 1
     fi
   fi
-  
+
   echo "OK"
   return 0
 }
@@ -76,7 +97,7 @@ write_infra_error() {
   local run_id="${8:-unknown}"
   local slot_id="${9:-unknown}"
   local story_id="${10:-unknown}"
-  
+
   "$PYTHON_BIN" "$HARNESS_PY" atomic_write "$output_file" "$(cat <<EOF
 {
   "schema_version": "1.0",
@@ -103,12 +124,12 @@ bootstrap_guard() {
   local expected_branch="$2"
   local phase="${3:-allocate}"
   local error_dir="${4:-.}"
-  
+
   local project_id="${PROJECT_ID:-forgemind}"
   local run_id="${RUN_ID:-unknown}"
   local slot_id="${SLOT_ID:-unknown}"
   local story_id="${STORY_ID:-unknown}"
-  
+
   # Resolve workspace root
   local resolved_ws
   resolved_ws="$(resolve_path_strict "$workspace_root")" || {
@@ -121,7 +142,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   }
-  
+
   # Check: workspace_root != main ForgeMind worktree
   local resolved_main
   resolved_main="$(resolve_path_strict "$FORBIDDEN_MAIN_WORKTREE")" || resolved_main=""
@@ -135,7 +156,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   fi
-  
+
   # Check: current pwd is under workspace_root
   local resolved_pwd
   resolved_pwd="$(resolve_path_strict "$(pwd)")" || {
@@ -148,7 +169,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   }
-  
+
   if [[ "$resolved_pwd" != "$resolved_ws" && "$resolved_pwd" != "$resolved_ws"/* ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "BOOTSTRAP_PWD_OUTSIDE_WORKSPACE" \
@@ -159,7 +180,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   fi
-  
+
   # Check: git toplevel matches workspace_root
   local git_toplevel
   git_toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || {
@@ -172,7 +193,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   }
-  
+
   local resolved_git
   resolved_git="$(resolve_path_strict "$git_toplevel")" || resolved_git=""
   if [[ "$resolved_git" != "$resolved_ws" ]]; then
@@ -185,7 +206,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   fi
-  
+
   # Check: branch matches expected
   local current_branch
   current_branch="$(git branch --show-current 2>/dev/null)" || {
@@ -198,7 +219,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   }
-  
+
   if [[ "$current_branch" != "$expected_branch" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "BOOTSTRAP_BRANCH_MISMATCH" \
@@ -209,7 +230,7 @@ bootstrap_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   fi
-  
+
   return 0
 }
 
@@ -221,12 +242,12 @@ phase_guard() {
   local expected_workspace_type="$3"
   local expected_role="$4"
   local error_dir="${5:-.}"
-  
+
   local project_id="${PROJECT_ID:-forgemind}"
   local run_id="${RUN_ID:-unknown}"
   local slot_id="${SLOT_ID:-unknown}"
   local story_id="${STORY_ID:-unknown}"
-  
+
   # Check passport file exists
   if [[ ! -f "$passport_file" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
@@ -238,7 +259,7 @@ phase_guard() {
       "$project_id" "$run_id" "$slot_id" "$story_id"
     return 1
   fi
-  
+
   # Validate passport JSON is well-formed and has required fields
   local passport_valid
   passport_valid="$("$PYTHON_BIN" -c "
@@ -264,26 +285,26 @@ except Exception as e:
     print(f'ERROR:{e}')
     sys.exit(1)
 " "$passport_file" 2>&1)" || passport_valid="EXCEPTION:$?"
-  
+
   if [[ "$passport_valid" != "OK" ]]; then
     local error_code="PASSPORT_INVALID"
     local failed_check="passport_json_valid"
     local expected="valid JSON with required fields"
     local actual="$passport_valid"
-    
+
     # Try to extract IDs from passport for error artifact
     local p_pid p_rid p_sid p_stid
     p_pid="$("$PYTHON_BIN" -c "import json; print(json.load(open('$passport_file')).get('project_id','unknown'))" 2>/dev/null || echo "unknown")"
     p_rid="$("$PYTHON_BIN" -c "import json; print(json.load(open('$passport_file')).get('run_id','unknown'))" 2>/dev/null || echo "unknown")"
     p_sid="$("$PYTHON_BIN" -c "import json; print(json.load(open('$passport_file')).get('slot_id','unknown'))" 2>/dev/null || echo "unknown")"
     p_stid="$("$PYTHON_BIN" -c "import json; print(json.load(open('$passport_file')).get('story_id','unknown'))" 2>/dev/null || echo "unknown")"
-    
+
     write_infra_error "$error_dir/guard-error.json" \
       "$error_code" "$phase" "$failed_check" "$expected" "$actual" \
       "$p_pid" "$p_rid" "$p_sid" "$p_stid"
     return 1
   fi
-  
+
   # Load passport fields from JSON
   eval "$("$PYTHON_BIN" -c "
 import json, sys, shlex
@@ -297,7 +318,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
         val = ''
     print(f'P_{key}={shlex.quote(str(val))}')
 " "$passport_file")"
-  
+
   # Check 1: resolved absolute pwd matches workspace_root
   local resolved_pwd resolved_ws
   resolved_pwd="$(resolve_path_strict "$(pwd)")" || {
@@ -307,7 +328,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   resolved_ws="$(resolve_path_strict "$P_workspace_root")" || {
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_WORKSPACE_UNRESOLVABLE" "$phase" "workspace_root_resolvable" \
@@ -315,7 +336,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   if [[ "$resolved_pwd" != "$resolved_ws" && "$resolved_pwd" != "$resolved_ws"/* ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_PWD_MISMATCH" "$phase" "pwd_matches_workspace_root" \
@@ -323,7 +344,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 2: git toplevel matches workspace_root
   local git_toplevel resolved_git
   git_toplevel="$(git rev-parse --show-toplevel 2>/dev/null)" || {
@@ -333,7 +354,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   resolved_git="$(resolve_path_strict "$git_toplevel")" || resolved_git=""
   if [[ "$resolved_git" != "$resolved_ws" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
@@ -342,7 +363,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 3: branch matches expected_branch
   local current_branch
   current_branch="$(git branch --show-current 2>/dev/null)" || {
@@ -352,7 +373,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   if [[ "$current_branch" != "$P_expected_branch" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_BRANCH_MISMATCH" "$phase" "branch_matches_expected" \
@@ -360,7 +381,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 4: base_commit exists
   if ! git cat-file -t "$P_base_commit" >/dev/null 2>&1; then
     write_infra_error "$error_dir/guard-error.json" \
@@ -369,7 +390,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 5: HEAD descends from base_commit
   if ! git merge-base --is-ancestor "$P_base_commit" HEAD 2>/dev/null; then
     # Also allow HEAD == base_commit (already checked above with cat-file)
@@ -384,7 +405,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       return 1
     fi
   fi
-  
+
   # Check 6: project_id/run_id/slot_id/story_id match environment
   if [[ "$P_project_id" != "${PROJECT_ID:-$P_project_id}" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
@@ -393,7 +414,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   if [[ -n "${RUN_ID:-}" && "$P_run_id" != "$RUN_ID" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_RUN_ID_MISMATCH" "$phase" "run_id_matches_environment" \
@@ -401,7 +422,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   if [[ -n "${SLOT_ID:-}" && "$P_slot_id" != "$SLOT_ID" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_SLOT_ID_MISMATCH" "$phase" "slot_id_matches_environment" \
@@ -409,7 +430,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   if [[ -n "${STORY_ID:-}" && "$P_story_id" != "$STORY_ID" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_STORY_ID_MISMATCH" "$phase" "story_id_matches_environment" \
@@ -417,7 +438,7 @@ for key in ['project_id', 'run_id', 'slot_id', 'story_id', 'role', 'phase',
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 7: role is allowed for phase
   local role_ok
   role_ok="$("$PYTHON_BIN" -c "
@@ -438,7 +459,7 @@ if role in allowed or not allowed:
 else:
     print(f'FAIL:{role} not allowed for {phase}, allowed={allowed}')
 " "$phase" "$P_role" 2>/dev/null)" || role_ok="EXCEPTION"
-  
+
   if [[ "$role_ok" != "OK" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_ROLE_NOT_ALLOWED" "$phase" "role_allowed_for_phase" \
@@ -446,7 +467,7 @@ else:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 8: workspace_type matches phase
   if [[ "$P_workspace_type" != "$expected_workspace_type" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
@@ -455,7 +476,7 @@ else:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 9: workspace_root != main ForgeMind root
   local resolved_main
   resolved_main="$(resolve_path_strict "$FORBIDDEN_MAIN_WORKTREE")" || resolved_main=""
@@ -467,7 +488,7 @@ else:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 10: artifact_root belongs to current run/slot
   local resolved_artifact
   resolved_artifact="$(resolve_path_strict "$P_artifact_root")" || {
@@ -477,7 +498,7 @@ else:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   if [[ "$resolved_artifact" != *"$P_run_id"* && "$resolved_artifact" != *"$P_slot_id"* ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_ARTIFACT_ROOT_MISMATCH" "$phase" "artifact_root_belongs_to_run_slot" \
@@ -486,7 +507,7 @@ else:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   # Check 11: manifest belongs to same project/run/slot/story
   if [[ -f "$P_manifest_path" ]]; then
     local manifest_ok
@@ -512,7 +533,7 @@ except Exception as e:
     print(f'ERROR:{e}')
     sys.exit(1)
 " "$P_manifest_path" 2>&1)" || manifest_ok="EXCEPTION"
-    
+
     if [[ "$manifest_ok" != "OK" ]]; then
       write_infra_error "$error_dir/guard-error.json" \
         "GUARD_MANIFEST_MISMATCH" "$phase" "manifest_ids_match_passport" \
@@ -522,7 +543,7 @@ except Exception as e:
       return 1
     fi
   fi
-  
+
   # Check 12: path safety (no symlink escape)
   local safety_check
   safety_check="$(check_path_safety "$(pwd)" "$P_workspace_root")" || {
@@ -533,7 +554,7 @@ except Exception as e:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   }
-  
+
   if [[ "$safety_check" != "OK" ]]; then
     write_infra_error "$error_dir/guard-error.json" \
       "GUARD_PATH_SAFETY_VIOLATION" "$phase" "path_safety" \
@@ -542,6 +563,6 @@ except Exception as e:
       "$P_project_id" "$P_run_id" "$P_slot_id" "$P_story_id"
     return 1
   fi
-  
+
   return 0
 }

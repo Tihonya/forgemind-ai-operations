@@ -16,7 +16,7 @@ assert_result() {
   local test_name="$1"
   local expected_exit="$2"
   local actual_exit="$3"
-  
+
   if [[ "$actual_exit" -eq "$expected_exit" ]]; then
     echo "PASS: $test_name"
     TESTS_PASSED=$((TESTS_PASSED + 1))
@@ -41,7 +41,7 @@ create_test_passport() {
   local base_commit="${11:-HEAD}"
   local manifest_path="${12:-$REPO_ROOT/manifest.json}"
   local artifact_root="${13:-$REPO_ROOT/.ralph-tui/artifacts/test-run-001}"
-  
+
   "$PYTHON_BIN" -c "
 import json
 passport = {
@@ -284,7 +284,7 @@ echo "Scenario V: Bootstrap guard - main worktree forbidden"
 TEMP_DIR=$(mktemp -d)
 
 # Try to bootstrap with workspace_root = main ForgeMind worktree
-bootstrap_guard "/run/media/toha/Virtual Staff/VScode/AIAutomation" "chore/agent-loop-infrastructure" "allocate" "$TEMP_DIR"
+bootstrap_guard "$FORBIDDEN_MAIN_WORKTREE" "chore/agent-loop-infrastructure" "allocate" "$TEMP_DIR"
 V_EXIT=$?
 
 assert_result "Bootstrap guard - main worktree forbidden" 1 $V_EXIT
@@ -466,7 +466,7 @@ PREFIX_EXIT=$?
 if [[ $PREFIX_EXIT -ne 0 ]]; then
   echo "  PASS: Prefix bypass correctly rejected (exit $PREFIX_EXIT)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
-  
+
   # Verify error artifact was created
   if [[ -f "$TEMP_DIR/guard-error.json" ]]; then
     echo "  PASS: Bootstrap error artifact created for prefix bypass attempt"
@@ -502,7 +502,7 @@ if resolve_path_strict "$FORBIDDEN_MAIN_WORKTREE" >/dev/null 2>&1; then
   if [[ $SYMLINK_EXIT -ne 0 ]]; then
     echo "  PASS: Symlink to main worktree correctly rejected (exit $SYMLINK_EXIT)"
     TESTS_PASSED=$((TESTS_PASSED + 1))
-    
+
     # Verify error artifact was created
     if [[ -f "$TEMP_DIR/guard-error.json" ]]; then
       ERROR_CODE=$("$PYTHON_BIN" -c "import json; print(json.load(open('$TEMP_DIR/guard-error.json'))['error_code'])")
@@ -541,7 +541,7 @@ UNRESOLVABLE_EXIT=$?
 if [[ $UNRESOLVABLE_EXIT -ne 0 ]]; then
   echo "  PASS: Unresolvable workspace correctly rejected (exit $UNRESOLVABLE_EXIT)"
   TESTS_PASSED=$((TESTS_PASSED + 1))
-  
+
   # Verify error artifact was created with correct error_code
   if [[ -f "$TEMP_DIR/guard-error.json" ]]; then
     ERROR_CODE=$("$PYTHON_BIN" -c "import json; print(json.load(open('$TEMP_DIR/guard-error.json'))['error_code'])")
@@ -562,6 +562,158 @@ else
 fi
 
 rm -rf "$TEMP_DIR"
+
+# --- Scenario: Path resolution contract verification (WP-AL-1A portability fix) ---
+echo ""
+echo "Scenario: Path resolution fail-closed contract"
+
+# Test A: Explicit FORBIDDEN_MAIN_WORKTREE is honored
+echo ""
+echo "Test A: Explicit FORBIDDEN_MAIN_WORKTREE takes precedence"
+TEMP_DIR=$(mktemp -d)
+TEST_EXPLICIT="$TEMP_DIR/explicit-path"
+TEST_CANONICAL="$TEMP_DIR/canonical-path"
+mkdir -p "$TEST_EXPLICIT" "$TEST_CANONICAL"
+export FORBIDDEN_MAIN_WORKTREE="$TEST_EXPLICIT"
+export FORGEMIND_MAIN_ROOT="$TEST_CANONICAL"
+
+(
+  unset FORBIDDEN_MAIN_WORKTREE
+  export FORBIDDEN_MAIN_WORKTREE="$TEST_EXPLICIT"
+  export FORGEMIND_MAIN_ROOT="$TEST_CANONICAL"
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+  echo "$FORBIDDEN_MAIN_WORKTREE"
+) > "$TEMP_DIR/result.txt" 2>&1
+RESOLVED_A=$(tail -1 "$TEMP_DIR/result.txt")
+if [[ "$RESOLVED_A" == "$TEST_EXPLICIT" ]]; then
+  echo "  PASS: Explicit FORBIDDEN_MAIN_WORKTREE honored"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected $TEST_EXPLICIT, got $RESOLVED_A"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$TEMP_DIR"
+
+# Test B: FORGEMIND_MAIN_ROOT fallback when explicit unset
+echo ""
+echo "Test B: FORGEMIND_MAIN_ROOT used when explicit unset"
+TEMP_DIR=$(mktemp -d)
+TEST_CANONICAL="$TEMP_DIR/canonical-path"
+mkdir -p "$TEST_CANONICAL"
+
+(
+  unset FORBIDDEN_MAIN_WORKTREE
+  export FORGEMIND_MAIN_ROOT="$TEST_CANONICAL"
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+  echo "$FORBIDDEN_MAIN_WORKTREE"
+) > "$TEMP_DIR/result.txt" 2>&1
+RESOLVED_B=$(tail -1 "$TEMP_DIR/result.txt")
+if [[ "$RESOLVED_B" == "$TEST_CANONICAL" ]]; then
+  echo "  PASS: FORGEMIND_MAIN_ROOT fallback works"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected $TEST_CANONICAL, got $RESOLVED_B"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$TEMP_DIR"
+
+# Test C: Fail-closed when both unset (exit 2)
+echo ""
+echo "Test C: Exit 2 when both paths unset"
+(
+  unset FORBIDDEN_MAIN_WORKTREE
+  unset FORGEMIND_MAIN_ROOT
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+) 2>/dev/null
+TEST_C_EXIT=$?
+if [[ $TEST_C_EXIT -eq 2 ]]; then
+  echo "  PASS: Exit 2 when both paths unset"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected exit 2, got $TEST_C_EXIT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test D: Fail-closed when FORBIDDEN_MAIN_WORKTREE doesn't exist (exit 2)
+echo ""
+echo "Test D: Exit 2 when FORBIDDEN_MAIN_WORKTREE doesn't exist"
+(
+  export FORBIDDEN_MAIN_WORKTREE="/nonexistent/path/that/does/not/exist"
+  unset FORGEMIND_MAIN_ROOT
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+) 2>/dev/null
+TEST_D_EXIT=$?
+if [[ $TEST_D_EXIT -eq 2 ]]; then
+  echo "  PASS: Exit 2 when path doesn't exist"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected exit 2, got $TEST_D_EXIT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test E: Fail-closed when FORGEMIND_MAIN_ROOT doesn't exist (exit 2)
+echo ""
+echo "Test E: Exit 2 when FORGEMIND_MAIN_ROOT doesn't exist"
+(
+  unset FORBIDDEN_MAIN_WORKTREE
+  export FORGEMIND_MAIN_ROOT="/nonexistent/canonical/path"
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+) 2>/dev/null
+TEST_E_EXIT=$?
+if [[ $TEST_E_EXIT -eq 2 ]]; then
+  echo "  PASS: Exit 2 when FORGEMIND_MAIN_ROOT doesn't exist"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected exit 2, got $TEST_E_EXIT"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+
+# Test F: Paths with spaces resolve correctly
+echo ""
+echo "Test F: Paths with spaces resolve correctly"
+TEMP_DIR=$(mktemp -d)
+TEST_SPACES="$TEMP_DIR/path with spaces"
+mkdir -p "$TEST_SPACES"
+
+(
+  export FORBIDDEN_MAIN_WORKTREE="$TEST_SPACES"
+  unset FORGEMIND_MAIN_ROOT
+  source "$THIS_DIR/../lib/guard.sh" 2>/dev/null
+  echo "$FORBIDDEN_MAIN_WORKTREE"
+) > "$TEMP_DIR/result.txt" 2>&1
+RESOLVED_F=$(tail -1 "$TEMP_DIR/result.txt")
+if [[ "$RESOLVED_F" == "$TEST_SPACES" ]]; then
+  echo "  PASS: Path with spaces resolved"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+else
+  echo "  FAIL: Expected $TEST_SPACES, got $RESOLVED_F"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
+rm -rf "$TEMP_DIR"
+
+# Test G: No hardcoded developer path in source
+echo ""
+echo "Test G: No hardcoded developer paths in guard.sh"
+FORBIDDEN_PATH_PATTERN="/run/media"
+if grep -q "$FORBIDDEN_PATH_PATTERN" "$THIS_DIR/../lib/guard.sh"; then
+  echo "  FAIL: Hardcoded developer paths still present"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo "  PASS: No hardcoded developer paths"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
+
+# Test H: No hardcoded developer path in changed files of this PR
+echo ""
+echo "Test H: No hardcoded developer paths in PR-changed files"
+PR_FILES=$(git diff --name-only origin/main...HEAD | grep -v test_identity_guard_integration.sh | tr '\n' '\0' | xargs -0 grep -l "$FORBIDDEN_PATH_PATTERN" 2>/dev/null || true)
+if [[ -n "$PR_FILES" ]]; then
+  echo "  FAIL: Hardcoded developer paths found in: $PR_FILES"
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+else
+  echo "  PASS: No hardcoded developer paths in PR-changed files"
+  TESTS_PASSED=$((TESTS_PASSED + 1))
+fi
 
 echo ""
 echo "================================================================"

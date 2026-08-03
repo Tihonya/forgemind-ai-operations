@@ -249,7 +249,7 @@ def load_json(path: str) -> dict:
 
 def validate_project_config(data: dict, config_path: str, env: Optional[dict[str, str]] = None, validate_paths: bool = True) -> None:
     """Validate project.json structure, content, placeholders, and paths.
-    
+
     Args:
         data: parsed project.json
         config_path: path to config file (for error messages)
@@ -287,7 +287,7 @@ def validate_project_config(data: dict, config_path: str, env: Optional[dict[str
             raise ConfigError(f"Missing structure field: {field}")
         if not isinstance(structure[field], str):
             raise ConfigError(f"structure.{field} must be a string")
-        
+
         # Validate placeholders are allowed
         validate_placeholders(structure[field], f"structure.{field}")
 
@@ -311,7 +311,7 @@ def validate_project_config(data: dict, config_path: str, env: Optional[dict[str
         for item in arr:
             if not isinstance(item, str):
                 raise ConfigError(f"path_policy.{key} items must be strings")
-    
+
     # If env provided and validate_paths=True, resolve and validate paths
     if env is not None and validate_paths:
         try:
