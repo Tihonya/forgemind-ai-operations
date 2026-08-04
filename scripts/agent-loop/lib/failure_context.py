@@ -103,11 +103,11 @@ def is_binary_content(text: str, threshold: float = 0.3) -> bool:
     """Detect if content appears to be binary (high ratio of non-printable chars)."""
     if not text:
         return False
-    
+
     # Strong indicator: null bytes
     if "\x00" in text:
         return True
-    
+
     sample = text[:1024]  # Check first 1KB
     non_printable = 0
     for char in sample:
@@ -119,7 +119,7 @@ def is_binary_content(text: str, threshold: float = 0.3) -> bool:
         elif code > 126 and code < 160:
             # C1 control characters and DEL
             non_printable += 1
-    
+
     return (non_printable / len(sample)) > threshold
 
 
@@ -127,13 +127,13 @@ def redact_base64_runs(text: str, min_length: int = 100) -> tuple[str, int]:
     """Detect and redact long base64-like strings (alphanumeric + /+=)."""
     # Match runs of base64 characters that are suspiciously long
     pattern = re.compile(f"[A-Za-z0-9+/]{{{min_length},}}" + "={0,2}")
-    
+
     count = 0
     def replacer(match: re.Match[str]) -> str:
         nonlocal count
         count += 1
         return "[REDACTED:base64_payload]"
-    
+
     result = pattern.sub(replacer, text)
     return result, count
 
@@ -144,18 +144,18 @@ def redact_base64_runs(text: str, min_length: int = 100) -> tuple[str, int]:
 def redact_text(text: str) -> tuple[str, int]:
     """Apply redaction patterns and safety sanitization. Returns (sanitized_text, redaction_count)."""
     count = 0
-    
+
     # Check for binary content first
     if is_binary_content(text):
         return "[REDACTED:binary_content]", 1
-    
+
     # Remove control characters
     text = sanitize_control_characters(text)
-    
+
     # Redact base64-like runs
     text, base64_count = redact_base64_runs(text)
     count += base64_count
-    
+
     # Apply pattern-based redaction
     for pattern, replacement in REDACTION_PATTERNS:
         text, n = pattern.subn(replacement, text)

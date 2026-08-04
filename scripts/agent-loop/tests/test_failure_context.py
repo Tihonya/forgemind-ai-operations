@@ -640,7 +640,7 @@ def test_sanitize_control_characters() -> None:
     """Control characters are removed, but \\n\\t\\r are preserved."""
     text = "Line1\nLine2\tTabbed\rCarriage" + chr(0x01) + chr(0x07) + "End"
     sanitized = failure_context.sanitize_control_characters(text)
-    
+
     assert "\n" in sanitized
     assert "\t" in sanitized
     assert "\r" in sanitized
@@ -655,15 +655,15 @@ def test_is_binary_content_detection() -> None:
     # Text content
     text_content = "This is normal text with some spaces and punctuation."
     assert not failure_context.is_binary_content(text_content)
-    
+
     # Binary-like content with null bytes (strong indicator)
     binary_with_nulls = "text\x00more\x00data"
     assert failure_context.is_binary_content(binary_with_nulls)
-    
+
     # Binary-like content (high ratio of control chars)
     binary_content = "".join(chr(i) for i in range(32)) * 32  # Mostly control chars
     assert failure_context.is_binary_content(binary_content)
-    
+
     # Empty content
     assert not failure_context.is_binary_content("")
 
@@ -675,7 +675,7 @@ def test_redact_base64_runs() -> None:
     result, count = failure_context.redact_base64_runs(short, min_length=100)
     assert result == short
     assert count == 0
-    
+
     # Long base64 string should be redacted
     long_b64 = "A" * 150
     result, count = failure_context.redact_base64_runs(long_b64, min_length=100)
