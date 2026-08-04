@@ -264,11 +264,23 @@ The system loads `.env` safely using Python (no `source .env`):
 
 ### Phase 2 (Next)
 
+**WP-AL-1B3: Structured Failure Context Contract**
+Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+
 - [ ] Review agent integration (OpenCode)
 - [ ] Repair agent integration
-- [ ] Failure context collection
+- [ ] Failure context collection (WP-AL-1B3, planned)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
+
+**Harness Scenarios:**
+- A-O: 15 scenarios (Phase 1B2, all passing)
+- P-S: 4 identity-guard scenarios (Phase 1A, all passing)
+- T: failure-context integration (WP-AL-1B3, planned)
+- Expected total after WP-AL-1B3: A-T = 20 scenarios, 20/20 PASS
+
+**Planning Document:**
+[docs/planning/wp_al_1b3_failure_context_contract.md](../../docs/planning/wp_al_1b3_failure_context_contract.md)
 
 ## Testing
 
