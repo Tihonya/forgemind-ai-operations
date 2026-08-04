@@ -275,7 +275,7 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - [x] Ruff and mypy strict compliance
 - [x] Diagnostic safety tests (control characters, binary, base64)
 - [ ] Independent review pass
-- [ ] Review agent integration (WP-AL-1C1 — APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED)
+- [ ] Review agent integration (WP-AL-1C1 — IMPLEMENTATION COMPLETE — AWAITING COMMIT/REVIEW)
 - [ ] Repair agent integration (WP-AL-1C)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
