@@ -265,15 +265,15 @@ The system loads `.env` safely using Python (no `source .env`):
 ### Phase 2 (In Progress)
 
 **WP-AL-1B3: Structured Failure Context Contract**
-Status: IMPLEMENTATION IN PROGRESS
+Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE
 
 - [x] Failure context schema v1.0 (.agent-loop/failure-context/SCHEMA.md)
 - [x] Failure context collector (scripts/agent-loop/lib/failure_context.py)
 - [x] Integration with verify-story.sh
 - [x] Harness Scenario T (failure-context collection on verification failure)
 - [x] Unit tests (tests/test_failure_context.py)
-- [ ] Ruff and mypy strict compliance
-- [ ] Diagnostic safety tests (control characters, binary, base64)
+- [x] Ruff and mypy strict compliance
+- [x] Diagnostic safety tests (control characters, binary, base64)
 - [ ] Independent review pass
 - [ ] Review agent integration (OpenCode) (WP-AL-1C)
 - [ ] Repair agent integration (WP-AL-1C)

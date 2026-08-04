@@ -2,13 +2,15 @@
 
 ## 1. Status and ownership
 
-- Status: **IMPLEMENTATION IN PROGRESS**
+- Status: **IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE**
 - Owner: ForgeMind AI Operations
 - Branch: `chore/agent-loop-failure-context`
 - Base: `origin/main` @ `10b0e1bf8a0ba4ced62cec585cb291f3b4c9697b`
+- Pull Request: #45
 - Model: qwen3.7-plus (deterministic Python; no LLM invocation)
 - Depends on: WP-AL-1B2 (verify-story.sh canonical gate wiring)
 - Precedes: WP-AL-1C (review/repair agent integration)
+- Pull Request: #45
 
 ## 2. Background
 

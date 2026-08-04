@@ -111,12 +111,13 @@ gates.
 ### Next Steps
 
 **WP-AL-1B3: Structured Failure Context Contract**
-- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE
 - Objective: Define and implement a versioned failure-context schema v1.0 with
   a deterministic collector that reads verify-story.sh artifacts and emits
   `$RUN_DIR/reports/failure-context.json` for every run.
 - Provides structured input contract for reviewer and repair agents (WP-AL-1C).
-- Branch (proposed): `chore/agent-loop-failure-context`
+- Branch: `chore/agent-loop-failure-context`
+- Pull Request: #45
 - Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
 
 ---
