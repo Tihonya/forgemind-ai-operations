@@ -120,6 +120,13 @@ gates.
 - Pull Request: #45
 - Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
 
+**WP-AL-1C1: Review Contract**
+- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Objective: Define review-request and review-result schemas v1.0 with
+  structural validators, two-root referential validator, and deterministic builder.
+- Branch: `chore/agent-loop-review-contract`
+- Planning document: [wp_al_1c1_review_contract.md](planning/wp_al_1c1_review_contract.md)
+
 ---
 
 ## Phase 2 Planning (Next)
