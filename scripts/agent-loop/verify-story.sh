@@ -811,6 +811,83 @@ PYEOF
 echo ""
 echo "verify-result.json generated: $RUN_DIR/reports/verify-result.json"
 
+# ============================================================================
+# WP-AL-1B3: Failure context collection
+# ============================================================================
+echo ""
+echo "[POST-GATE] Collecting failure context..."
+
+FAILURE_CONTEXT_SCRIPT="$SCRIPT_DIR/lib/failure_context.py"
+FAILURE_CONTEXT_OUTPUT="$RUN_DIR/reports/failure-context.json"
+
+if [[ -f "$FAILURE_CONTEXT_SCRIPT" ]]; then
+  if "$PYTHON_BIN" "$FAILURE_CONTEXT_SCRIPT" collect \
+      --run-dir "$RUN_DIR" \
+      --repo-root "$REPO_ROOT" \
+      --manifest "$STORY_MANIFEST" \
+      --output "$FAILURE_CONTEXT_OUTPUT" 2>> "$RUN_DIR/verify/.failure-context-collector.log"; then
+    echo "  SUCCESS - failure-context.json written"
+  else
+    COLLECTOR_EXIT=$?
+    echo "  FAILED - collector exited with code $COLLECTOR_EXIT"
+    echo "  See $RUN_DIR/verify/.failure-context-collector.log"
+
+    # Emit safe infrastructure-error artifact (collector failure)
+    # Do not recursively invoke the collector
+    "$PYTHON_BIN" -c "
+import json, sys
+from datetime import datetime
+
+error_artifact = {
+    'schema_version': '1.0',
+    'run_id': sys.argv[1] if len(sys.argv) > 1 else 'unknown',
+    'story_id': sys.argv[2] if len(sys.argv) > 2 else 'unknown',
+    'generated_at': datetime.utcnow().isoformat() + 'Z',
+    'candidate_identity': {
+        'base_commit': '',
+        'candidate_commit': None,
+        'candidate_state': 'working_tree',
+        'candidate_diff_digest': '0' * 64
+    },
+    'collection_status': 'failed',
+    'collection_errors': [
+        {
+            'artifact_id': 'failure_context_collector',
+            'error_code': 'COLLECTOR_FAILED',
+            'safe_summary': 'Failure context collector exited with non-zero status'
+        }
+    ],
+    'overall_verification_status': 'ERROR',
+    'gate_verdicts': {},
+    'failing_gate_ids': [],
+    'repair_guidance': [],
+    'artifact_refs': {
+        'verify_result': 'reports/verify-result.json',
+        'gate_logs': []
+    },
+    'limits': {
+        'max_excerpt_lines': 50,
+        'max_excerpt_bytes': 4096,
+        'max_diagnostics_per_gate': 10,
+        'max_total_diagnostics': 50
+    },
+    'redaction_applied': False,
+    'redaction_count': 0
+}
+
+with open(sys.argv[3], 'w') as f:
+    json.dump(error_artifact, f, indent=2)
+" "$RUN_ID" "$STORY_ID" "$FAILURE_CONTEXT_OUTPUT" 2>/dev/null || true
+
+    # Override OVERALL_STATUS to ERROR (collector failure)
+    OVERALL_STATUS="ERROR"
+    echo "  OVERALL: ERROR (collector failure)"
+    exit 2
+  fi
+else
+  echo "  SKIPPED - failure_context.py not found (WP-AL-1B3 not yet deployed)"
+fi
+
 if [[ "$OVERALL_STATUS" == "PASS" ]]; then
   echo "OVERALL: PASS"
   exit 0

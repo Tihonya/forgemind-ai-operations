@@ -66,6 +66,62 @@ prioritize blocking items for Phase 2 pre-flight, defer non-blocking to Phase 7.
 
 ---
 
+## Agent-Loop Infrastructure
+
+**Status: ✅ COMPLETE (Phase 1A, 1B1, 1B2)**
+
+Agent-loop infrastructure establishes the canonical isolated execution harness
+for autonomous agent-driven development cycles with deterministic verification
+gates.
+
+### Completed Work Packages
+
+**WP-AL-1A: Cycle Passport and Workspace Identity Guard**
+- Formal identity validation before each agent-loop phase
+- Workspace isolation enforcement (forbidden main worktree)
+- Passport creation and validation (project_id, run_id, slot_id, story_id, role, phase)
+- Phase guard with role/workspace-type checks
+- Commits: `77674ff6cd40692cf63e52e373ec2b3a8f0e4cda`
+
+**WP-AL-1B1: Project Configuration Loader**
+- `.agent-loop/project.json` and `.agent-loop/gates.json` schema validation
+- Placeholder resolution (`${VAR}` from environment)
+- Path validation and distinctness checks
+- NUL-delimited emission for safe shell consumption
+- Commit: `3752dfd32421a9a8e831a5cb1a444a13e56d60e5`
+
+**WP-AL-1B2: Canonical Manifest Schema, Isolated Harness, and Gate Wiring**
+- Canonical story manifest schema v1.0 (strict field allowlist, no legacy fallback)
+- Isolated harness execution (temp_repo_fixture, scenarios A-O)
+- Seven canonical gates wired: scope, json_syntax, yaml_syntax, targeted_tests,
+  lint, secrets, git_diff_check
+- Manifest-driven scope gate (allowed_paths/forbidden_paths, gitwildmatch)
+- Assertion gate for targeted_tests (zero-collected/all-skipped handling)
+- Diff-scoped lint and secrets (scope_to_diff)
+- Commits: `80c7c8cc4bfceba13cd81a69018cc9e848e9d022`, `e85304220095740a75e24f4f0e24025002a01c3c`
+
+### Merge Information
+
+- **Pull Request:** #44
+- **Merge Commit:** `10b0e1bf8a0ba4ced62cec585cb291f3b4c9697b`
+- **Merged Into:** `main`
+- **Source Branch:** `chore/agent-loop-infrastructure`
+- **Documentation:** [WP-AL-1B3 Failure Context Contract](planning/wp_al_1b3_failure_context_contract.md)
+
+### Next Steps
+
+**WP-AL-1B3: Structured Failure Context Contract**
+- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE
+- Objective: Define and implement a versioned failure-context schema v1.0 with
+  a deterministic collector that reads verify-story.sh artifacts and emits
+  `$RUN_DIR/reports/failure-context.json` for every run.
+- Provides structured input contract for reviewer and repair agents (WP-AL-1C).
+- Branch: `chore/agent-loop-failure-context`
+- Pull Request: #45
+- Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
+
+---
+
 ## Phase 2 Planning (Next)
 
 **Phase 2 — Synthetic ERP Core**

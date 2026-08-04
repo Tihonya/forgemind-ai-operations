@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Temporary isolated Git repository fixture for agent-loop harness scenarios.
 
@@ -39,6 +38,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 THIS_DIR = Path(__file__).resolve().parent          # .../agent-loop/tests/lib
 AGENT_LOOP_SRC = THIS_DIR.parent.parent             # .../agent-loop
@@ -81,7 +81,7 @@ ignore_missing_imports = true
 """
 
 
-def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
+def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update({
         "GIT_AUTHOR_NAME": GIT_IDENTITY_NAME,
@@ -96,6 +96,7 @@ def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
         capture_output=True,
         text=True,
         env=env,
+        check=False,
     )
     if check and proc.returncode != 0:
         raise RuntimeError(
@@ -109,12 +110,10 @@ def _copy_agent_loop_infrastructure(repo: Path, source_root: Path) -> None:
     src_agent_loop = source_root / "scripts" / "agent-loop"
     dst_agent_loop = repo / "scripts" / "agent-loop"
 
-    def _ignore(_directory: str, entries: list) -> list:
+    def _ignore(_directory: str, entries: list[str]) -> list[str]:
         ignored = []
         for entry in entries:
-            if entry in ("__pycache__", ".pytest_cache"):
-                ignored.append(entry)
-            elif entry.endswith(".pyc"):
+            if entry in ("__pycache__", ".pytest_cache") or entry.endswith(".pyc"):
                 ignored.append(entry)
         return ignored
 
@@ -166,7 +165,7 @@ def base_sha(repo: Path) -> str:
     return proc.stdout.strip()
 
 
-def write_manifest(repo: Path, manifest: dict, name: str = "manifest.json") -> Path:
+def write_manifest(repo: Path, manifest: dict[str, Any], name: str = "manifest.json") -> Path:
     """Write the manifest OUTSIDE the repo (sibling file) so it never becomes
     part of the candidate diff. Removed together with the repo by
     remove_temp_repo."""
@@ -193,13 +192,13 @@ def remove_temp_repo(repo: Path) -> None:
 
 def canonical_manifest(
     story_id: str,
-    targeted_args: list,
-    allowed_paths: list,
-    forbidden_paths: list,
-    gate_overrides: dict | None = None,
+    targeted_args: list[str],
+    allowed_paths: list[str],
+    forbidden_paths: list[str],
+    gate_overrides: dict[str, Any] | None = None,
     base_commit: str = "0" * 40,
     expected_branch: str = "harness-test",
-) -> dict:
+) -> dict[str, Any]:
     """Build a canonical schema v1.0 manifest (all seven required gates)."""
     manifest = {
         "schema_version": "1.0",
@@ -280,6 +279,9 @@ def main() -> int:
     basesha = sub.add_parser("base-sha", help="print HEAD sha of the temp repo")
     basesha.add_argument("--repo", required=True)
 
+    findrun = sub.add_parser("find-run", help="find the most recent run directory")
+    findrun.add_argument("--repo", required=True)
+
     remove = sub.add_parser("remove", help="remove a fixture temp repo")
     remove.add_argument("repo_root")
 
@@ -343,6 +345,26 @@ def main() -> int:
             print(f"ERROR: base-sha failed: {e}", file=sys.stderr)
             return 2
         return 0
+
+    if args.command == "find-run":
+        # Find the most recent run directory in the artifacts folder
+        try:
+            repo = Path(args.repo)
+            artifacts_dir = repo / ".ralph-tui" / "artifacts"
+            if not artifacts_dir.exists():
+                print(file=sys.stderr)
+                return 1
+            # Get all run directories (they start with scenario ID + timestamp)
+            run_dirs = sorted([d for d in artifacts_dir.iterdir() if d.is_dir()])
+            if not run_dirs:
+                print(file=sys.stderr)
+                return 1
+            # Return the most recent (last in sorted order)
+            print(run_dirs[-1])
+            return 0
+        except Exception as e:  # noqa: BLE001
+            print(f"ERROR: find-run failed: {e}", file=sys.stderr)
+            return 2
 
     if args.command == "remove":
         try:
