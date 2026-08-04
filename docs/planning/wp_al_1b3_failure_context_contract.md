@@ -2,9 +2,9 @@
 
 ## 1. Status and ownership
 
-- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Status: **IMPLEMENTATION IN PROGRESS**
 - Owner: ForgeMind AI Operations
-- Branch (proposed): `chore/agent-loop-failure-context`
+- Branch: `chore/agent-loop-failure-context`
 - Base: `origin/main` @ `10b0e1bf8a0ba4ced62cec585cb291f3b4c9697b`
 - Model: qwen3.7-plus (deterministic Python; no LLM invocation)
 - Depends on: WP-AL-1B2 (verify-story.sh canonical gate wiring)
@@ -186,13 +186,24 @@ In scope:
 - `scripts/agent-loop/lib/failure_context.py` (collector module).
 - Wire the collector into `verify-story.sh` at the end of the gate loop,
   after all gate logs and `verify-result.json` are written.
-- Wire fail-closed exit-code 2 handling into `run-story.sh` when the
-  collector fails.
+- Collector fail-closed exit-code 2 handling is in `verify-story.sh` (collector
+  failure naturally propagates through existing orchestrator exit semantics).
 - Unit tests: `scripts/agent-loop/tests/test_failure_context.py`.
 - Harness scenario T: extend `run_harness_scenarios.sh` to validate a
   failed verification run emits a safe, schema-valid failure-context
   artifact.
 - README status update.
+
+**Collector integration point:**
+
+The collector is invoked by `verify-story.sh` after all gate artifacts and
+`verify-result.json` exist. It runs in the post-gate phase, not in
+`run-story.sh`. This ensures:
+
+- Gate evidence is available before collection;
+- Fail-closed exit 2 from collector failure is produced by verify-story.sh
+  and naturally propagated by the existing orchestrator;
+- `run-story.sh` remains outside approved implementation scope (unchanged).
 
 ## 11. Allowed paths
 
@@ -201,11 +212,21 @@ In scope:
 - `.agent-loop/manifests/SCHEMA.md` (cross-reference append only)
 - `scripts/agent-loop/lib/failure_context.py` (NEW)
 - `scripts/agent-loop/verify-story.sh` (emit call at end of gate loop)
-- `scripts/agent-loop/run-story.sh` (collector-failure handling)
 - `scripts/agent-loop/tests/test_failure_context.py` (NEW)
 - `scripts/agent-loop/tests/run_harness_scenarios.sh` (scenario T)
+- `scripts/agent-loop/tests/lib/temp_repo_fixture.py` (find-run subcommand for
+  Scenario T run-directory discovery)
 - `scripts/agent-loop/tests/lib/scenario_helpers.sh` (helper if needed)
 - `scripts/agent-loop/README.md` (status update)
+
+**temp_repo_fixture.py find-run subcommand justification:**
+
+Scenario T must locate the most recent run directory inside the isolated
+repository's artifacts folder to validate the emitted `failure-context.json`.
+The `find-run` subcommand provides deterministic, narrow run-directory
+discovery without mutating the repository or introducing external dependencies.
+It is restricted to Scenario T's isolated temp repository and does not operate
+on the real infrastructure worktree.
 
 ## 12. Forbidden paths
 
@@ -347,7 +368,6 @@ Total expected: A through T = 20 scenarios, 20/20 PASS.
 - Scenario T integration in `run_harness_scenarios.sh`.
 - Cross-reference in `.agent-loop/manifests/SCHEMA.md` (short).
 - `scripts/agent-loop/verify-story.sh` (emit wiring).
-- `scripts/agent-loop/run-story.sh` (fail-closed exit 2).
 - README status update.
 
 ## 17. Stop conditions

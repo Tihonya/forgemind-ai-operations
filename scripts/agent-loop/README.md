@@ -262,22 +262,29 @@ The system loads `.env` safely using Python (no `source .env`):
 - [x] Shared Python harness module (lib/harness.py)
 - [x] Comprehensive test scenarios A-O in isolated temp Git repositories (15 scenarios)
 
-### Phase 2 (Next)
+### Phase 2 (In Progress)
 
 **WP-AL-1B3: Structured Failure Context Contract**
-Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+Status: IMPLEMENTATION IN PROGRESS
 
-- [ ] Review agent integration (OpenCode)
-- [ ] Repair agent integration
-- [ ] Failure context collection (WP-AL-1B3, planned)
+- [x] Failure context schema v1.0 (.agent-loop/failure-context/SCHEMA.md)
+- [x] Failure context collector (scripts/agent-loop/lib/failure_context.py)
+- [x] Integration with verify-story.sh
+- [x] Harness Scenario T (failure-context collection on verification failure)
+- [x] Unit tests (tests/test_failure_context.py)
+- [ ] Ruff and mypy strict compliance
+- [ ] Diagnostic safety tests (control characters, binary, base64)
+- [ ] Independent review pass
+- [ ] Review agent integration (OpenCode) (WP-AL-1C)
+- [ ] Repair agent integration (WP-AL-1C)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
 
 **Harness Scenarios:**
 - A-O: 15 scenarios (Phase 1B2, all passing)
 - P-S: 4 identity-guard scenarios (Phase 1A, all passing)
-- T: failure-context integration (WP-AL-1B3, planned)
-- Expected total after WP-AL-1B3: A-T = 20 scenarios, 20/20 PASS
+- T: failure-context integration (WP-AL-1B3)
+- Total: A-T = 20 scenarios, 20/20 PASS
 
 **Planning Document:**
 [docs/planning/wp_al_1b3_failure_context_contract.md](../../docs/planning/wp_al_1b3_failure_context_contract.md)

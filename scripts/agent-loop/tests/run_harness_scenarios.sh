@@ -770,6 +770,140 @@ unset PASSPORT_FILE
 rm -f "$MANIFEST_S" "$PASSPORT_S" "$SUITE_TMP/scenario-s.log"
 
 # ============================================================================
+# Scenario T: WP-AL-1B3 — failure context collection on failed verification
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario T: WP-AL-1B3 — failure context collection (isolated repo)"
+echo "================================================================"
+create_isolated_repo "T"
+
+# Create a Python file with syntax errors and a failing test to trigger
+# multiple gate failures, then verify failure-context.json is produced
+add_candidate_content "backend/tests/synthetic/test_harness_t.py" <<'PYEOF'
+"""Harness Scenario T: test failure for failure-context collection."""
+
+
+def test_intentional_failure():
+    """This test intentionally fails to trigger failure context collection."""
+    assert False, "Intentional failure for Scenario T"
+PYEOF
+
+# Also create a file with a lint error to trigger multiple gate failures
+add_candidate_content "backend/src/synthetic/module_t.py" <<'PYEOF'
+"""Module with lint issues for Scenario T."""
+
+import os,sys  # Multiple imports on one line (lint error)
+import json
+
+def bad_function():
+    x=1+2  # Missing spaces around operator (lint error)
+    unused_var = 42  # Unused variable (lint error)
+    return x
+PYEOF
+
+MANIFEST_T="$(mktemp "$SUITE_TMP/manifest-T-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_T" "HARNESS-T" \
+  '["tests/synthetic/test_harness_t.py", "-v", "--junitxml={report_file}"]'
+
+run_isolated_verify "$MANIFEST_T" > "$SUITE_TMP/t-verify.log" 2>&1
+T_VERIFY_EXIT=$?
+
+# Verify that failure-context.json was created
+# Find the run directory (most recent in artifacts)
+RUN_DIR_T="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FAILURE_CONTEXT_FILE="$RUN_DIR_T/reports/failure-context.json"
+
+if [[ -f "$FAILURE_CONTEXT_FILE" ]]; then
+  echo "  PASS - failure-context.json created at $FAILURE_CONTEXT_FILE"
+
+  # Validate JSON structure
+  if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        fc = json.load(f)
+
+    # Check required fields
+    required = ['schema_version', 'run_id', 'story_id', 'candidate_identity',
+                'collection_status', 'overall_verification_status', 'gate_verdicts',
+                'failing_gate_ids']
+
+    missing = [f for f in required if f not in fc]
+    if missing:
+        print(f'FAIL - missing fields: {missing}', file=sys.stderr)
+        sys.exit(1)
+
+    # Check schema_version
+    if fc['schema_version'] != '1.0':
+        print(f'FAIL - wrong schema_version: {fc[\"schema_version\"]}', file=sys.stderr)
+        sys.exit(1)
+
+    # Check collection_status
+    if fc['collection_status'] != 'complete':
+        print(f'FAIL - wrong collection_status: {fc[\"collection_status\"]}', file=sys.stderr)
+        sys.exit(1)
+
+    # Check overall_verification_status is FAIL (we intentionally failed)
+    if fc['overall_verification_status'] != 'FAIL':
+        print(f'FAIL - wrong overall_verification_status: {fc[\"overall_verification_status\"]}', file=sys.stderr)
+        sys.exit(1)
+
+    # Check failing_gate_ids is non-empty
+    if not fc['failing_gate_ids']:
+        print('FAIL - failing_gate_ids is empty', file=sys.stderr)
+        sys.exit(1)
+
+    # Check candidate_identity fields
+    ci = fc['candidate_identity']
+    if not all(k in ci for k in ['base_commit', 'candidate_commit', 'candidate_state', 'candidate_diff_digest']):
+        print('FAIL - missing candidate_identity fields', file=sys.stderr)
+        sys.exit(1)
+
+    # Check candidate_diff_digest is present and is a string
+    if not isinstance(ci['candidate_diff_digest'], str):
+        print('FAIL - candidate_diff_digest is not a string', file=sys.stderr)
+        sys.exit(1)
+
+    # Check no secrets in output (basic check)
+    output_str = json.dumps(fc)
+    if 'sk_live_' in output_str or 'ghp_' in output_str:
+        print('FAIL - potential secret found in output', file=sys.stderr)
+        sys.exit(1)
+
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$FAILURE_CONTEXT_FILE" 2>&1; then
+    echo "  PASS - failure-context.json validation"
+    T_VALIDATION_EXIT=0
+  else
+    echo "  FAIL - failure-context.json validation failed"
+    T_VALIDATION_EXIT=1
+  fi
+else
+  echo "  FAIL - failure-context.json not found at $FAILURE_CONTEXT_FILE"
+  T_VALIDATION_EXIT=1
+fi
+
+# Clean up
+rm -f "$MANIFEST_T" "$SUITE_TMP/t-verify.log"
+
+# Scenario T passes if:
+# 1. verify-story.sh exited with 1 (FAIL, not ERROR)
+# 2. failure-context.json was created
+# 3. failure-context.json passed validation
+if [[ $T_VERIFY_EXIT -eq 1 && $T_VALIDATION_EXIT -eq 0 ]]; then
+  T_EXIT=0
+  echo "Scenario T: PASS"
+else
+  T_EXIT=1
+  echo "Scenario T: FAIL (verify_exit=$T_VERIFY_EXIT, validation_exit=$T_VALIDATION_EXIT)"
+fi
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -795,13 +929,14 @@ echo "Scenario P exit code: $P_EXIT (expected: 2)"
 echo "Scenario Q exit code: $Q_EXIT (expected: 2)"
 echo "Scenario R exit code: $R_EXIT (expected: 2)"
 echo "Scenario S exit code: $S_EXIT (expected: 2)"
+echo "Scenario T exit code: $T_EXIT (expected: 0)"
 echo ""
 
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
       $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
-      $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 ]]; then
-  echo "ALL SCENARIOS PASSED"
+      $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 ]]; then
+  echo "ALL 20 SCENARIOS PASSED (A-T)"
   exit 0
 else
   echo "SOME SCENARIOS FAILED"
