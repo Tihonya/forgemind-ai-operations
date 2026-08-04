@@ -1,9 +1,9 @@
 # WP-AL-1C1 — Review Contract
 
-**Status:** APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+**Status:** IMPLEMENTATION COMPLETE — AWAITING COMMIT/REVIEW
 
-**Branch:** `chore/agent-loop-review-contract`
-**Base:** `origin/main` @ `95d441da99c31b6f811ce3ba5ca9d75af607285c`
+**Branch:** `feature/agent-loop-review-contract`
+**Base:** `origin/main` @ `252ae9e87e84f4d63678fb92e6b9ffed894893ad`
 
 ---
 
@@ -395,13 +395,15 @@ def pretty_json_string(obj: dict[str, Any]) -> str:
 ### Sanitization pipeline (applied in order)
 
 1. UTF-8 normalization (NFC form, invalid bytes replaced with U+FFFD)
-2. Control character removal (preserve `\n`, `\t`, `\r`; remove C0/C1 except DEL)
-3. Binary content detection (if >30% non-printable in first 1KB, replace with `"[REDACTED:binary_content]"`)
+2. Binary content detection (if >30% non-printable in first 1KB, replace with `"[REDACTED:binary_content]"`)
+3. Control character removal (preserve `\n`, `\t`, `\r`; remove C0/C1 except DEL)
 4. Base64 run detection (runs of 100+ alphanumeric+/+=, replace with `"[REDACTED:base64_payload]"`)
 5. Secret pattern redaction (stripe keys, GitHub tokens, AWS keys, Bearer/Basic auth, password/api_key/secret assignments, private key blocks)
 6. URL query string stripping (preserve scheme+host+path, remove `?query`)
 7. Byte truncation (per-field limits from bounded-field table)
 8. Truncation marker: `"... [truncated: N bytes omitted]"`
+
+**Note**: Binary detection runs before control character removal because binary detection relies on detecting non-printable control characters (including null bytes) to identify binary content. If control characters were removed first, binary content detection would be less effective.
 
 ## 15. Reusable Sanitizer API Signatures
 

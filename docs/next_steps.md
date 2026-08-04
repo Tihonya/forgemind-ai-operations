@@ -121,11 +121,17 @@ gates.
 - Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
 
 **WP-AL-1C1: Review Contract**
-- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Status: IMPLEMENTATION COMPLETE — AWAITING COMMIT/REVIEW
 - Objective: Define review-request and review-result schemas v1.0 with
   structural validators, two-root referential validator, and deterministic builder.
-- Branch: `chore/agent-loop-review-contract`
+- Branch: `feature/agent-loop-review-contract`
 - Planning document: [wp_al_1c1_review_contract.md](planning/wp_al_1c1_review_contract.md)
+- Implementation files:
+  - `.agent-loop/review/SCHEMA.md` — request + result schemas v1.0
+  - `scripts/agent-loop/lib/review_contract.py` — validator + builder
+  - `scripts/agent-loop/tests/test_review_contract.py` — 94 unit tests (all passing)
+- Test results: 94 passed, 0 failed, ruff clean, mypy --strict clean
+- Note: ERROR status defined in schema but not integrated into report-story.sh (deferred to adapter work)
 
 ---
 
