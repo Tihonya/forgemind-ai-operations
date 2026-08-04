@@ -111,7 +111,7 @@ gates.
 ### Next Steps
 
 **WP-AL-1B3: Structured Failure Context Contract**
-- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE
+- Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9, 2026-08-04
 - Objective: Define and implement a versioned failure-context schema v1.0 with
   a deterministic collector that reads verify-story.sh artifacts and emits
   `$RUN_DIR/reports/failure-context.json` for every run.
