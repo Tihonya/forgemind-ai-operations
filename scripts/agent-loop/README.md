@@ -265,7 +265,7 @@ The system loads `.env` safely using Python (no `source .env`):
 ### Phase 2 (In Progress)
 
 **WP-AL-1B3: Structured Failure Context Contract**
-Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE
+Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9, 2026-08-04
 
 - [x] Failure context schema v1.0 (.agent-loop/failure-context/SCHEMA.md)
 - [x] Failure context collector (scripts/agent-loop/lib/failure_context.py)

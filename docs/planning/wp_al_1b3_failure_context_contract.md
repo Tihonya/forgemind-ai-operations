@@ -2,7 +2,7 @@
 
 ## 1. Status and ownership
 
-- Status: **IMPLEMENTATION COMPLETE — AWAITING REVIEW/MERGE**
+- Status: **MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9, 2026-08-04**
 - Owner: ForgeMind AI Operations
 - Branch: `chore/agent-loop-failure-context`
 - Base: `origin/main` @ `10b0e1bf8a0ba4ced62cec585cb291f3b4c9697b`
