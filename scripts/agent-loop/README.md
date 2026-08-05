@@ -276,10 +276,12 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - [x] Diagnostic safety tests (control characters, binary, base64)
 - [x] Independent review pass
 - [x] Review contract (WP-AL-1C1 — MERGED — PR #48)
-- [x] Reviewer adapter with mock reviewer (WP-AL-1C2 — IMPLEMENTATION COMPLETE — AWAITING REVIEW)
-- [ ] Repair agent integration (WP-AL-1C3 — NOT STARTED)
+- [x] Reviewer adapter with mock reviewer (WP-AL-1C2 — MERGED — PR #49)
+- [ ] Review-Result Reporting Guard (WP-AL-1C3 — APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED)
+- [ ] Repair Contract (WP-AL-1C4 — NOT STARTED, subject to later PO confirmation)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
+- [ ] Review invocation/configuration bridge (separate future WP, NOT PLANNED)
 
 **Harness Scenarios:**
 - A-O: 15 scenarios (Phase 1B2, all passing)
