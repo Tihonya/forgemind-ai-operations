@@ -134,13 +134,24 @@ gates.
 - Note: ERROR status defined in schema but not integrated into report-story.sh (deferred to adapter work)
 
 **WP-AL-1C2: Deterministic Reviewer Adapter with Mock Reviewer**
-- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW
 - Objective: Define and implement a standalone deterministic reviewer adapter
   with mock reviewer, named-argument subprocess protocol, validated identity
   binding, bounded diagnostics, and direct CLI entry point.
+- Branch: `feature/agent-loop-reviewer-adapter`
 - Planning document: [wp_al_1c2_reviewer_adapter.md](planning/wp_al_1c2_reviewer_adapter.md)
-- Planned test cases: 70 (R01-R59, M01-M08, H01-H03)
-- Planned scenarios: A-V (22 total)
+- Implementation files:
+  - `.agent-loop/review-adapter/SCHEMA.md` — adapter protocol specification
+  - `scripts/agent-loop/lib/review_adapter.py` — adapter module + CLI entry point
+  - `scripts/agent-loop/lib/mock_reviewer.py` — deterministic mock reviewer
+  - `scripts/agent-loop/tests/test_review_adapter.py` — 64 pytest items (R01-R59, H01-H02, R26 parameterized)
+  - `scripts/agent-loop/tests/test_mock_reviewer.py` — 8 pytest items (M01-M08)
+- Test results: 72 pytest items passed, 0 failed, ruff clean, mypy --strict clean
+- 70 meaningful planned case IDs covered (R01-R59, M01-M08, H01-H03)
+- H03 owned by bash harness (A-T regression), verified by run_harness_scenarios.sh
+- Harness scenarios: A-V = 22/22 PASS (U: mock PASS, V: mock FAIL)
+- Features: atomic request/result writes, command validation, filesystem safety,
+  lock management, timeout handling, result binding, diagnostic preservation
 
 **WP-AL-1C3: Repair Contract**
 - Status: NOT STARTED
