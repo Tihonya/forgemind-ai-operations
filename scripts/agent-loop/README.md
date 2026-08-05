@@ -276,7 +276,7 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - [x] Diagnostic safety tests (control characters, binary, base64)
 - [x] Independent review pass
 - [x] Review contract (WP-AL-1C1 — MERGED — PR #48)
-- [ ] Reviewer adapter with mock reviewer (WP-AL-1C2 — APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED)
+- [x] Reviewer adapter with mock reviewer (WP-AL-1C2 — IMPLEMENTATION COMPLETE — AWAITING REVIEW)
 - [ ] Repair agent integration (WP-AL-1C3 — NOT STARTED)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
@@ -285,7 +285,8 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - A-O: 15 scenarios (Phase 1B2, all passing)
 - P-S: 4 identity-guard scenarios (Phase 1A, all passing)
 - T: failure-context integration (WP-AL-1B3)
-- Total: A-T = 20 scenarios, 20/20 PASS
+- U-V: reviewer adapter integration (WP-AL-1C2)
+- Total: A-V = 22 scenarios, 22/22 PASS
 
 **Planning Document:**
 [docs/planning/wp_al_1b3_failure_context_contract.md](../../docs/planning/wp_al_1b3_failure_context_contract.md)
@@ -330,6 +331,49 @@ Unit/integration test files:
 - `tests/test_scope_gate.py` — gitwildmatch, scope decisions, exit codes
 - `tests/test_gate_wiring.py` — yaml gate, lint/secrets scoping, assertion gate
 - `tests/test_identity_guard_integration.sh` — identity guard P-S style checks
+- `tests/test_failure_context.py` — failure-context collector (WP-AL-1B3)
+- `tests/test_review_contract.py` — review request/result schemas (WP-AL-1C1)
+- `tests/test_review_adapter.py` — reviewer adapter (WP-AL-1C2, 62 tests: R01-R59, H01-H03)
+- `tests/test_mock_reviewer.py` — mock reviewer (WP-AL-1C2, 8 tests: M01-M08)
+
+**WP-AL-1C2 Implementation Details:**
+
+The reviewer adapter implements a deterministic subprocess protocol for invoking
+external reviewers. Key features:
+
+- **Command validation**: executable resolution, argument safety checks, Python
+  script path verification
+- **Atomic I/O**: request and result files written via temp+replace pattern
+- **Filesystem safety**: symlink/FIFO/device rejection, hardlink count checks
+- **Lock management**: concurrent invocation detection, stale lock recovery
+- **Timeout handling**: SIGTERM → 5s grace → SIGKILL, process group cleanup
+- **Result binding**: schema validation + identity field matching
+- **Diagnostic preservation**: bounded stdout/stderr capture, sanitized error logs
+
+Mock reviewer supports PASS/FAIL/ERROR modes for testing. Test-only modes
+(invalid_json, contract_violation, non_zero_exit, sleep, missing_output) are
+hidden from production protocol.
+
+**WP-AL-1C2 Test Matrix (70 meaningful planned case IDs covered):**
+
+- Request construction (R01-R05): 5 tests
+- Request atomic write (R06-R08): 3 tests
+- Command construction (R09-R17): 9 tests
+- Subprocess execution (R18-R26): 9 tests (R26 parameterized into 3 items)
+- Result binding (R27-R31): 5 tests
+- Canonical publication (R32-R35): 4 tests
+- Diagnostic preservation (R36-R41): 6 tests
+- Security (R42-R46): 5 tests
+- Filesystem safety and concurrency (R47-R59): 13 tests
+- Mock reviewer (M01-M08): 8 tests
+- Harness scenarios (H01-H03): 3 IDs (H01/H02 as pytest + bash; H03 owned by bash only)
+
+**Actual pytest item count:** 72 (64 in test_review_adapter.py + 8 in test_mock_reviewer.py)
+- 70 planned IDs covered
+- 0 WP-specific skips
+- 0 stubs
+- 0 duplicates
+- H03 regression verified by `bash scripts/agent-loop/tests/run_harness_scenarios.sh` (22/22 A-V)
 
 ## Troubleshooting
 

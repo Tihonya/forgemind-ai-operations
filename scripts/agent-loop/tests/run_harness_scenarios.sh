@@ -904,6 +904,201 @@ else
 fi
 
 # ============================================================================
+# Scenario U: WP-AL-1C2 — Mock reviewer PASS (isolated repo)
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario U: WP-AL-1C2 — Mock reviewer PASS (isolated repo)"
+echo "================================================================"
+create_isolated_repo "U"
+
+# Create manifest and failure context
+MANIFEST_U="$(mktemp "$SUITE_TMP/manifest-U-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_U" "HARNESS-U" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+# Run verification to create failure context
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+run_isolated_verify "$MANIFEST_U" > "$SUITE_TMP/u-verify.log" 2>&1
+U_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+U_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+U_FAILURE_CONTEXT="$U_RUN_DIR/reports/failure-context.json"
+
+if [[ $U_VERIFY_EXIT -eq 0 && -f "$U_FAILURE_CONTEXT" ]]; then
+  # Extract run_id from failure context to match what was used during verification
+  U_RUN_ID="$("$PYTHON_BIN" -c "import json; print(json.load(open('$U_FAILURE_CONTEXT'))['run_id'])")"
+
+  # Copy mock reviewer into isolated repo (containment check requires script under repo_root)
+  U_MOCK_SCRIPT="$ISOLATED_REPO/mock_reviewer.py"
+  cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_reviewer.py" "$U_MOCK_SCRIPT"
+
+  # Copy manifest into isolated repo (containment check requires manifest under repo_root)
+  U_MANIFEST="$ISOLATED_REPO/manifest.json"
+  cp "$MANIFEST_U" "$U_MANIFEST"
+
+  # Run adapter with mock reviewer in PASS mode
+  # Use simple executable name "python3" to avoid symlink check on absolute paths
+  U_REVIEW_EXIT=0
+  "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/review_adapter.py" \
+    --repo-root "$ISOLATED_REPO" \
+    --run-dir "$U_RUN_DIR" \
+    --manifest "$U_MANIFEST" \
+    --failure-context "$U_FAILURE_CONTEXT" \
+    --run-id "$U_RUN_ID" \
+    --story-id "HARNESS-U" \
+    --review-iteration 1 \
+    --repair-iteration 0 \
+    --triggered-by initial_verify_pass \
+    --generated-at "2026-08-05T00:00:00Z" \
+    --reviewer-id "mock-reviewer" \
+    --timeout-seconds 30 \
+    --reviewer-command python3 \
+    --reviewer-arg "$U_MOCK_SCRIPT" \
+    --reviewer-arg=--mode \
+    --reviewer-arg PASS > "$SUITE_TMP/u-review.log" 2>&1 || U_REVIEW_EXIT=$?
+
+  # Verify review result
+  U_REVIEW_RESULT="$U_RUN_DIR/reports/review-result.json"
+  if [[ $U_REVIEW_EXIT -eq 0 && -f "$U_REVIEW_RESULT" ]]; then
+    if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        result = json.load(f)
+    if result['status'] != 'PASS':
+        print(f'FAIL - wrong status: {result[\"status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['recommended_action'] != 'none':
+        print(f'FAIL - wrong recommended_action: {result[\"recommended_action\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['findings'] != []:
+        print(f'FAIL - findings should be empty', file=sys.stderr)
+        sys.exit(1)
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$U_REVIEW_RESULT" 2>&1; then
+      U_EXIT=0
+      echo "Scenario U: PASS"
+    else
+      U_EXIT=1
+      echo "Scenario U: FAIL (review result validation failed)"
+    fi
+  else
+    U_EXIT=1
+    echo "Scenario U: FAIL (review adapter failed or result not created)"
+  fi
+else
+  U_EXIT=1
+  echo "Scenario U: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_U" "$SUITE_TMP/u-verify.log" "$SUITE_TMP/u-review.log"
+
+# ============================================================================
+# Scenario V: WP-AL-1C2 — Mock reviewer FAIL (isolated repo)
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario V: WP-AL-1C2 — Mock reviewer FAIL (isolated repo)"
+echo "================================================================"
+create_isolated_repo "V"
+
+# Create manifest and failure context
+MANIFEST_V="$(mktemp "$SUITE_TMP/manifest-V-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_V" "HARNESS-V" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+# Run verification to create failure context
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+run_isolated_verify "$MANIFEST_V" > "$SUITE_TMP/v-verify.log" 2>&1
+V_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+V_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+V_FAILURE_CONTEXT="$V_RUN_DIR/reports/failure-context.json"
+
+if [[ $V_VERIFY_EXIT -eq 0 && -f "$V_FAILURE_CONTEXT" ]]; then
+  # Extract run_id from failure context to match what was used during verification
+  V_RUN_ID="$("$PYTHON_BIN" -c "import json; print(json.load(open('$V_FAILURE_CONTEXT'))['run_id'])")"
+
+  # Copy mock reviewer into isolated repo (containment check requires script under repo_root)
+  V_MOCK_SCRIPT="$ISOLATED_REPO/mock_reviewer.py"
+  cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_reviewer.py" "$V_MOCK_SCRIPT"
+
+  # Copy manifest into isolated repo (containment check requires manifest under repo_root)
+  V_MANIFEST="$ISOLATED_REPO/manifest.json"
+  cp "$MANIFEST_V" "$V_MANIFEST"
+
+  # Run adapter with mock reviewer in FAIL mode
+  # Use simple executable name "python3" to avoid symlink check on absolute paths
+  V_REVIEW_EXIT=0
+  "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/review_adapter.py" \
+    --repo-root "$ISOLATED_REPO" \
+    --run-dir "$V_RUN_DIR" \
+    --manifest "$V_MANIFEST" \
+    --failure-context "$V_FAILURE_CONTEXT" \
+    --run-id "$V_RUN_ID" \
+    --story-id "HARNESS-V" \
+    --review-iteration 1 \
+    --repair-iteration 0 \
+    --triggered-by initial_verify_pass \
+    --generated-at "2026-08-05T00:00:00Z" \
+    --reviewer-id "mock-reviewer" \
+    --timeout-seconds 30 \
+    --reviewer-command python3 \
+    --reviewer-arg "$V_MOCK_SCRIPT" \
+    --reviewer-arg=--mode \
+    --reviewer-arg FAIL > "$SUITE_TMP/v-review.log" 2>&1 || V_REVIEW_EXIT=$?
+
+  # Verify review result
+  V_REVIEW_RESULT="$V_RUN_DIR/reports/review-result.json"
+  if [[ $V_REVIEW_EXIT -eq 0 && -f "$V_REVIEW_RESULT" ]]; then
+    if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        result = json.load(f)
+    if result['status'] != 'FAIL':
+        print(f'FAIL - wrong status: {result[\"status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['recommended_action'] != 'repair':
+        print(f'FAIL - wrong recommended_action: {result[\"recommended_action\"]}', file=sys.stderr)
+        sys.exit(1)
+    if len(result['findings']) < 1:
+        print(f'FAIL - should have at least one finding', file=sys.stderr)
+        sys.exit(1)
+    if result['findings'][0]['severity'] != 'BLOCKER':
+        print(f'FAIL - first finding severity should be BLOCKER', file=sys.stderr)
+        sys.exit(1)
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$V_REVIEW_RESULT" 2>&1; then
+      V_EXIT=0
+      echo "Scenario V: PASS"
+    else
+      V_EXIT=1
+      echo "Scenario V: FAIL (review result validation failed)"
+    fi
+  else
+    V_EXIT=1
+    echo "Scenario V: FAIL (review adapter failed or result not created)"
+  fi
+else
+  V_EXIT=1
+  echo "Scenario V: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_V" "$SUITE_TMP/v-verify.log" "$SUITE_TMP/v-review.log"
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -930,13 +1125,16 @@ echo "Scenario Q exit code: $Q_EXIT (expected: 2)"
 echo "Scenario R exit code: $R_EXIT (expected: 2)"
 echo "Scenario S exit code: $S_EXIT (expected: 2)"
 echo "Scenario T exit code: $T_EXIT (expected: 0)"
+echo "Scenario U exit code: $U_EXIT (expected: 0)"
+echo "Scenario V exit code: $V_EXIT (expected: 0)"
 echo ""
 
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
       $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
-      $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 ]]; then
-  echo "ALL 20 SCENARIOS PASSED (A-T)"
+      $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 && \
+      $U_EXIT -eq 0 && $V_EXIT -eq 0 ]]; then
+  echo "ALL 22 SCENARIOS PASSED (A-V)"
   exit 0
 else
   echo "SOME SCENARIOS FAILED"
