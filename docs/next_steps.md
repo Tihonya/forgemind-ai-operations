@@ -154,7 +154,7 @@ gates.
   lock management, timeout handling, result binding, diagnostic preservation
 
 **WP-AL-1C3: Review-Result Reporting Guard**
-- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW (not merged)
+- Status: MERGED — PR #52, merge commit d715b2c08eb0cfd0924d01c73efc2ff6f8f64262
 - Objective: Close the ERROR-to-VERIFIED fall-through. Define deterministic
   classification of existing review results (absent, PASS, FAIL, ERROR with
   human_review, other ERROR, malformed/unreadable/schema-invalid/unknown) into
@@ -163,7 +163,6 @@ gates.
   invalid artifacts. Preserves existing verification/repair/infrastructure
   precedence. Optional-review behavior unchanged when no review was invoked.
 - Branch: `feature/agent-loop-review-result-reporting-guard`
-- Base: `origin/main @ e29ba9b7cb5965fd8590483f320bfb29857f0941`
 - Planning document: [wp_al_1c3_review_result_reporting_guard.md](planning/wp_al_1c3_review_result_reporting_guard.md)
 - Implementation: `scripts/agent-loop/lib/review_result_reporting.py` (helper + CLI), `scripts/agent-loop/tests/test_review_result_reporting.py` (27 pytest items covering U01-U20 plus edge cases)
 - Integration: `scripts/agent-loop/report-story.sh` uses helper for six-way final-status dispatch
@@ -175,12 +174,24 @@ gates.
   - ERROR + other/missing action → INFRASTRUCTURE_ERROR
   - validate_review_result() consumed, not modified
   - review invocation/configuration bridge remains deferred (separate future WP)
-- Verification: U01-U20 meaningful coverage, 27 pytest items, scenarios W and X, A-V regression preserved, A-X = 24/24, ruff PASS, mypy --strict PASS, compile PASS, shell syntax PASS, secret/path scan PASS, diff-check PASS
 
-**WP-AL-1C4: Repair Contract** (renumbered from previous WP-AL-1C3)
-- Status: NOT STARTED — subject to later Product Owner confirmation
-- Objective: Define repair-request and repair-result schemas with structural validators.
-- Blocked by: WP-AL-1C3 completion
+**WP-AL-1C4: Repair Contract**
+- Status: PLANNING COMPLETE — AWAITING REVIEW (implementation NOT STARTED)
+- Objective: Define repair-request and repair-result schemas with structural validators,
+  identity binding rules, path-safety constraints, and bounded diagnostics. No repair
+  execution, no adapter, no orchestrator wiring.
+- Branch: `feature/agent-loop-repair-contract-planning`
+- Planning document: [wp_al_1c4_repair_contract.md](planning/wp_al_1c4_repair_contract.md)
+- Implementation files (planned):
+  - `.agent-loop/repair/SCHEMA.md` — request + result schemas v1.0
+  - `scripts/agent-loop/lib/repair_contract.py` — validator + builder
+  - `scripts/agent-loop/tests/test_repair_contract.py` — 75 planned unit tests
+- Status semantics: REPAIRED (changed files, requires reverify), NO_CHANGE (no changes), ERROR (infrastructure failure)
+- Key invariants:
+  - REPAIRED does NOT mean verification passed (repair success ≠ verification success)
+  - Identity binding: run_id, story_id, attempt, source_revision must match request
+  - Path safety: gitwildmatch semantics, forbidden-path protection, allowed-path allowlist
+  - No repair execution, no adapter, no orchestrator changes
 
 **Future (separate work package): Review invocation/configuration bridge**
 - Status: NOT PLANNED
