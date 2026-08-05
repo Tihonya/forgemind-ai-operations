@@ -121,7 +121,7 @@ gates.
 - Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
 
 **WP-AL-1C1: Review Contract**
-- Status: IMPLEMENTATION COMPLETE — AWAITING COMMIT/REVIEW
+- Status: MERGED — PR #48, merge commit 691bb9c
 - Objective: Define review-request and review-result schemas v1.0 with
   structural validators, two-root referential validator, and deterministic builder.
 - Branch: `feature/agent-loop-review-contract`
@@ -132,6 +132,20 @@ gates.
   - `scripts/agent-loop/tests/test_review_contract.py` — 94 unit tests (all passing)
 - Test results: 94 passed, 0 failed, ruff clean, mypy --strict clean
 - Note: ERROR status defined in schema but not integrated into report-story.sh (deferred to adapter work)
+
+**WP-AL-1C2: Deterministic Reviewer Adapter with Mock Reviewer**
+- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Objective: Define and implement a standalone deterministic reviewer adapter
+  with mock reviewer, named-argument subprocess protocol, validated identity
+  binding, bounded diagnostics, and direct CLI entry point.
+- Planning document: [wp_al_1c2_reviewer_adapter.md](planning/wp_al_1c2_reviewer_adapter.md)
+- Planned test cases: 70 (R01-R59, M01-M08, H01-H03)
+- Planned scenarios: A-V (22 total)
+
+**WP-AL-1C3: Repair Contract**
+- Status: NOT STARTED
+- Objective: Define repair-request and repair-result schemas with structural validators.
+- Blocked by: WP-AL-1C2 completion
 
 ---
 
