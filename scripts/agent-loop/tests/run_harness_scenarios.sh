@@ -1099,6 +1099,138 @@ fi
 rm -f "$MANIFEST_V" "$SUITE_TMP/v-verify.log" "$SUITE_TMP/v-review.log"
 
 # ============================================================================
+# Scenario W: WP-AL-1C3 — Mock reviewer ERROR → HUMAN_REVIEW_REQUIRED
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario W: WP-AL-1C3 — Mock reviewer ERROR → HUMAN_REVIEW_REQUIRED"
+echo "================================================================"
+create_isolated_repo "W"
+
+# Create manifest and run verification
+MANIFEST_W="$(mktemp "$SUITE_TMP/manifest-W-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_W" "HARNESS-W" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+run_isolated_verify "$MANIFEST_W" > "$SUITE_TMP/w-verify.log" 2>&1
+W_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+W_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+W_FAILURE_CONTEXT="$W_RUN_DIR/reports/failure-context.json"
+
+if [[ $W_VERIFY_EXIT -eq 0 && -f "$W_FAILURE_CONTEXT" ]]; then
+  W_RUN_ID="$("$PYTHON_BIN" -c "import json; print(json.load(open('$W_FAILURE_CONTEXT'))['run_id'])")"
+
+  # Copy mock reviewer and manifest into isolated repo
+  W_MOCK_SCRIPT="$ISOLATED_REPO/mock_reviewer.py"
+  cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_reviewer.py" "$W_MOCK_SCRIPT"
+  W_MANIFEST="$ISOLATED_REPO/manifest.json"
+  cp "$MANIFEST_W" "$W_MANIFEST"
+
+  # Run adapter with mock reviewer in ERROR mode
+  W_REVIEW_EXIT=0
+  "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/review_adapter.py" \
+    --repo-root "$ISOLATED_REPO" \
+    --run-dir "$W_RUN_DIR" \
+    --manifest "$W_MANIFEST" \
+    --failure-context "$W_FAILURE_CONTEXT" \
+    --run-id "$W_RUN_ID" \
+    --story-id "HARNESS-W" \
+    --review-iteration 1 \
+    --repair-iteration 0 \
+    --triggered-by initial_verify_pass \
+    --generated-at "2026-08-05T00:00:00Z" \
+    --reviewer-id "mock-reviewer" \
+    --timeout-seconds 30 \
+    --reviewer-command python3 \
+    --reviewer-arg "$W_MOCK_SCRIPT" \
+    --reviewer-arg=--mode \
+    --reviewer-arg ERROR > "$SUITE_TMP/w-review.log" 2>&1 || W_REVIEW_EXIT=$?
+
+  W_REVIEW_RESULT="$W_RUN_DIR/reports/review-result.json"
+  if [[ $W_REVIEW_EXIT -eq 0 && -f "$W_REVIEW_RESULT" ]]; then
+    # Run report-story.sh to produce final-report.json
+    W_REPORT_EXIT=0
+    bash "$ISOLATED_REPO/scripts/agent-loop/report-story.sh" "$W_RUN_DIR" > "$SUITE_TMP/w-report.log" 2>&1 || W_REPORT_EXIT=$?
+
+    W_FINAL_REPORT="$W_RUN_DIR/reports/final-report.json"
+    if [[ $W_REPORT_EXIT -eq 0 && -f "$W_FINAL_REPORT" ]]; then
+      W_FINAL_STATUS="$("$PYTHON_BIN" -c "import json; print(json.load(open('$W_FINAL_REPORT'))['final_status'])")"
+      if [[ "$W_FINAL_STATUS" == "HUMAN_REVIEW_REQUIRED" ]]; then
+        W_EXIT=0
+        echo "Scenario W: PASS (final_status=$W_FINAL_STATUS)"
+      else
+        W_EXIT=1
+        echo "Scenario W: FAIL (expected HUMAN_REVIEW_REQUIRED, got $W_FINAL_STATUS)"
+      fi
+    else
+      W_EXIT=1
+      echo "Scenario W: FAIL (report-story.sh failed or final-report.json not created)"
+    fi
+  else
+    W_EXIT=1
+    echo "Scenario W: FAIL (review adapter failed or result not created)"
+  fi
+else
+  W_EXIT=1
+  echo "Scenario W: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_W" "$SUITE_TMP/w-verify.log" "$SUITE_TMP/w-review.log" "$SUITE_TMP/w-report.log"
+
+# ============================================================================
+# Scenario X: WP-AL-1C3 — Malformed review-result.json → INFRASTRUCTURE_ERROR
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario X: WP-AL-1C3 — Malformed review-result → INFRASTRUCTURE_ERROR"
+echo "================================================================"
+create_isolated_repo "X"
+
+# Create manifest and run verification
+MANIFEST_X="$(mktemp "$SUITE_TMP/manifest-X-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_X" "HARNESS-X" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+run_isolated_verify "$MANIFEST_X" > "$SUITE_TMP/x-verify.log" 2>&1
+X_VERIFY_EXIT=$?
+
+# Find run directory
+X_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+
+if [[ $X_VERIFY_EXIT -eq 0 ]]; then
+  # Write malformed review-result.json directly (bypassing adapter)
+  echo "{ invalid json }" > "$X_RUN_DIR/reports/review-result.json"
+
+  # Run report-story.sh to produce final-report.json
+  X_REPORT_EXIT=0
+  bash "$ISOLATED_REPO/scripts/agent-loop/report-story.sh" "$X_RUN_DIR" > "$SUITE_TMP/x-report.log" 2>&1 || X_REPORT_EXIT=$?
+
+  X_FINAL_REPORT="$X_RUN_DIR/reports/final-report.json"
+  if [[ $X_REPORT_EXIT -eq 0 && -f "$X_FINAL_REPORT" ]]; then
+    X_FINAL_STATUS="$("$PYTHON_BIN" -c "import json; print(json.load(open('$X_FINAL_REPORT'))['final_status'])")"
+    if [[ "$X_FINAL_STATUS" == "INFRASTRUCTURE_ERROR" ]]; then
+      X_EXIT=0
+      echo "Scenario X: PASS (final_status=$X_FINAL_STATUS)"
+    else
+      X_EXIT=1
+      echo "Scenario X: FAIL (expected INFRASTRUCTURE_ERROR, got $X_FINAL_STATUS)"
+    fi
+  else
+    X_EXIT=1
+    echo "Scenario X: FAIL (report-story.sh failed or final-report.json not created)"
+  fi
+else
+  X_EXIT=1
+  echo "Scenario X: FAIL (verification failed)"
+fi
+
+rm -f "$MANIFEST_X" "$SUITE_TMP/x-verify.log" "$SUITE_TMP/x-report.log"
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -1127,14 +1259,16 @@ echo "Scenario S exit code: $S_EXIT (expected: 2)"
 echo "Scenario T exit code: $T_EXIT (expected: 0)"
 echo "Scenario U exit code: $U_EXIT (expected: 0)"
 echo "Scenario V exit code: $V_EXIT (expected: 0)"
+echo "Scenario W exit code: $W_EXIT (expected: 0)"
+echo "Scenario X exit code: $X_EXIT (expected: 0)"
 echo ""
 
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
       $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
       $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 && \
-      $U_EXIT -eq 0 && $V_EXIT -eq 0 ]]; then
-  echo "ALL 22 SCENARIOS PASSED (A-V)"
+      $U_EXIT -eq 0 && $V_EXIT -eq 0 && $W_EXIT -eq 0 && $X_EXIT -eq 0 ]]; then
+  echo "ALL 24 SCENARIOS PASSED (A-X)"
   exit 0
 else
   echo "SOME SCENARIOS FAILED"

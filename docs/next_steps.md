@@ -154,7 +154,7 @@ gates.
   lock management, timeout handling, result binding, diagnostic preservation
 
 **WP-AL-1C3: Review-Result Reporting Guard**
-- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW (not merged)
 - Objective: Close the ERROR-to-VERIFIED fall-through. Define deterministic
   classification of existing review results (absent, PASS, FAIL, ERROR with
   human_review, other ERROR, malformed/unreadable/schema-invalid/unknown) into
@@ -162,10 +162,20 @@ gates.
   HUMAN_REVIEW_REQUIRED, INFRASTRUCTURE_ERROR). Fail-closed handling for
   invalid artifacts. Preserves existing verification/repair/infrastructure
   precedence. Optional-review behavior unchanged when no review was invoked.
-- Branch: `chore/agent-loop-review-result-reporting-guard-planning` (planning)
+- Branch: `feature/agent-loop-review-result-reporting-guard`
+- Base: `origin/main @ e29ba9b7cb5965fd8590483f320bfb29857f0941`
 - Planning document: [wp_al_1c3_review_result_reporting_guard.md](planning/wp_al_1c3_review_result_reporting_guard.md)
-- Scope exclusions: no changes to run-story.sh, verify-story.sh, review_adapter.py, mock_reviewer.py, review_contract.py, failure_context.py, review schemas, repair execution, or real LLM/provider integration.
-- Verification: U01-U20 unit cases, scenarios W and X, existing A-V regression preserved, expected harness total A-X: 24/24, AC-01 through AC-24, ruff + mypy strict + compile + secret/path/diff checks.
+- Implementation: `scripts/agent-loop/lib/review_result_reporting.py` (helper + CLI), `scripts/agent-loop/tests/test_review_result_reporting.py` (27 pytest items covering U01-U20 plus edge cases)
+- Integration: `scripts/agent-loop/report-story.sh` uses helper for six-way final-status dispatch
+- Harness: scenarios W (ERROR+human_review → HUMAN_REVIEW_REQUIRED) and X (malformed → INFRASTRUCTURE_ERROR) added; A-X = 24/24 PASS
+- Key behaviors:
+  - absent review-result.json → VERIFIED (unchanged)
+  - invalid/malformed/schema-invalid/unreadable → INFRASTRUCTURE_ERROR (fails closed)
+  - ERROR + human_review → HUMAN_REVIEW_REQUIRED
+  - ERROR + other/missing action → INFRASTRUCTURE_ERROR
+  - validate_review_result() consumed, not modified
+  - review invocation/configuration bridge remains deferred (separate future WP)
+- Verification: U01-U20 meaningful coverage, 27 pytest items, scenarios W and X, A-V regression preserved, A-X = 24/24, ruff PASS, mypy --strict PASS, compile PASS, shell syntax PASS, secret/path scan PASS, diff-check PASS
 
 **WP-AL-1C4: Repair Contract** (renumbered from previous WP-AL-1C3)
 - Status: NOT STARTED — subject to later Product Owner confirmation
