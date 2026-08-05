@@ -134,7 +134,7 @@ gates.
 - Note: ERROR status defined in schema but not integrated into report-story.sh (deferred to adapter work)
 
 **WP-AL-1C2: Deterministic Reviewer Adapter with Mock Reviewer**
-- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW
+- Status: ✅ MERGED — PR #49, merge commit 0b3453c
 - Objective: Define and implement a standalone deterministic reviewer adapter
   with mock reviewer, named-argument subprocess protocol, validated identity
   binding, bounded diagnostics, and direct CLI entry point.
@@ -153,10 +153,30 @@ gates.
 - Features: atomic request/result writes, command validation, filesystem safety,
   lock management, timeout handling, result binding, diagnostic preservation
 
-**WP-AL-1C3: Repair Contract**
-- Status: NOT STARTED
+**WP-AL-1C3: Review-Result Reporting Guard**
+- Status: APPROVED FOR IMPLEMENTATION PLANNING, NOT STARTED
+- Objective: Close the ERROR-to-VERIFIED fall-through. Define deterministic
+  classification of existing review results (absent, PASS, FAIL, ERROR with
+  human_review, other ERROR, malformed/unreadable/schema-invalid/unknown) into
+  report-story statuses (VERIFIED, ACCEPTED, REVIEW_REJECTED,
+  HUMAN_REVIEW_REQUIRED, INFRASTRUCTURE_ERROR). Fail-closed handling for
+  invalid artifacts. Preserves existing verification/repair/infrastructure
+  precedence. Optional-review behavior unchanged when no review was invoked.
+- Branch: `chore/agent-loop-review-result-reporting-guard-planning` (planning)
+- Planning document: [wp_al_1c3_review_result_reporting_guard.md](planning/wp_al_1c3_review_result_reporting_guard.md)
+- Scope exclusions: no changes to run-story.sh, verify-story.sh, review_adapter.py, mock_reviewer.py, review_contract.py, failure_context.py, review schemas, repair execution, or real LLM/provider integration.
+- Verification: U01-U20 unit cases, scenarios W and X, existing A-V regression preserved, expected harness total A-X: 24/24, AC-01 through AC-24, ruff + mypy strict + compile + secret/path/diff checks.
+
+**WP-AL-1C4: Repair Contract** (renumbered from previous WP-AL-1C3)
+- Status: NOT STARTED — subject to later Product Owner confirmation
 - Objective: Define repair-request and repair-result schemas with structural validators.
-- Blocked by: WP-AL-1C2 completion
+- Blocked by: WP-AL-1C3 completion
+
+**Future (separate work package): Review invocation/configuration bridge**
+- Status: NOT PLANNED
+- Objective: Wire actual review invocation from run-story.sh and externalize
+  reviewer configuration (binary path, arguments, timeout). Remains a separate
+  future work package; not part of WP-AL-1C3 or WP-AL-1C4.
 
 ---
 
