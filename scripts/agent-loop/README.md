@@ -277,8 +277,8 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - [x] Independent review pass
 - [x] Review contract (WP-AL-1C1 — MERGED — PR #48)
 - [x] Reviewer adapter with mock reviewer (WP-AL-1C2 — MERGED — PR #49)
-- [x] Review-Result Reporting Guard (WP-AL-1C3 — IMPLEMENTATION COMPLETE, AWAITING REVIEW)
-- [ ] Repair Contract (WP-AL-1C4 — NOT STARTED, subject to later PO confirmation)
+- [x] Review-Result Reporting Guard (WP-AL-1C3 — MERGED — PR #52, merge commit d715b2c)
+- [ ] Repair Contract (WP-AL-1C4 — PLANNING COMPLETE, AWAITING REVIEW, implementation NOT STARTED)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
 - [ ] Review invocation/configuration bridge (separate future WP, NOT PLANNED)
