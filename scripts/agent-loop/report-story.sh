@@ -65,14 +65,22 @@ if verify_file.exists():
     except (json.JSONDecodeError, IOError) as e:
         report["error"] = f"Failed to load verify-result.json: {e}"
 
-# Load review result (if exists)
+# Load and classify review result (WP-AL-1C3 reporting guard)
+from review_result_reporting import classify_review_result
+
 review_file = reports_dir / "review-result.json"
-if review_file.exists():
-    try:
-        with open(review_file) as f:
-            report["review"] = json.load(f)
-    except (json.JSONDecodeError, IOError):
-        pass  # Review not critical for Phase 1
+review_path = review_file if review_file.exists() else None
+classification = classify_review_result(review_path)
+
+report["review_classification"] = classification.category
+if classification.category != "ABSENT":
+    report["review"] = {
+        "status": classification.status_value,
+        "recommended_action": classification.recommended_action,
+        "classification": classification.category,
+    }
+    if classification.detail:
+        report["review"]["detail"] = classification.detail
 
 # Load repair results (if any)
 repair_dir = Path(run_dir) / "repair"
@@ -94,12 +102,8 @@ if repair_dir.exists():
 if report["verification"]:
     verify_status = report["verification"].get("overall_status", "UNKNOWN")
     if verify_status == "PASS":
-        if report.get("review") and report["review"].get("status") == "PASS":
-            report["final_status"] = "ACCEPTED"
-        elif report.get("review") and report["review"].get("status") == "FAIL":
-            report["final_status"] = "REVIEW_REJECTED"
-        else:
-            report["final_status"] = "VERIFIED"
+        # WP-AL-1C3: use classification.final_status (six-way dispatch)
+        report["final_status"] = classification.final_status
     else:
         if report.get("repair") and report["repair"]["iterations"] > 0:
             report["final_status"] = "REPAIR_EXHAUSTED"
