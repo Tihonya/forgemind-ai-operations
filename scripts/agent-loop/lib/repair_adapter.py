@@ -40,10 +40,15 @@ import json
 import os
 import re
 import selectors
+import signal
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Narrow import contract from failure_context.py (approved public API for sanitization)
+from failure_context import redact_text
 
 # Narrow import contract from harness.py (approved public API for matching)
 from harness import gitwildmatch
@@ -51,6 +56,8 @@ from harness import gitwildmatch
 # Narrow import contract from repair_contract.py (WP-AL-1C4 identity validation)
 from repair_contract import (
     RepairContractError,
+    validate_repair_request,
+    validate_repair_result,
     validate_repair_result_against_request,
 )
 
@@ -2039,3 +2046,913 @@ def _enforce_permissions(
             allowed_violations.append(path)
 
     return allowed_violations, forbidden_violations
+
+
+# ---------------------------------------------------------------------------
+# Block B: Actor invocation and orchestration
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BoundedByteStream:
+    """
+    Ring-buffer byte capture with overflow detection.
+
+    Attributes:
+        max_bytes: maximum bytes to retain in ring buffer
+        total_observed: total bytes written (may exceed max_bytes)
+        exceeded: True if total_observed > max_bytes
+    """
+
+    max_bytes: int
+    total_observed: int = 0
+    exceeded: bool = False
+    _buffer: bytearray = field(default_factory=lambda: bytearray(), repr=False)
+    _head: int = field(default=0, repr=False)
+    _full: bool = field(default=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Initialize ring buffer."""
+        object.__setattr__(self, "_buffer", bytearray(self.max_bytes))
+
+    def write(self, data: bytes) -> None:
+        """Write bytes to ring buffer, tracking total and overflow."""
+        object.__setattr__(self, "total_observed", self.total_observed + len(data))
+        for b in data:
+            self._buffer[self._head] = b
+            object.__setattr__(
+                self, "_head", (self._head + 1) % self.max_bytes
+            )
+            if self._head == 0:
+                object.__setattr__(self, "_full", True)
+        if self.total_observed > self.max_bytes:
+            object.__setattr__(self, "exceeded", True)
+
+    def tail_bytes(self) -> bytes:
+        """Return retained tail bytes (last max_bytes or fewer)."""
+        if not self._full:
+            return bytes(self._buffer[: self._head])
+        return bytes(self._buffer[self._head :]) + bytes(
+            self._buffer[: self._head]
+        )
+
+
+@dataclass(frozen=True)
+class ActorInvocationResult:
+    """Internal model for actor subprocess invocation result."""
+
+    exit_code: int | None
+    stdout_tail: str
+    stderr_tail: str
+    timeout_occurred: bool
+    output_size_exceeded: bool
+    stdout_total_bytes: int
+    stderr_total_bytes: int
+    result_file_path: Path | None
+
+
+def _build_minimal_env(run_dir: Path) -> dict[str, str]:
+    """
+    Build deterministic minimal environment for actor subprocess.
+
+    No inherited values. Explicit allowlist only.
+
+    Creates:
+        - $run_dir/.actor-home/ (mode 0o700)
+        - $run_dir/repair/tmp/ (mode 0o700)
+
+    Returns:
+        dict with PATH, HOME, LANG, LC_ALL, TMPDIR, PYTHONNOUSERSITE,
+        PYTHONDONTWRITEBYTECODE.
+
+    Does NOT inherit API keys, tokens, credentials, proxy credentials,
+    SSH agent variables, database passwords, or arbitrary parent environment.
+    """
+    actor_home = run_dir / ".actor-home"
+    actor_tmp = run_dir / "repair" / "tmp"
+
+    # Create directories with mode 0o700
+    actor_home.mkdir(parents=True, exist_ok=True)
+    actor_tmp.mkdir(parents=True, exist_ok=True)
+    os.chmod(actor_home, 0o700)
+    os.chmod(actor_tmp, 0o700)
+
+    return {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": str(actor_home),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TMPDIR": str(actor_tmp),
+        "PYTHONNOUSERSITE": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+
+
+def _atomic_write_json(path: Path, data: Mapping[str, object]) -> None:
+    """
+    Atomically write JSON to path via tmp + os.replace.
+
+    Steps:
+    1. Create parent directory (mode 0o755)
+    2. Create temp file `.filename-tmp-{pid}` with mode 0o600 (exclusive creation)
+    3. Write JSON with indent=2, sort_keys=True, ensure_ascii=False
+    4. Flush and fsync
+    5. os.replace(temp, path)
+    6. On any failure: cleanup temp file, re-raise
+
+    No secrets in exception messages.
+    """
+    parent = path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(parent, 0o755)
+
+    # Create temp file with PID to avoid collision
+    pid = os.getpid()
+    tmp_path = parent / f".{path.name}-tmp-{pid}"
+
+    try:
+        # Exclusive creation with mode 0o600
+        fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
+            f.write("\n")
+            f.flush()
+            try:
+                os.fsync(f.fileno())
+            except (OSError, AttributeError):
+                pass
+
+        # Atomic replace
+        os.replace(tmp_path, path)
+    except Exception:
+        # Cleanup temp file on failure
+        if tmp_path.exists():
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
+def _validate_command(
+    actor_executable: str,
+    actor_arguments: Sequence[str],
+) -> list[str]:
+    """
+    Validate actor command and build full command list.
+
+    Required:
+        - actor_executable: non-empty string, no NUL bytes, no CR/LF
+        - actor_arguments: list of strings, each non-empty, no NUL bytes, no CR/LF
+        - No caller-supplied --repair-request or --repair-result in actor_arguments
+
+    Returns:
+        Full command list (without --repair-request/--repair-result flags,
+        which are appended by _invoke_actor).
+
+    Raises:
+        ValueError on validation failure.
+    """
+    # Validate executable
+    if not isinstance(actor_executable, str):
+        raise TypeError(
+            f"actor_executable must be string, got {type(actor_executable).__name__}"
+        )
+    if not actor_executable:
+        raise ValueError("actor_executable is empty")
+    if "\x00" in actor_executable:
+        raise ValueError("actor_executable contains null byte")
+    if "\r" in actor_executable or "\n" in actor_executable:
+        raise ValueError("actor_executable contains CR/LF")
+
+    # Validate arguments
+    if not isinstance(actor_arguments, (list, tuple)):
+        raise TypeError(
+            f"actor_arguments must be list or tuple, got {type(actor_arguments).__name__}"
+        )
+
+    full_command: list[str] = [actor_executable]
+    for i, arg in enumerate(actor_arguments):
+        if not isinstance(arg, str):
+            raise TypeError(
+                f"actor_arguments[{i}] must be string, got {type(arg).__name__}"
+            )
+        if not arg:
+            raise ValueError(f"actor_arguments[{i}] is empty")
+        if "\x00" in arg:
+            raise ValueError(f"actor_arguments[{i}] contains null byte")
+        if "\r" in arg or "\n" in arg:
+            raise ValueError(f"actor_arguments[{i}] contains CR/LF")
+
+        # Check for reserved flags
+        if arg in ("--repair-request", "--repair-result"):
+            raise ValueError(
+                f"actor_arguments[{i}] is reserved flag: {arg}"
+            )
+        if arg.startswith(("--repair-request=", "--repair-result=")):
+            raise ValueError(
+                f"actor_arguments[{i}] is reserved flag prefix: {arg}"
+            )
+
+        full_command.append(arg)
+
+    return full_command
+
+
+def _sanitize_output(
+    raw_bytes: bytes, max_bytes: int
+) -> tuple[str, int, bool]:
+    """
+    Sanitize actor output: decode, redact, truncate.
+
+    Returns:
+        Tuple of (sanitized_text, redaction_count, truncated_flag).
+
+    Steps:
+    1. Decode UTF-8 with errors="replace"
+    2. Apply redact_text() from failure_context
+    3. Encode sanitized text to UTF-8
+    4. If encoded length > max_bytes: truncate to max_bytes (byte-level),
+       decode with errors="ignore", set truncated_flag = True
+    """
+    # Decode UTF-8
+    text = raw_bytes.decode("utf-8", errors="replace")
+
+    # Apply redaction
+    sanitized, redaction_count = redact_text(text)
+
+    # Check if truncation needed
+    sanitized_bytes = sanitized.encode("utf-8")
+    truncated_flag = len(sanitized_bytes) > max_bytes
+
+    if truncated_flag:
+        # Truncate to max_bytes (byte-level)
+        truncated_bytes = sanitized_bytes[:max_bytes]
+        # Decode with errors="ignore" to avoid partial UTF-8
+        sanitized = truncated_bytes.decode("utf-8", errors="ignore")
+
+    return sanitized, redaction_count, truncated_flag
+
+
+def _invoke_actor(
+    command: list[str],
+    request_path: Path,
+    result_path: Path,
+    cwd: Path,
+    env: dict[str, str],
+    timeout_seconds: int,
+    max_output_bytes: int,
+) -> ActorInvocationResult:
+    """
+    Invoke repair actor subprocess with bounded output and timeout.
+
+    Parameters:
+        command: validated command list (executable + args, no --repair-request/result)
+        request_path: path to repair-request.json
+        result_path: path where actor should write repair-result.json
+        cwd: working directory for actor (repo_root)
+        env: minimal environment dict (no inherited secrets)
+        timeout_seconds: timeout in seconds (1-600)
+        max_output_bytes: stdout/stderr byte limit (default 4096)
+
+    Returns:
+        ActorInvocationResult with exit_code, sanitized tails, flags.
+
+    Semantics:
+        - shell=False (no shell interpolation)
+        - start_new_session=True (process group isolation)
+        - stdout/stderr captured via pipes with bounded ring buffers
+        - Timeout: SIGTERM to process group, 5s grace, SIGKILL if needed
+        - Output overflow: SIGTERM to process group, 5s grace, SIGKILL if needed
+        - Process reaped, no adapter-owned Popen left unreaped
+        - Never raises exceptions (all failures captured in result)
+
+    Causal failure mapping:
+        - Adapter terminates actor (timeout/overflow) → primary status (TIMEOUT/OUTPUT_SIZE_EXCEEDED)
+        - Actor exits non-zero on its own → ADAPTER_NON_ZERO_EXIT
+        - Never classify adapter-induced exit as NON_ZERO_EXIT
+    """
+    # Build full command with --repair-request and --repair-result
+    full_command = command + [
+        "--repair-request",
+        str(request_path),
+        "--repair-result",
+        str(result_path),
+    ]
+
+    # Initialize result fields
+    exit_code: int | None = None
+    stdout_tail = ""
+    stderr_tail = ""
+    timeout_occurred = False
+    output_size_exceeded = False
+    stdout_total_bytes = 0
+    stderr_total_bytes = 0
+    result_file_path: Path | None = None
+
+    # Initialize bounded streams
+    stdout_stream = BoundedByteStream(max_output_bytes)
+    stderr_stream = BoundedByteStream(max_output_bytes)
+
+    # Spawn subprocess
+    try:
+        proc = subprocess.Popen(
+            full_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=str(cwd),
+            env=env,
+            start_new_session=True,
+            shell=False,
+        )
+    except OSError:
+        # Failed to spawn process
+        return ActorInvocationResult(
+            exit_code=None,
+            stdout_tail="",
+            stderr_tail="",
+            timeout_occurred=False,
+            output_size_exceeded=False,
+            stdout_total_bytes=0,
+            stderr_total_bytes=0,
+            result_file_path=None,
+        )
+
+    # Ensure pipes are available
+    if proc.stdout is None or proc.stderr is None:
+        proc.kill()
+        proc.wait()
+        return ActorInvocationResult(
+            exit_code=None,
+            stdout_tail="",
+            stderr_tail="",
+            timeout_occurred=False,
+            output_size_exceeded=False,
+            stdout_total_bytes=0,
+            stderr_total_bytes=0,
+            result_file_path=None,
+        )
+
+    # Incremental read using selectors on file descriptors
+    stdout_fd = proc.stdout.fileno()
+    stderr_fd = proc.stderr.fileno()
+
+    sel = selectors.DefaultSelector()
+    sel.register(stdout_fd, selectors.EVENT_READ)
+    sel.register(stderr_fd, selectors.EVENT_READ)
+
+    start_time = os.times().elapsed
+    open_streams = 2
+
+    try:
+        while open_streams > 0:
+            # Check timeout
+            elapsed = os.times().elapsed - start_time
+            if elapsed >= timeout_seconds:
+                timeout_occurred = True
+                # Terminate process group
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except (OSError, ProcessLookupError):
+                    pass
+                try:
+                    proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (OSError, ProcessLookupError):
+                        pass
+                    proc.wait()
+                break
+
+            # Check output size overflow
+            if stdout_stream.exceeded or stderr_stream.exceeded:
+                output_size_exceeded = True
+                # Terminate process group
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except (OSError, ProcessLookupError):
+                    pass
+                try:
+                    proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except (OSError, ProcessLookupError):
+                        pass
+                    proc.wait()
+                break
+
+            # Read available data
+            events = sel.select(timeout=0.1)
+            for key, _ in events:
+                fd = key.fileobj
+                assert isinstance(fd, int), "selector key fileobj should be fd int"
+                try:
+                    data = os.read(fd, 65536)  # 64 KB chunks
+                except OSError:
+                    data = b""
+
+                if not data:
+                    # EOF
+                    sel.unregister(fd)
+                    open_streams -= 1
+                    continue
+
+                if fd == stdout_fd:
+                    stdout_stream.write(data)
+                elif fd == stderr_fd:
+                    stderr_stream.write(data)
+
+        # Final timeout check — command may have completed but exceeded the budget
+        elapsed = os.times().elapsed - start_time
+        if elapsed >= timeout_seconds and not timeout_occurred and not output_size_exceeded:
+            timeout_occurred = True
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except (OSError, ProcessLookupError):
+                pass
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (OSError, ProcessLookupError):
+                    pass
+                proc.wait()
+
+        # Reap process
+        exit_code = proc.wait()
+
+    finally:
+        sel.close()
+        # Ensure process is reaped
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+    # Update totals
+    stdout_total_bytes = stdout_stream.total_observed
+    stderr_total_bytes = stderr_stream.total_observed
+
+    # Sanitize outputs
+    stdout_raw = stdout_stream.tail_bytes()
+    stderr_raw = stderr_stream.tail_bytes()
+
+    stdout_sanitized, _stdout_redaction_count, _stdout_truncated = _sanitize_output(
+        stdout_raw, max_output_bytes
+    )
+    stderr_sanitized, _stderr_redaction_count, _stderr_truncated = _sanitize_output(
+        stderr_raw, max_output_bytes
+    )
+
+    stdout_tail = stdout_sanitized
+    stderr_tail = stderr_sanitized
+
+    # Check if result file exists
+    if result_path.exists():
+        result_file_path = result_path
+
+    return ActorInvocationResult(
+        exit_code=exit_code,
+        stdout_tail=stdout_tail,
+        stderr_tail=stderr_tail,
+        timeout_occurred=timeout_occurred,
+        output_size_exceeded=output_size_exceeded,
+        stdout_total_bytes=stdout_total_bytes,
+        stderr_total_bytes=stderr_total_bytes,
+        result_file_path=result_file_path,
+    )
+
+
+def run_repair(
+    *,
+    repo_root: Path,
+    run_dir: Path,
+    repair_request: Mapping[str, object],
+    actor_executable: str,
+    actor_arguments: Sequence[str],
+    timeout_seconds: int = 120,
+    max_output_bytes: int = 4096,
+    baseline_exclusions: Sequence[str] | None = None,
+    completed_at: str,
+) -> RepairAdapterResult:
+    """
+    Run the repair adapter.
+
+    Keyword-only arguments:
+        repo_root: repository root directory (must exist, must be a directory)
+        run_dir: run artifact directory (created if needed)
+        repair_request: validated WP-AL-1C4 repair request dict
+        actor_executable: path to repair actor executable
+        actor_arguments: fixed arguments for actor (no --repair-request/--repair-result)
+        timeout_seconds: actor timeout in seconds (1-600, default 120)
+        max_output_bytes: stdout/stderr capture limit (default 4096)
+        baseline_exclusions: approved pre-existing untracked paths (default [])
+        completed_at: ISO-8601 UTC timestamp supplied by caller (no internal time call)
+
+    Returns:
+        RepairAdapterResult with adapter_status and all fields populated per schema.
+
+    Side effects:
+        - Writes $run_dir/repair/repair-request.json atomically
+        - Invokes actor subprocess (no shell=True, start_new_session=True)
+        - Reads $run_dir/repair/repair-result.json (if produced by actor)
+        - Writes $run_dir/repair/repair-adapter-result.json atomically
+        - Never cleans, stashes, resets, restores, or deletes files
+        - Never commits, pushes, or mutates repository beyond actor changes
+
+    Raises:
+        No exceptions. All failures are captured in RepairAdapterResult.
+    """
+    # Default baseline_exclusions
+    if baseline_exclusions is None:
+        baseline_exclusions = []
+
+    # Paths
+    repair_dir = run_dir / "repair"
+    request_path = repair_dir / "repair-request.json"
+    result_path = repair_dir / "repair-result.json"
+    adapter_result_path = repair_dir / "repair-adapter-result.json"
+
+    # Initialize result fields
+    adapter_status = ADAPTER_INTERNAL_ERROR
+    repair_result_summary: dict[str, Any] | None = None
+    workspace_changes: dict[str, Any] | None = None
+    reconciliation: dict[str, Any] | None = None
+    permission_enforcement: dict[str, Any] | None = None
+    diagnostics: dict[str, Any] = {
+        "actor_exit_code": None,
+        "actor_stdout_tail": "",
+        "actor_stderr_tail": "",
+        "adapter_error_message": None,
+    }
+    sanitization: dict[str, Any] = {
+        "redaction_applied": False,
+        "redaction_count": 0,
+        "truncation_applied": False,
+        "truncated_fields": [],
+    }
+    integrity_scope: dict[str, Any] = {
+        "tracked_files_inspected": True,
+        "untracked_non_ignored_inspected": True,
+        "ignored_files_inspected": False,
+        "advanced_symlink_inspected": False,
+        "note": "WP-AL-1C5: ignored files and advanced symlink targets not inspected",
+    }
+
+    # Helper to build and return result
+    def _build_result() -> RepairAdapterResult:
+        try:
+            result_dict = build_adapter_result(
+                run_id=repair_request.get("run_id", ""),  # type: ignore[arg-type]
+                story_id=repair_request.get("story_id", ""),  # type: ignore[arg-type]
+                attempt=repair_request.get("attempt", 1),  # type: ignore[arg-type]
+                adapter_status=adapter_status,
+                completed_at=completed_at,
+                repair_result_summary=repair_result_summary,
+                workspace_changes=workspace_changes,
+                reconciliation=reconciliation,
+                permission_enforcement=permission_enforcement,
+                diagnostics=diagnostics,
+                sanitization=sanitization,
+                integrity_scope=integrity_scope,
+            )
+            # Best-effort write of adapter result
+            try:
+                _atomic_write_json(adapter_result_path, result_dict)
+            except (OSError, RepairAdapterContractError):  # noqa: BLE001, S110
+                pass  # Do not recursively retry
+
+            return RepairAdapterResult(
+                schema_version="1.0",
+                run_id=repair_request.get("run_id", ""),  # type: ignore[arg-type]
+                story_id=repair_request.get("story_id", ""),  # type: ignore[arg-type]
+                attempt=repair_request.get("attempt", 1),  # type: ignore[arg-type]
+                adapter_status=adapter_status,
+                completed_at=completed_at,
+                repair_result_summary=repair_result_summary,
+                workspace_changes=workspace_changes,
+                reconciliation=reconciliation,
+                permission_enforcement=permission_enforcement,
+                diagnostics=diagnostics,
+                sanitization=sanitization,
+                integrity_scope=integrity_scope,
+            )
+        except Exception as e:
+            # Fallback: return minimal INTERNAL_ERROR result
+            error_msg = f"failed to build adapter result: {type(e).__name__}"
+            return RepairAdapterResult(
+                schema_version="1.0",
+                run_id=repair_request.get("run_id", ""),  # type: ignore[arg-type]
+                story_id=repair_request.get("story_id", ""),  # type: ignore[arg-type]
+                attempt=repair_request.get("attempt", 1),  # type: ignore[arg-type]
+                adapter_status=ADAPTER_INTERNAL_ERROR,
+                completed_at=completed_at,
+                diagnostics={
+                    "actor_exit_code": None,
+                    "actor_stdout_tail": "",
+                    "actor_stderr_tail": "",
+                    "adapter_error_message": error_msg[:MAX_ADAPTER_ERROR_MESSAGE_BYTES],
+                },
+                sanitization={
+                    "redaction_applied": False,
+                    "redaction_count": 0,
+                    "truncation_applied": False,
+                    "truncated_fields": [],
+                },
+                integrity_scope={
+                    "tracked_files_inspected": True,
+                    "untracked_non_ignored_inspected": True,
+                    "ignored_files_inspected": False,
+                    "advanced_symlink_inspected": False,
+                    "note": "WP-AL-1C5: ignored files and advanced symlink targets not inspected",
+                },
+            )
+
+    # Validate inputs
+    if not isinstance(repo_root, Path):
+        diagnostics["adapter_error_message"] = f"repo_root must be Path, got {type(repo_root).__name__}"
+        return _build_result()
+
+    if not isinstance(run_dir, Path):
+        diagnostics["adapter_error_message"] = f"run_dir must be Path, got {type(run_dir).__name__}"
+        return _build_result()
+
+    if not isinstance(repair_request, dict):
+        diagnostics["adapter_error_message"] = f"repair_request must be dict, got {type(repair_request).__name__}"
+        return _build_result()
+
+    if not isinstance(completed_at, str) or not RE_ISO8601_UTC.match(completed_at):
+        diagnostics["adapter_error_message"] = "completed_at must be ISO-8601 UTC format"
+        return _build_result()
+
+    if not isinstance(timeout_seconds, int) or timeout_seconds < 1 or timeout_seconds > 600:
+        diagnostics["adapter_error_message"] = f"timeout_seconds must be integer 1-600, got {timeout_seconds}"
+        return _build_result()
+
+    if not isinstance(max_output_bytes, int) or max_output_bytes < 1:
+        diagnostics["adapter_error_message"] = f"max_output_bytes must be integer >= 1, got {max_output_bytes}"
+        return _build_result()
+
+    # Validate repair request (WP-AL-1C4)
+    try:
+        validate_repair_request(repair_request)  # type: ignore[arg-type]
+    except RepairContractError as e:
+        diagnostics["adapter_error_message"] = f"repair request validation failed: {e}"
+        return _build_result()
+
+    # Validate baseline exclusions
+    try:
+        validated_exclusions = _validate_baseline_exclusions(list(baseline_exclusions))
+    except BaselineVerificationError as e:
+        adapter_status = e.adapter_status
+        diagnostics["adapter_error_message"] = str(e)
+        return _build_result()
+
+    # Verify clean tracked baseline
+    try:
+        baseline = _verify_clean_tracked_baseline(
+            repo_root, validated_exclusions, completed_at
+        )
+    except BaselineVerificationError as e:
+        adapter_status = e.adapter_status
+        diagnostics["adapter_error_message"] = str(e)
+        return _build_result()
+
+    # Validate command
+    try:
+        command = _validate_command(actor_executable, actor_arguments)
+    except ValueError as e:
+        diagnostics["adapter_error_message"] = str(e)
+        return _build_result()
+
+    # Create repair directory
+    try:
+        repair_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(repair_dir, 0o755)
+    except OSError as e:
+        diagnostics["adapter_error_message"] = f"cannot create repair directory: {e}"
+        return _build_result()
+
+    # Write repair request atomically
+    try:
+        _atomic_write_json(request_path, repair_request)  # type: ignore[arg-type]
+    except Exception as e:
+        diagnostics["adapter_error_message"] = f"failed to write repair request: {e}"
+        return _build_result()
+
+    # Build minimal environment
+    env = _build_minimal_env(run_dir)
+
+    # Invoke actor
+    invocation = _invoke_actor(
+        command=command,
+        request_path=request_path,
+        result_path=result_path,
+        cwd=repo_root,
+        env=env,
+        timeout_seconds=timeout_seconds,
+        max_output_bytes=max_output_bytes,
+    )
+
+    # Update diagnostics from invocation
+    diagnostics["actor_exit_code"] = invocation.exit_code
+    diagnostics["actor_stdout_tail"] = invocation.stdout_tail
+    diagnostics["actor_stderr_tail"] = invocation.stderr_tail
+
+    # Capture post-run workspace (always, even on failure)
+    try:
+        post_rev, rev_stable, ws_change = _capture_post_run_workspace(
+            repo_root, baseline.source_revision, validated_exclusions
+        )
+        workspace_changes = {
+            "baseline_source_revision": baseline.source_revision,
+            "post_source_revision": post_rev,
+            "source_revision_stable": rev_stable,
+            "added": ws_change.added,
+            "modified": ws_change.modified,
+            "deleted": ws_change.deleted,
+            "untracked": ws_change.untracked,
+        }
+    except BaselineVerificationError as e:
+        # Workspace capture failed — preserve the adapter_status from the exception
+        adapter_status = e.adapter_status
+        diagnostics["adapter_error_message"] = str(e)
+        return _build_result()
+
+    # Check source revision drift
+    if not rev_stable:
+        adapter_status = ADAPTER_SOURCE_REVISION_DRIFT
+        workspace_changes = None  # Pre-invocation failure: no conditional fields allowed
+        reconciliation = None
+        permission_enforcement = None
+        repair_result_summary = None
+        diagnostics["adapter_error_message"] = "source revision changed during actor execution"
+        return _build_result()
+
+    # Check timeout (causal: adapter terminated actor)
+    if invocation.timeout_occurred:
+        adapter_status = ADAPTER_TIMEOUT
+        diagnostics["adapter_error_message"] = f"actor exceeded {timeout_seconds}s timeout"
+        return _build_result()
+
+    # Check output size exceeded (causal: adapter terminated actor)
+    if invocation.output_size_exceeded:
+        adapter_status = ADAPTER_OUTPUT_SIZE_EXCEEDED
+        diagnostics["adapter_error_message"] = (
+            f"actor output exceeded {max_output_bytes} bytes "
+            f"(stdout: {invocation.stdout_total_bytes}, stderr: {invocation.stderr_total_bytes})"
+        )
+        return _build_result()
+
+    # Check non-zero exit (actor exited on its own)
+    if invocation.exit_code is None or invocation.exit_code != 0:
+        adapter_status = ADAPTER_NON_ZERO_EXIT
+        diagnostics["adapter_error_message"] = (
+            f"actor exited with code {invocation.exit_code}"
+        )
+        return _build_result()
+
+    # Check result file exists
+    if invocation.result_file_path is None:
+        adapter_status = ADAPTER_MISSING_RESULT
+        diagnostics["adapter_error_message"] = "actor did not produce repair-result.json"
+        return _build_result()
+
+    # Read and parse result
+    try:
+        with open(invocation.result_file_path, "r", encoding="utf-8") as f:
+            result_data = json.load(f)
+    except json.JSONDecodeError as e:
+        adapter_status = ADAPTER_MALFORMED_RESULT
+        diagnostics["adapter_error_message"] = f"repair-result.json is not valid JSON: {e}"
+        return _build_result()
+    except OSError as e:
+        adapter_status = ADAPTER_MISSING_RESULT
+        diagnostics["adapter_error_message"] = f"cannot read repair-result.json: {e}"
+        return _build_result()
+
+    # Validate result structure (WP-AL-1C4)
+    try:
+        validate_repair_result(result_data)
+    except RepairContractError as e:
+        adapter_status = ADAPTER_CONTRACT_VIOLATION
+        diagnostics["adapter_error_message"] = f"repair-result validation failed: {e}"
+        return _build_result()
+
+    # Collect all failures and apply precedence
+    # (IDENTITY_MISMATCH, UNDECLARED_CHANGE, DECLARED_MISSING, FORBIDDEN_CHANGE)
+    failures: list[str] = []
+    
+    # Validate identity binding
+    identity_error: BaselineVerificationError | None = None
+    try:
+        _validate_identity_binding(result_data, repair_request)  # type: ignore[arg-type]
+    except BaselineVerificationError as e:
+        identity_error = e
+        failures.append(e.adapter_status)
+
+    # Only check reconciliation if identity binding succeeded
+    # (we can't trust changed_files if identity is wrong)
+    recon: ReconciliationResult | None = None
+    reconciliation: dict[str, Any] | None = None
+    
+    if identity_error is None:
+        # Build repair result summary
+        repair_result_summary = {
+            "status": result_data["status"],
+            "changed": result_data["changed"],
+            "changed_files": result_data["changed_files"],
+            "recommended_action": result_data["recommended_action"],
+            "summary": result_data["summary"],
+        }
+
+        # Reconcile changes
+        recon = _reconcile_changes(result_data["changed_files"], ws_change)
+        reconciliation = {
+            "declared_files": recon.declared_files,
+            "actual_files": recon.actual_files,
+            "undeclared_changes": recon.undeclared_changes,
+            "declared_but_missing": recon.declared_but_missing,
+            "exact_match": recon.exact_match,
+        }
+
+        # Check reconciliation
+        if not recon.exact_match:
+            if recon.undeclared_changes:
+                failures.append(ADAPTER_UNDECLARED_CHANGE)
+            else:
+                failures.append(ADAPTER_DECLARED_MISSING)
+
+    # Always check permissions on actual workspace changes
+    # (even if identity binding failed, we can still check actual workspace)
+    allowed_paths = repair_request.get("allowed_paths", [])  # type: ignore[union-attr]
+    forbidden_paths = repair_request.get("forbidden_paths", [])  # type: ignore[union-attr]
+    allowed_v, forbidden_v = _enforce_permissions(
+        ws_change, allowed_paths, forbidden_paths  # type: ignore[arg-type]
+    )
+
+    permission_enforcement = {
+        "allowed_violations": allowed_v,
+        "forbidden_violations": forbidden_v,
+        "all_actual_changes_permitted": len(allowed_v) == 0 and len(forbidden_v) == 0,
+    }
+
+    # Check permission violations
+    if forbidden_v or allowed_v:
+        failures.append(ADAPTER_FORBIDDEN_CHANGE)
+
+    # Apply precedence: pick highest priority failure
+    # Precedence order (lower index = higher priority):
+    # 1. INTERNAL_ERROR (already handled above)
+    # 2. DIRTY_BASELINE (already handled above)
+    # 3. SOURCE_REVISION_DRIFT (already handled above)
+    # 4. FORBIDDEN_CHANGE
+    # 5. UNDECLARED_CHANGE
+    # 6. DECLARED_MISSING
+    # 7. CONTRACT_VIOLATION (already handled above)
+    # 8. IDENTITY_MISMATCH
+    # 9. MALFORMED_RESULT (already handled above)
+    # 10. MISSING_RESULT (already handled above)
+    # 11. NON_ZERO_EXIT (already handled above)
+    # 12. TIMEOUT (already handled above)
+    # 13. OUTPUT_SIZE_EXCEEDED (already handled above)
+    
+    precedence = [
+        ADAPTER_FORBIDDEN_CHANGE,
+        ADAPTER_UNDECLARED_CHANGE,
+        ADAPTER_DECLARED_MISSING,
+        ADAPTER_IDENTITY_MISMATCH,
+    ]
+    
+    for status in precedence:
+        if status in failures:
+            adapter_status = status
+            if status == ADAPTER_FORBIDDEN_CHANGE:
+                if forbidden_v:
+                    diagnostics["adapter_error_message"] = (
+                        f"forbidden changes: {', '.join(forbidden_v[:5])}"
+                    )
+                else:
+                    diagnostics["adapter_error_message"] = (
+                        f"not allowed: {', '.join(allowed_v[:5])}"
+                    )
+            elif status == ADAPTER_UNDECLARED_CHANGE and recon is not None:
+                diagnostics["adapter_error_message"] = (
+                    f"undeclared changes: {', '.join(recon.undeclared_changes[:5])}"
+                )
+            elif status == ADAPTER_DECLARED_MISSING and recon is not None:
+                diagnostics["adapter_error_message"] = (
+                    f"declared but missing: {', '.join(recon.declared_but_missing[:5])}"
+                )
+            elif status == ADAPTER_IDENTITY_MISMATCH:
+                assert identity_error is not None
+                diagnostics["adapter_error_message"] = str(identity_error)
+            return _build_result()
+
+    # Success
+    adapter_status = ADAPTER_SUCCESS
+    diagnostics["adapter_error_message"] = None
+    return _build_result()
+
