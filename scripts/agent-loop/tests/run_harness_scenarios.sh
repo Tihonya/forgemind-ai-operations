@@ -1559,7 +1559,7 @@ try:
         source_revision=fc["candidate_identity"]["base_commit"],
         failure_class="verification_fail",
         failure_summary="Verification failed",
-        allowed_paths=["**/*.py"],
+        allowed_paths=["**/*.py", "undeclared_change.txt"],
         forbidden_paths=[],
         requested_action="fix_verification",
         generated_at="2026-01-01T00:00:00Z",
@@ -1588,7 +1588,7 @@ PYEOF
       --actor-command python3 \
       --actor-arg "$AA_MOCK_SCRIPT" \
       --actor-arg=--mode \
-      --actor-arg UNDECLARED_CHANGE \
+      --actor-arg undeclared_change \
       --actor-arg=--modify \
       --actor-arg "backend/src/synthetic/module_aa.py" \
       --timeout-seconds 30 \
