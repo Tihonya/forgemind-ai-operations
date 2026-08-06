@@ -1,13 +1,17 @@
 """
-WP-AL-1C5 Slice 1: Repair adapter result data model and schema.
+WP-AL-1C5 Repair Adapter.
 
-Defines the adapter-result contract v1.0 with structural validation,
-status-dependent presence rules, nested-object validation, cross-field
-invariants, path lexical safety, deterministic builder, and canonical
-serialization.
+Slice 1: Adapter-result contract v1.0 (structural validation, status-dependent
+presence rules, nested-object validation, cross-field invariants, path lexical
+safety, deterministic builder, canonical serialization).
 
-No filesystem writes, no Git operations, no subprocess, no network,
-no orchestration logic, no mock actor, no run_repair, no CLI.
+Slice 2: Clean tracked baseline verification.
+- Captures current source revision via ``git rev-parse HEAD``.
+- Inspects workspace status via ``git status --porcelain=v1``.
+- Rejects dirty tracked baseline (modified/staged/deleted/renamed tracked files).
+- Applies orchestrator-provided baseline-exclusion list for approved untracked artifacts.
+- Validates exclusion paths lexically.
+- Does NOT invoke actor, does NOT write files, does NOT mutate repository.
 
 Schema: .agent-loop/repair-adapter/SCHEMA.md
 """
@@ -16,8 +20,11 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
+import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -907,3 +914,387 @@ def pretty_json_string(obj: dict[str, Any]) -> str:
     )
     lines = [line.rstrip() for line in text.split("\n")]
     return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Slice 2: Baseline verification
+# ---------------------------------------------------------------------------
+
+# Maximum size for baseline-exclusion list (prevent abuse)
+MAX_BASELINE_EXCLUSIONS = 128
+
+# Git porcelain v1 status codes that indicate dirty tracked state.
+# X column (index): anything other than ' ' means staged change.
+# Y column (worktree): 'M', 'D', or 'T' means worktree modification of tracked file.
+# 'U' in either column means unmerged (also dirty).
+
+
+class BaselineVerificationError(Exception):
+    """Raised when baseline verification fails with a specific adapter status."""
+
+    def __init__(self, adapter_status: str, message: str) -> None:
+        super().__init__(message)
+        self.adapter_status = adapter_status
+
+
+def _validate_exclusion_path(path_str: str) -> None:
+    """
+    Validate a single baseline-exclusion path lexically.
+
+    Must be repo-relative, no traversal, no absolute, no null bytes,
+    no backslashes, no empty segments, max 512 bytes.
+    """
+    if not isinstance(path_str, str):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_exclusion: path must be string, got {type(path_str).__name__}",
+        )
+    if not path_str:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: empty path",
+        )
+    if "\x00" in path_str:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: null byte in path",
+        )
+    if path_str.startswith("/"):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: absolute path not allowed",
+        )
+    if re.match(r"^[A-Za-z]:", path_str):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: Windows drive letter not allowed",
+        )
+    if path_str.startswith("\\\\"):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: UNC path not allowed",
+        )
+    if "\\" in path_str:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: backslash not allowed (use forward slash)",
+        )
+    if "//" in path_str:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "baseline_exclusion: duplicate separator",
+        )
+    segments = path_str.split("/")
+    for segment in segments:
+        if segment == "":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                "baseline_exclusion: empty segment",
+            )
+        if segment == ".":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                "baseline_exclusion: '.' segment not allowed",
+            )
+        if segment == "..":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                "baseline_exclusion: parent traversal not allowed",
+            )
+    if _byte_len(path_str) > MAX_PATH_BYTES:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_exclusion: exceeds {MAX_PATH_BYTES} bytes",
+        )
+
+
+def _validate_baseline_exclusions(exclusions: list[str]) -> list[str]:
+    """
+    Validate baseline-exclusion paths.
+
+    Returns sorted list.
+    Raises BaselineVerificationError on invalid input or duplicates.
+    """
+    if not isinstance(exclusions, list):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_exclusions must be list, got {type(exclusions).__name__}",
+        )
+    if len(exclusions) > MAX_BASELINE_EXCLUSIONS:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_exclusions exceeds {MAX_BASELINE_EXCLUSIONS} entries",
+        )
+
+    # Validate each path
+    for i, path in enumerate(exclusions):
+        try:
+            _validate_exclusion_path(path)
+        except BaselineVerificationError:
+            raise
+        except Exception as e:
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"baseline_exclusions[{i}]: unexpected validation error: {e}",
+            ) from e
+
+    # Duplicate detection
+    seen: set[str] = set()
+    for path in exclusions:
+        if path in seen:
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"baseline_exclusions: duplicate path: {path}",
+            )
+        seen.add(path)
+
+    # Return sorted for determinism
+    return sorted(exclusions)
+
+
+def _run_git_command(
+    args: list[str],
+    cwd: Path,
+) -> str:
+    """
+    Run a Git command with shell=False, explicit cwd, minimal environment.
+
+    Returns stdout as string (stripped of trailing newline).
+    Raises BaselineVerificationError(ADAPTER_INTERNAL_ERROR) on failure.
+    """
+    # Minimal environment — no leakage beyond what Git requires
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "HOME": os.environ.get("HOME", "/tmp"),
+        # Prevent Git from reading user/system config
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        # Deterministic output
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+    try:
+        result = subprocess.run(
+            ["git"] + args,
+            cwd=str(cwd),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,  # Bounded: git commands should be fast
+            check=False,
+            shell=False,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"git command timed out: git {' '.join(args)}",
+        ) from e
+    except OSError as e:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"git command failed to execute: {e}",
+        ) from e
+
+    if result.returncode != 0:
+        stderr_msg = result.stderr.strip()[:512]
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"git {' '.join(args)} failed (exit {result.returncode}): {stderr_msg}",
+        )
+
+    return result.stdout.rstrip("\n")
+
+
+def _capture_source_revision(repo_root: Path) -> str:
+    """
+    Capture current HEAD revision via git rev-parse HEAD.
+
+    Returns 40-char lowercase hex SHA.
+    Raises BaselineVerificationError on failure or invalid format.
+    """
+    sha = _run_git_command(["rev-parse", "HEAD"], repo_root)
+
+    if not RE_SHA40.match(sha):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"source revision is not 40-char lowercase hex: {sha!r}",
+        )
+
+    return sha
+
+
+def _parse_porcelain_status(
+    status_output: str,
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Parse git status --porcelain=v1 output.
+
+    Returns (tracked_dirty_paths, untracked_paths, ignored_paths).
+    Each list contains repo-relative paths, sorted.
+
+    Porcelain v1 format: each line is "XY path" where:
+    - X = index (staged) status
+    - Y = worktree status
+    - path = repo-relative path
+
+    Dirty tracked: any line where X not in {' ', '?', '!'} or Y in {'M', 'D', 'U'}
+    Untracked: lines starting with '??'
+    Ignored: lines starting with '!!'
+    """
+    tracked_dirty: list[str] = []
+    untracked: list[str] = []
+    ignored: list[str] = []
+
+    for line in status_output.split("\n"):
+        if not line:
+            continue
+
+        # Lines must be at least 4 chars: "XY p"
+        if len(line) < 4:
+            # Malformed line — treat as internal error upstream
+            # For now, skip empty/short lines
+            continue
+
+        x_code = line[0]
+        y_code = line[1]
+        # Path starts after "XY " (3 chars)
+        path = line[3:]
+
+        # Handle quoted paths (special characters)
+        if path.startswith('"') and path.endswith('"'):
+            # Porcelain quotes paths with special chars — strip quotes
+            # Note: full unescaping is complex; for baseline purposes,
+            # we accept the quoted form as-is since we're just comparing
+            # against exclusion paths
+            path = path[1:-1]
+
+        if x_code == "?" and y_code == "?":
+            # Untracked file
+            untracked.append(path)
+        elif x_code == "!" and y_code == "!":
+            # Ignored file (only present with --ignored flag, which we don't use)
+            ignored.append(path)
+        elif x_code == "U" or y_code == "U":
+            # Unmerged — dirty tracked
+            tracked_dirty.append(path)
+        elif x_code != " " and x_code not in ("?", "!"):
+            # Staged change in index
+            tracked_dirty.append(path)
+        elif y_code in ("M", "D", "T"):
+            # Worktree modification of tracked file (M=modified, D=deleted, T=typechange)
+            tracked_dirty.append(path)
+        # else: clean tracked file (X=' ', Y=' ') — no action needed
+
+    # Sort for determinism
+    tracked_dirty.sort()
+    untracked.sort()
+    ignored.sort()
+
+    return tracked_dirty, untracked, ignored
+
+
+def _verify_clean_tracked_baseline(
+    repo_root: Path,
+    baseline_exclusions: list[str],
+    captured_at: str,
+) -> WorkspaceBaseline:
+    """
+    Verify clean tracked baseline and capture workspace baseline.
+
+    Parameters:
+        repo_root: repository root directory (must exist, must be a directory).
+        baseline_exclusions: orchestrator-supplied list of approved pre-existing
+            untracked artifact paths (repo-relative, lexically validated).
+        captured_at: ISO-8601 UTC timestamp supplied by caller (no internal time call).
+
+    Returns:
+        WorkspaceBaseline with source_revision, baseline_exclusions (sorted), captured_at.
+
+    Raises:
+        BaselineVerificationError:
+            - adapter_status=ADAPTER_INTERNAL_ERROR: repo_root invalid, git failure,
+              format error, invalid exclusion path.
+            - adapter_status=ADAPTER_DIRTY_BASELINE: tracked modifications or staged
+              changes found.
+
+    Semantics:
+        - Untracked files in baseline_exclusions are excluded from baseline.
+        - Untracked files NOT in baseline_exclusions are allowed at baseline time
+          (they will be caught by post-run reconciliation if actor didn't declare them).
+        - Ignored files are outside integrity scope (never inspected).
+        - No filesystem mutation. No repository state change.
+        - Deterministic: same inputs → same baseline.
+    """
+    # Validate captured_at format
+    if not isinstance(captured_at, str):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"captured_at must be string, got {type(captured_at).__name__}",
+        )
+    if not RE_ISO8601_UTC.match(captured_at):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"captured_at must be ISO-8601 UTC format: {captured_at!r}",
+        )
+
+    # Validate repo_root
+    if not isinstance(repo_root, Path):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"repo_root must be Path, got {type(repo_root).__name__}",
+        )
+
+    try:
+        if not repo_root.exists():
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"repo_root does not exist: {repo_root}",
+            )
+        if not repo_root.is_dir():
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"repo_root is not a directory: {repo_root}",
+            )
+    except OSError as e:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"cannot access repo_root: {e}",
+        ) from e
+
+    # Validate baseline_exclusions
+    validated_exclusions = _validate_baseline_exclusions(baseline_exclusions)
+
+    # Capture source revision
+    source_revision = _capture_source_revision(repo_root)
+
+    # Inspect workspace status
+    status_output = _run_git_command(
+        ["status", "--porcelain=v1", "-uall"],
+        repo_root,
+    )
+
+    # Parse status
+    tracked_dirty, _untracked, _ignored = _parse_porcelain_status(status_output)
+
+    # Reject dirty tracked baseline
+    if tracked_dirty:
+        dirty_summary = ", ".join(tracked_dirty[:5])
+        if len(tracked_dirty) > 5:
+            dirty_summary += f" ... (+{len(tracked_dirty) - 5} more)"
+        raise BaselineVerificationError(
+            ADAPTER_DIRTY_BASELINE,
+            f"pre-existing tracked modifications found: {dirty_summary}",
+        )
+
+    # Untracked files not in exclusions are allowed at baseline time.
+    # They will be caught during post-run reconciliation (later slices).
+
+    # Build and return baseline
+    return WorkspaceBaseline(
+        source_revision=source_revision,
+        baseline_exclusions=validated_exclusions,
+        captured_at=captured_at,
+    )

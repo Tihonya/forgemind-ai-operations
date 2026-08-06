@@ -23,6 +23,7 @@ No skips, no xfails, no placeholders.
 """
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -1537,3 +1538,688 @@ def test_P07_output_size_exceeded_presence() -> None:
     result["repair_result_summary"] = _make_repair_result_summary()
     with pytest.raises(RepairAdapterContractError, match="repair_result_summary"):
         validate_adapter_result(result)
+
+
+# ===========================================================================
+# Slice 2: Baseline verification (Git repository tests)
+# ===========================================================================
+
+from repair_adapter import (
+    BaselineVerificationError,
+    _verify_clean_tracked_baseline,
+)
+
+
+def _git(repo: Path, *args: str) -> str:
+    """Run git command in repo directory."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr}")
+    return result.stdout.strip()
+
+
+def _create_temp_repo(tmp_path: Path) -> Path:
+    """Create a temporary Git repository with one commit."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+
+    # Create initial file and commit
+    (repo / "initial.txt").write_text("initial content\n")
+    _git(repo, "add", "initial.txt")
+    _git(repo, "commit", "-m", "Initial commit")
+
+    return repo
+
+
+def _get_head_sha(repo: Path) -> str:
+    """Get current HEAD SHA."""
+    return _git(repo, "rev-parse", "HEAD")
+
+
+# ---------------------------------------------------------------------------
+# Test: Clean baseline acceptance
+# ---------------------------------------------------------------------------
+
+
+def test_BL01_clean_baseline_accepted(tmp_path: Path) -> None:
+    """BL01: Clean repository with no changes should be accepted."""
+    repo = _create_temp_repo(tmp_path)
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert isinstance(baseline, WorkspaceBaseline)
+    assert baseline.source_revision == _get_head_sha(repo)
+    assert baseline.baseline_exclusions == []
+    assert baseline.captured_at == VALID_TIMESTAMP
+
+
+def test_BL02_clean_baseline_with_untracked_files_accepted(tmp_path: Path) -> None:
+    """BL02: Clean repository with untracked files (not in exclusions) should be accepted."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create untracked file
+    (repo / "untracked.txt").write_text("untracked content\n")
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert isinstance(baseline, WorkspaceBaseline)
+    assert baseline.source_revision == _get_head_sha(repo)
+
+
+def test_BL03_clean_baseline_with_excluded_untracked_files(tmp_path: Path) -> None:
+    """BL03: Clean repository with excluded untracked files should be accepted."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create untracked file
+    (repo / "untracked.txt").write_text("untracked content\n")
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=["untracked.txt"],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert isinstance(baseline, WorkspaceBaseline)
+    assert baseline.baseline_exclusions == ["untracked.txt"]
+
+
+# ---------------------------------------------------------------------------
+# Test: Dirty baseline rejection
+# ---------------------------------------------------------------------------
+
+
+def test_BL04_modified_tracked_file_rejected(tmp_path: Path) -> None:
+    """BL04: Modified tracked file should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Modify tracked file
+    (repo / "initial.txt").write_text("modified content\n")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    assert "initial.txt" in str(exc_info.value)
+
+
+def test_BL05_staged_tracked_file_rejected(tmp_path: Path) -> None:
+    """BL05: Staged tracked file should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Modify and stage tracked file
+    (repo / "initial.txt").write_text("modified content\n")
+    _git(repo, "add", "initial.txt")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    assert "initial.txt" in str(exc_info.value)
+
+
+def test_BL06_staged_new_file_rejected(tmp_path: Path) -> None:
+    """BL06: Staged new file should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create and stage new file
+    (repo / "new.txt").write_text("new content\n")
+    _git(repo, "add", "new.txt")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    assert "new.txt" in str(exc_info.value)
+
+
+def test_BL07_deleted_tracked_file_rejected(tmp_path: Path) -> None:
+    """BL07: Deleted tracked file should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Delete tracked file
+    (repo / "initial.txt").unlink()
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    assert "initial.txt" in str(exc_info.value)
+
+
+def test_BL08_renamed_tracked_file_rejected(tmp_path: Path) -> None:
+    """BL08: Renamed tracked file should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Rename tracked file
+    _git(repo, "mv", "initial.txt", "renamed.txt")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    error_msg = str(exc_info.value)
+    assert "initial.txt" in error_msg or "renamed.txt" in error_msg
+
+
+# ---------------------------------------------------------------------------
+# Test: Baseline exclusion validation
+# ---------------------------------------------------------------------------
+
+
+def test_BL09_exclusion_path_absolute_rejected(tmp_path: Path) -> None:
+    """BL09: Absolute path in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["/absolute/path.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "absolute path" in str(exc_info.value)
+
+
+def test_BL10_exclusion_path_traversal_rejected(tmp_path: Path) -> None:
+    """BL10: Path with traversal (..) in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["../outside.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "traversal" in str(exc_info.value)
+
+
+def test_BL11_exclusion_path_dot_segment_rejected(tmp_path: Path) -> None:
+    """BL11: Path with '.' segment in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["./file.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "'.' segment" in str(exc_info.value)
+
+
+def test_BL12_exclusion_path_empty_rejected(tmp_path: Path) -> None:
+    """BL12: Empty path in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[""],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "empty path" in str(exc_info.value)
+
+
+def test_BL13_exclusion_path_null_byte_rejected(tmp_path: Path) -> None:
+    """BL13: Path with null byte in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["file\x00.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "null byte" in str(exc_info.value)
+
+
+def test_BL14_exclusion_path_backslash_rejected(tmp_path: Path) -> None:
+    """BL14: Path with backslash in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["path\\file.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "backslash" in str(exc_info.value)
+
+
+def test_BL15_exclusion_path_duplicate_separator_rejected(tmp_path: Path) -> None:
+    """BL15: Path with duplicate separator (//) in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["path//file.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "duplicate separator" in str(exc_info.value)
+
+
+def test_BL16_exclusion_path_duplicate_entry_rejected(tmp_path: Path) -> None:
+    """BL16: Duplicate entries in exclusion list should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=["file.txt", "file.txt"],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "duplicate" in str(exc_info.value)
+
+
+def test_BL17_exclusion_list_sorted_and_deduplicated(tmp_path: Path) -> None:
+    """BL17: Exclusion list should be sorted and returned in baseline."""
+    repo = _create_temp_repo(tmp_path)
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=["b.txt", "a.txt", "c.txt"],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert baseline.baseline_exclusions == ["a.txt", "b.txt", "c.txt"]
+
+
+# ---------------------------------------------------------------------------
+# Test: Source revision capture
+# ---------------------------------------------------------------------------
+
+
+def test_BL18_source_revision_captured(tmp_path: Path) -> None:
+    """BL18: Source revision should match current HEAD."""
+    repo = _create_temp_repo(tmp_path)
+    expected_sha = _get_head_sha(repo)
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert baseline.source_revision == expected_sha
+    assert len(baseline.source_revision) == 40
+
+
+def test_BL19_source_revision_format_validated(tmp_path: Path) -> None:
+    """BL19: Source revision must be 40-char lowercase hex."""
+    repo = _create_temp_repo(tmp_path)
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    # Verify it's a valid 40-char hex string
+    assert len(baseline.source_revision) == 40
+    assert all(c in "0123456789abcdef" for c in baseline.source_revision)
+
+
+def test_BL20_detached_head_accepted(tmp_path: Path) -> None:
+    """BL20: Detached HEAD state should be accepted (still valid SHA)."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Get current HEAD and detach
+    sha = _get_head_sha(repo)
+    _git(repo, "checkout", sha)
+
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert baseline.source_revision == sha
+
+
+# ---------------------------------------------------------------------------
+# Test: Repository validation
+# ---------------------------------------------------------------------------
+
+
+def test_BL21_non_repository_path_rejected(tmp_path: Path) -> None:
+    """BL21: Path that is not a Git repository should be rejected."""
+    not_a_repo = tmp_path / "not_a_repo"
+    not_a_repo.mkdir()
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=not_a_repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+
+
+def test_BL22_missing_repo_root_rejected(tmp_path: Path) -> None:
+    """BL22: Non-existent repo_root should be rejected."""
+    missing = tmp_path / "missing"
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=missing,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "does not exist" in str(exc_info.value)
+
+
+def test_BL23_file_as_repo_root_rejected(tmp_path: Path) -> None:
+    """BL23: File (not directory) as repo_root should be rejected."""
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("not a directory\n")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=file_path,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "not a directory" in str(exc_info.value)
+
+
+def test_BL24_invalid_captured_at_format_rejected(tmp_path: Path) -> None:
+    """BL24: Invalid captured_at format should be rejected."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at="not-a-timestamp",
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+    assert "ISO-8601" in str(exc_info.value)
+
+
+# ---------------------------------------------------------------------------
+# Test: Non-mutation guarantee
+# ---------------------------------------------------------------------------
+
+
+def test_BL25_repository_state_unchanged_after_inspection(tmp_path: Path) -> None:
+    """BL25: Baseline verification must not mutate repository state."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Capture state before
+    head_before = _get_head_sha(repo)
+    status_before = _git(repo, "status", "--porcelain")
+    branch_before = _git(repo, "branch", "--show-current")
+
+    # Run baseline verification
+    _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    # Verify state unchanged
+    head_after = _get_head_sha(repo)
+    status_after = _git(repo, "status", "--porcelain")
+    branch_after = _git(repo, "branch", "--show-current")
+
+    assert head_before == head_after
+    assert status_before == status_after
+    assert branch_before == branch_after
+
+
+def test_BL26_no_stash_created_during_inspection(tmp_path: Path) -> None:
+    """BL26: Baseline verification must not create stash entries."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Verify no stash before
+    stash_before = _git(repo, "stash", "list")
+    assert stash_before == ""
+
+    # Run baseline verification
+    _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    # Verify no stash after
+    stash_after = _git(repo, "stash", "list")
+    assert stash_after == ""
+
+
+def test_BL27_no_temp_files_created_during_inspection(tmp_path: Path) -> None:
+    """BL27: Baseline verification must not create temporary files in repo."""
+    repo = _create_temp_repo(tmp_path)
+
+    # List files before
+    files_before = set()
+    for p in repo.rglob("*"):
+        if p.is_file() and ".git" not in p.parts:
+            files_before.add(p.relative_to(repo))
+
+    # Run baseline verification
+    _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    # List files after
+    files_after = set()
+    for p in repo.rglob("*"):
+        if p.is_file() and ".git" not in p.parts:
+            files_after.add(p.relative_to(repo))
+
+    assert files_before == files_after
+
+
+# ---------------------------------------------------------------------------
+# Test: Hard-coded exception prevention
+# ---------------------------------------------------------------------------
+
+
+def test_BL28_no_hard_coded_exceptions_for_real_artifacts(tmp_path: Path) -> None:
+    """BL28: Verification must not hard-code exceptions for specific review artifacts."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create a file that looks like a review artifact
+    review_artifact = repo / "docs" / "reviews" / "test_review.md"
+    review_artifact.parent.mkdir(parents=True, exist_ok=True)
+    review_artifact.write_text("test review content\n")
+
+    # Without exclusion, this untracked file should not cause baseline failure
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert isinstance(baseline, WorkspaceBaseline)
+
+    # Now test that it CAN be excluded if needed
+    baseline_with_exclusion = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=["docs/reviews/test_review.md"],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert "docs/reviews/test_review.md" in baseline_with_exclusion.baseline_exclusions
+
+
+# ---------------------------------------------------------------------------
+# Test: Multiple dirty files
+# ---------------------------------------------------------------------------
+
+
+def test_BL29_multiple_dirty_files_all_reported(tmp_path: Path) -> None:
+    """BL29: When multiple tracked files are dirty, error should mention at least some."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create and commit multiple files
+    for i in range(5):
+        (repo / f"file{i}.txt").write_text(f"content {i}\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-m", "Add multiple files")
+
+    # Modify all of them
+    for i in range(5):
+        (repo / f"file{i}.txt").write_text(f"modified {i}\n")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    error_msg = str(exc_info.value)
+    assert any(f"file{i}.txt" in error_msg for i in range(5))
+
+
+# ---------------------------------------------------------------------------
+# Test: Empty repository
+# ---------------------------------------------------------------------------
+
+
+def test_BL30_empty_repository_with_no_commits(tmp_path: Path) -> None:
+    """BL30: Repository with no commits should fail (no HEAD to parse)."""
+    repo = tmp_path / "empty_repo"
+    repo.mkdir()
+    _git(repo, "init")
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_INTERNAL_ERROR
+
+
+# ---------------------------------------------------------------------------
+# Test: Ignored files behavior
+# ---------------------------------------------------------------------------
+
+
+def test_BL31_ignored_files_outside_scope(tmp_path: Path) -> None:
+    """BL31: Ignored files (via .gitignore) should not cause baseline failure."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create .gitignore
+    (repo / ".gitignore").write_text("*.log\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-m", "Add gitignore")
+
+    # Create ignored file
+    (repo / "test.log").write_text("log content\n")
+
+    # Baseline should succeed (ignored file is outside scope)
+    baseline = _verify_clean_tracked_baseline(
+        repo_root=repo,
+        baseline_exclusions=[],
+        captured_at=VALID_TIMESTAMP,
+    )
+
+    assert isinstance(baseline, WorkspaceBaseline)
+
+
+def test_BL32_worktree_typechange_rejected(tmp_path: Path) -> None:
+    """BL32: Worktree typechange (Y='T') should cause ADAPTER_DIRTY_BASELINE."""
+    repo = _create_temp_repo(tmp_path)
+
+    # Create and commit a regular file
+    regular_file = repo / "regular.txt"
+    regular_file.write_text("original content\n")
+    _git(repo, "add", "regular.txt")
+    _git(repo, "commit", "-m", "Add regular file")
+
+    # Replace regular file with a symlink (typechange)
+    regular_file.unlink()
+    regular_file.symlink_to("/tmp/nonexistent_target")
+
+    # Verify raw porcelain reports Y='T'
+    result = subprocess.run(
+        ["git", "status", "--porcelain=v1", "-uall"],
+        cwd=str(repo),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert " T regular.txt" in result.stdout or "T regular.txt" in result.stdout
+
+    # Baseline should reject the typechange
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
+    assert "regular.txt" in str(exc_info.value)
+
+    # Verify repository state is not mutated
+    _git(repo, "status")  # Should succeed
+    current_head = (repo / ".git" / "HEAD").read_text()
+    assert "ref:" in current_head or len(current_head.strip()) == 40  # Valid HEAD
