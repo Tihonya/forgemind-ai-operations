@@ -43,6 +43,7 @@ import selectors
 import signal
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,6 +123,27 @@ _PRE_INVOCATION_FAILURES = frozenset({
     ADAPTER_DIRTY_BASELINE,
     ADAPTER_SOURCE_REVISION_DRIFT,
     ADAPTER_INTERNAL_ERROR,
+})
+
+# Approved read-only Git subcommands used by the repair adapter.
+# The safety boundary (BB-SAFETY-05) asserts that no prohibited mutating
+# subcommand is ever present at the Git invocation boundary.
+APPROVED_GIT_SUBCOMMANDS: frozenset[str] = frozenset({
+    "rev-parse",
+    "status",
+    "ls-files",
+})
+# Git subcommands that mutate repository state — unconditionally prohibited.
+PROHIBITED_GIT_SUBCOMMANDS: frozenset[str] = frozenset({
+    "commit",
+    "push",
+    "reset",
+    "clean",
+    "stash",
+    "restore",
+    "checkout",
+    "switch",
+    "rebase",
 })
 
 # Post-invocation failure statuses that imply actor produced no valid result
@@ -1431,7 +1453,7 @@ def _verify_clean_tracked_baseline(
     )
 
     # Parse status
-    tracked_dirty, _untracked, _ignored = _parse_porcelain_status(status_output)
+    tracked_dirty, untracked, _ignored = _parse_porcelain_status(status_output)
 
     # Reject dirty tracked baseline
     if tracked_dirty:
@@ -1443,8 +1465,26 @@ def _verify_clean_tracked_baseline(
             f"pre-existing tracked modifications found: {dirty_summary}",
         )
 
-    # Untracked files not in exclusions are allowed at baseline time.
-    # They will be caught during post-run reconciliation (later slices).
+    # DEC-R1: fail-closed policy for pre-existing untracked files.
+    # Non-ignored untracked paths that are not in the approved baseline
+    # exclusion list must cause ADAPTER_DIRTY_BASELINE before actor invocation.
+    # This prevents an actor from deleting a pre-existing untracked file and
+    # evading post-run inventory, reconciliation, and permission enforcement.
+    exclusion_set = set(validated_exclusions)
+    non_excluded_untracked = sorted(
+        p for p in untracked if p not in exclusion_set
+    )
+    if non_excluded_untracked:
+        untracked_summary = ", ".join(non_excluded_untracked[:5])
+        if len(non_excluded_untracked) > 5:
+            untracked_summary += f" ... (+{len(non_excluded_untracked) - 5} more)"
+        raise BaselineVerificationError(
+            ADAPTER_DIRTY_BASELINE,
+            f"pre-existing untracked files not in baseline exclusions: {untracked_summary}",
+        )
+
+    # Excluded pre-existing untracked paths remain allowed and are excluded
+    # from post-run reconciliation as already planned.
 
     # Build and return baseline
     return WorkspaceBaseline(
@@ -2110,6 +2150,11 @@ class ActorInvocationResult:
     stdout_total_bytes: int
     stderr_total_bytes: int
     result_file_path: Path | None
+    # Sanitization metadata carried from _sanitize_output (DEC-R4).
+    stdout_redaction_count: int = 0
+    stderr_redaction_count: int = 0
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
 
 
 def _build_minimal_env(run_dir: Path) -> dict[str, str]:
@@ -2151,29 +2196,39 @@ def _build_minimal_env(run_dir: Path) -> dict[str, str]:
 
 def _atomic_write_json(path: Path, data: Mapping[str, object]) -> None:
     """
-    Atomically write JSON to path via tmp + os.replace.
+    Atomically write JSON to path via unpredictable sibling temp + os.replace.
 
-    Steps:
+    Steps (DEC-R2):
     1. Create parent directory (mode 0o755)
-    2. Create temp file `.filename-tmp-{pid}` with mode 0o600 (exclusive creation)
+    2. Create an unpredictable sibling temp file via tempfile.mkstemp()
+       (same directory as destination, mode 0o600, no actor-controlled name)
     3. Write JSON with indent=2, sort_keys=True, ensure_ascii=False
     4. Flush and fsync
-    5. os.replace(temp, path)
-    6. On any failure: cleanup temp file, re-raise
+    5. os.replace(temp, path) — atomic on the destination directory
+    6. On any failure: cleanup adapter-owned temp file, re-raise
 
-    No secrets in exception messages.
+    The temp name is not derived from PID — it is unpredictable and created
+    safely by the OS. No secrets in exception messages.
     """
     parent = path.parent
     parent.mkdir(parents=True, exist_ok=True)
     os.chmod(parent, 0o755)
 
-    # Create temp file with PID to avoid collision
-    pid = os.getpid()
-    tmp_path = parent / f".{path.name}-tmp-{pid}"
+    # Unpredictable sibling temp file: same directory, mode 0o600,
+    # no actor-controlled name (DEC-R2).
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(parent), prefix=f".{path.name}-", suffix="-tmp"
+    )
+    tmp_path = Path(tmp_name)
 
     try:
-        # Exclusive creation with mode 0o600
-        fd = os.open(str(tmp_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        # Ensure the temp file has mode 0o600 (mkstemp does this on POSIX,
+        # but be explicit and defensive on all platforms).
+        try:
+            os.chmod(tmp_path, 0o600)
+        except OSError:
+            pass
+
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
             f.write("\n")
@@ -2186,7 +2241,8 @@ def _atomic_write_json(path: Path, data: Mapping[str, object]) -> None:
         # Atomic replace
         os.replace(tmp_path, path)
     except Exception:
-        # Cleanup temp file on failure
+        # Cleanup adapter-owned temp file on failure (never touch unrelated
+        # pre-existing files).
         if tmp_path.exists():
             try:
                 os.unlink(tmp_path)
@@ -2260,27 +2316,105 @@ def _validate_command(
     return full_command
 
 
+_REDACTED_ABSOLUTE_PATH = "[REDACTED:absolute_path]"
+
+# POSIX absolute path: a leading slash followed by non-whitespace path chars.
+# We deliberately stop at whitespace, quotes, and common delimiters so we do
+# not corrupt URLs, JSON syntax, or status names.
+_RE_POSIX_ABSOLUTE_PATH = re.compile(r"(?<![\w/])/[A-Za-z0-9._\-/~][A-Za-z0-9._\-/~]*")
+
+# Windows drive-letter absolute path (e.g. C:\Users\... or C:/Users/...).
+_RE_WINDOWS_DRIVE_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:(?:\\|/)[A-Za-z0-9._\-\\/~]+")
+
+
+def _redact_absolute_paths(
+    text: str,
+    sensitive_paths: list[str],
+) -> tuple[str, int]:
+    """
+    Redact absolute filesystem paths from text.
+
+    Parameters:
+        text: already secret-redacted text (from redact_text).
+        sensitive_paths: explicit absolute paths to redact first (repo_root,
+            run_dir, actor executable/script paths). Longest-first to avoid
+            partial-substring shadowing.
+
+    Returns:
+        (redacted_text, redaction_count).
+
+    Strategy (narrow, deterministic):
+    1. Replace each explicit sensitive path (escaped) with the stable token.
+    2. Replace remaining generic POSIX absolute paths with the token.
+    3. Replace Windows drive-letter paths (cross-platform safety).
+    4. Do NOT redact ordinary relative repository paths (no leading slash or
+       drive letter) — those are contractually useful.
+    5. Do NOT apply broad regexes that corrupt URLs, status names, or JSON.
+
+    The token is stable ([REDACTED:absolute_path]) so counts are exact and the
+    output remains deterministic.
+    """
+    count = 0
+    # Explicit sensitive paths: longest-first to shadow shorter prefixes.
+    for raw_path in sorted(sensitive_paths, key=len, reverse=True):
+        if not raw_path:
+            continue
+        # Escape for literal replacement.
+        pattern = re.escape(raw_path)
+        text, n = re.subn(pattern, _REDACTED_ABSOLUTE_PATH, text)
+        count += n
+
+    # Generic POSIX absolute paths still present.
+    text, n = _RE_POSIX_ABSOLUTE_PATH.subn(_REDACTED_ABSOLUTE_PATH, text)
+    count += n
+
+    # Windows drive-letter paths (cross-platform safety).
+    text, n = _RE_WINDOWS_DRIVE_PATH.subn(_REDACTED_ABSOLUTE_PATH, text)
+    count += n
+
+    return text, count
+
+
 def _sanitize_output(
-    raw_bytes: bytes, max_bytes: int
+    raw_bytes: bytes,
+    max_bytes: int,
+    sensitive_paths: list[str] | None = None,
 ) -> tuple[str, int, bool]:
     """
-    Sanitize actor output: decode, redact, truncate.
+    Sanitize actor output: decode, redact secrets, redact absolute paths,
+    truncate.
+
+    Parameters:
+        raw_bytes: raw actor stdout/stderr bytes.
+        max_bytes: maximum retained bytes after sanitization.
+        sensitive_paths: explicit absolute paths to redact (repo_root, run_dir,
+            actor executable/script). If None, only generic absolute-path
+            redaction applies.
 
     Returns:
         Tuple of (sanitized_text, redaction_count, truncated_flag).
 
     Steps:
     1. Decode UTF-8 with errors="replace"
-    2. Apply redact_text() from failure_context
-    3. Encode sanitized text to UTF-8
-    4. If encoded length > max_bytes: truncate to max_bytes (byte-level),
+    2. Apply redact_text() from failure_context (secrets, tokens, base64)
+    3. Redact absolute filesystem paths (DEC-R3)
+    4. Encode sanitized text to UTF-8
+    5. If encoded length > max_bytes: truncate to max_bytes (byte-level),
        decode with errors="ignore", set truncated_flag = True
+
+    The redaction_count is the sum of secret redactions and absolute-path
+    redactions, so sanitization metadata accurately reports the operation.
     """
     # Decode UTF-8
     text = raw_bytes.decode("utf-8", errors="replace")
 
-    # Apply redaction
+    # Apply secret redaction
     sanitized, redaction_count = redact_text(text)
+
+    # Apply absolute-path redaction (DEC-R3)
+    paths = sensitive_paths if sensitive_paths is not None else []
+    sanitized, path_count = _redact_absolute_paths(sanitized, paths)
+    redaction_count += path_count
 
     # Check if truncation needed
     sanitized_bytes = sanitized.encode("utf-8")
@@ -2303,6 +2437,7 @@ def _invoke_actor(
     env: dict[str, str],
     timeout_seconds: int,
     max_output_bytes: int,
+    sensitive_paths: list[str] | None = None,
 ) -> ActorInvocationResult:
     """
     Invoke repair actor subprocess with bounded output and timeout.
@@ -2496,15 +2631,15 @@ def _invoke_actor(
     stdout_total_bytes = stdout_stream.total_observed
     stderr_total_bytes = stderr_stream.total_observed
 
-    # Sanitize outputs
+    # Sanitize outputs (DEC-R3: redact absolute paths; DEC-R4: carry metadata)
     stdout_raw = stdout_stream.tail_bytes()
     stderr_raw = stderr_stream.tail_bytes()
 
-    stdout_sanitized, _stdout_redaction_count, _stdout_truncated = _sanitize_output(
-        stdout_raw, max_output_bytes
+    stdout_sanitized, stdout_redaction_count, stdout_truncated = _sanitize_output(
+        stdout_raw, max_output_bytes, sensitive_paths
     )
-    stderr_sanitized, _stderr_redaction_count, _stderr_truncated = _sanitize_output(
-        stderr_raw, max_output_bytes
+    stderr_sanitized, stderr_redaction_count, stderr_truncated = _sanitize_output(
+        stderr_raw, max_output_bytes, sensitive_paths
     )
 
     stdout_tail = stdout_sanitized
@@ -2523,6 +2658,10 @@ def _invoke_actor(
         stdout_total_bytes=stdout_total_bytes,
         stderr_total_bytes=stderr_total_bytes,
         result_file_path=result_file_path,
+        stdout_redaction_count=stdout_redaction_count,
+        stderr_redaction_count=stderr_redaction_count,
+        stdout_truncated=stdout_truncated,
+        stderr_truncated=stderr_truncated,
     )
 
 
@@ -2602,8 +2741,14 @@ def run_repair(
         "note": "WP-AL-1C5: ignored files and advanced symlink targets not inspected",
     }
 
-    # Helper to build and return result
+    # Helper to build and return result.
+    # DEC-R2: a run cannot return ADAPTER_SUCCESS unless the final
+    # repair-adapter-result.json was published atomically. On publication
+    # failure, map ADAPTER_SUCCESS → ADAPTER_INTERNAL_ERROR in-memory, with
+    # no recursive retry and no raw path/secret leakage.
     def _build_result() -> RepairAdapterResult:
+        nonlocal adapter_status
+        publication_failed = False
         try:
             result_dict = build_adapter_result(
                 run_id=repair_request.get("run_id", ""),  # type: ignore[arg-type]
@@ -2619,11 +2764,20 @@ def run_repair(
                 sanitization=sanitization,
                 integrity_scope=integrity_scope,
             )
-            # Best-effort write of adapter result
+            # Final adapter-result publication (DEC-R2). If this fails, the
+            # run must not claim ADAPTER_SUCCESS. Do not recursively retry.
             try:
                 _atomic_write_json(adapter_result_path, result_dict)
             except (OSError, RepairAdapterContractError):
-                pass  # Do not recursively retry
+                publication_failed = True
+
+            # If the caller intended success but publication failed, the
+            # truthful outcome is ADAPTER_INTERNAL_ERROR.
+            if publication_failed and adapter_status == ADAPTER_SUCCESS:
+                adapter_status = ADAPTER_INTERNAL_ERROR
+                diagnostics["adapter_error_message"] = (
+                    "failed to publish repair-adapter-result.json"
+                )
 
             return RepairAdapterResult(
                 schema_version="1.0",
@@ -2746,6 +2900,22 @@ def run_repair(
     # Build minimal environment
     env = _build_minimal_env(run_dir)
 
+    # Build sensitive absolute paths for output sanitization (DEC-R3).
+    # These are redacted from actor stdout/stderr before diagnostics are
+    # persisted so actor-derived output never leaks host filesystem paths.
+    sensitive_paths: list[str] = [
+        str(repo_root),
+        str(run_dir),
+        str(request_path),
+        str(result_path),
+        str(adapter_result_path),
+        actor_executable,
+    ]
+    # Include any actor argument that is an absolute path (scripts, etc.).
+    for arg in actor_arguments:
+        if isinstance(arg, str) and arg.startswith("/"):
+            sensitive_paths.append(arg)
+
     # Invoke actor
     invocation = _invoke_actor(
         command=command,
@@ -2755,12 +2925,36 @@ def run_repair(
         env=env,
         timeout_seconds=timeout_seconds,
         max_output_bytes=max_output_bytes,
+        sensitive_paths=sensitive_paths,
     )
 
     # Update diagnostics from invocation
     diagnostics["actor_exit_code"] = invocation.exit_code
     diagnostics["actor_stdout_tail"] = invocation.stdout_tail
     diagnostics["actor_stderr_tail"] = invocation.stderr_tail
+
+    # Carry sanitization metadata from the invocation into the adapter result
+    # (DEC-R4). The metadata must accurately describe the final persisted
+    # diagnostic values — not hardcoded zeros.
+    total_redaction = (
+        invocation.stdout_redaction_count + invocation.stderr_redaction_count
+    )
+    truncated_fields: list[str] = []
+    # The ring buffer retains only the tail when output exceeds max_output_bytes;
+    # the byte-level sanitizer truncation flag and the overflow flag both
+    # indicate that the persisted diagnostic is a truncated view of the actor
+    # output. Either source of truncation must be reflected truthfully.
+    if invocation.stdout_truncated or invocation.output_size_exceeded:
+        truncated_fields.append("actor_stdout_tail")
+    if invocation.stderr_truncated or invocation.output_size_exceeded:
+        truncated_fields.append("actor_stderr_tail")
+    truncated_fields.sort()
+    sanitization = {
+        "redaction_applied": total_redaction > 0,
+        "redaction_count": total_redaction,
+        "truncation_applied": bool(truncated_fields),
+        "truncated_fields": truncated_fields,
+    }
 
     # Capture post-run workspace (always, even on failure)
     try:
