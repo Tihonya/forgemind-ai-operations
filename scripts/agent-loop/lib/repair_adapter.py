@@ -24,6 +24,12 @@ Slice 3: Post-run workspace inventory.
 - No duplicates.
 - Does NOT reconcile, does NOT enforce permissions, does NOT invoke actor.
 
+Block A: Reconciliation and path policy.
+- Flat exact reconciliation (declared vs actual).
+- Permission enforcement (allowed_paths, forbidden_paths, gitwildmatch).
+- Identity validation reuse from WP-AL-1C4.
+- Does NOT invoke actor, does NOT write files, does NOT mutate repository.
+
 Schema: .agent-loop/repair-adapter/SCHEMA.md
 """
 
@@ -38,6 +44,15 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+# Narrow import contract from harness.py (approved public API for matching)
+from harness import gitwildmatch
+
+# Narrow import contract from repair_contract.py (WP-AL-1C4 identity validation)
+from repair_contract import (
+    RepairContractError,
+    validate_repair_result_against_request,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1885,3 +1900,142 @@ def _capture_post_run_workspace(
     )
 
     return post_source_revision, source_revision_stable, workspace_change
+
+
+# ---------------------------------------------------------------------------
+# Block A: Reconciliation and path policy
+# ---------------------------------------------------------------------------
+
+
+def _validate_identity_binding(
+    result: dict[str, Any],
+    request: dict[str, Any],
+) -> None:
+    """
+    Validate identity binding between repair request and repair result.
+
+    Reuses WP-AL-1C4 validate_repair_result_against_request().
+    Catches RepairContractError and re-raises as BaselineVerificationError
+    with ADAPTER_IDENTITY_MISMATCH.
+
+    Parameters:
+        result: repair result dict (WP-AL-1C4 validated)
+        request: repair request dict (WP-AL-1C4 validated)
+
+    Raises:
+        BaselineVerificationError(ADAPTER_IDENTITY_MISMATCH) on mismatch.
+    """
+    try:
+        validate_repair_result_against_request(result, request)
+    except RepairContractError as e:
+        raise BaselineVerificationError(
+            ADAPTER_IDENTITY_MISMATCH,
+            f"identity binding validation failed: {e}",
+        ) from e
+
+
+def _reconcile_changes(
+    declared_files: list[str],
+    workspace_change: WorkspaceChange,
+) -> ReconciliationResult:
+    """
+    Flat exact reconciliation: compare declared changed_files vs actual workspace.
+
+    Computes:
+    - actual_files: sorted unique union of (added + modified + deleted + untracked)
+    - undeclared_changes: sorted(actual - declared)
+    - declared_but_missing: sorted(declared - actual)
+    - exact_match: True iff both sets are empty
+
+    Parameters:
+        declared_files: list of paths from repair_result.changed_files
+        workspace_change: WorkspaceChange from _capture_post_run_workspace
+
+    Returns:
+        ReconciliationResult with sorted, unique, deterministic fields.
+
+    Semantics:
+    - Untracked paths participate in actual_files after baseline exclusions.
+    - Rename normalization (old→deleted, new→added) means both paths are in actual.
+    - No category-mismatch concept: actor declares paths, not Git categories.
+    - Both undeclared and declared_missing can be non-empty; caller decides status.
+    """
+    # Build actual_files: sorted unique union of all workspace categories
+    actual_files = sorted(
+        set(
+            workspace_change.added
+            + workspace_change.modified
+            + workspace_change.deleted
+            + workspace_change.untracked
+        )
+    )
+
+    # Build declared set (validated by WP-AL-1C4, but deduplicate defensively)
+    declared_set = set(declared_files)
+    actual_set = set(actual_files)
+
+    # Compute set differences
+    undeclared_changes = sorted(actual_set - declared_set)
+    declared_but_missing = sorted(declared_set - actual_set)
+
+    # exact_match: both differences empty
+    exact_match = len(undeclared_changes) == 0 and len(declared_but_missing) == 0
+
+    return ReconciliationResult(
+        declared_files=sorted(declared_set),
+        actual_files=actual_files,
+        undeclared_changes=undeclared_changes,
+        declared_but_missing=declared_but_missing,
+        exact_match=exact_match,
+    )
+
+
+def _enforce_permissions(
+    workspace_change: WorkspaceChange,
+    allowed_paths: list[str],
+    forbidden_paths: list[str],
+) -> tuple[list[str], list[str]]:
+    """
+    Enforce allowed_paths and forbidden_paths on actual workspace changes.
+
+    For each actual path (sorted, unique):
+    1. If any forbidden pattern matches → forbidden_violation
+    2. Else if allowed_paths is non-empty and no allowed pattern matches → allowed_violation
+    3. Else → permitted
+
+    Forbidden wins over allowed.
+
+    Parameters:
+        workspace_change: WorkspaceChange from _capture_post_run_workspace
+        allowed_paths: list of gitwildmatch patterns (from repair request)
+        forbidden_paths: list of gitwildmatch patterns (from repair request)
+
+    Returns:
+        Tuple of (allowed_violations, forbidden_violations), each sorted and unique.
+
+    Both violation forms map to ADAPTER_FORBIDDEN_CHANGE at the caller level.
+    """
+    # Build actual_paths: sorted unique union of all workspace categories
+    actual_paths = sorted(
+        set(
+            workspace_change.added
+            + workspace_change.modified
+            + workspace_change.deleted
+            + workspace_change.untracked
+        )
+    )
+
+    allowed_violations: list[str] = []
+    forbidden_violations: list[str] = []
+
+    for path in actual_paths:
+        # Check forbidden first (forbidden wins)
+        if any(gitwildmatch(path, pattern) for pattern in forbidden_paths):
+            forbidden_violations.append(path)
+        # Check allowed (if allowed_paths is non-empty)
+        elif allowed_paths and not any(
+            gitwildmatch(path, pattern) for pattern in allowed_paths
+        ):
+            allowed_violations.append(path)
+
+    return allowed_violations, forbidden_violations

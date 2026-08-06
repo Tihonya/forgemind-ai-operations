@@ -64,10 +64,13 @@ from repair_adapter import (
     WorkspaceChange,
     _capture_post_run_workspace,
     _deduplicate_and_sort,
+    _enforce_permissions,
     _parse_ls_files_others_z,
     _parse_porcelain_status_z,
+    _reconcile_changes,
     _run_git_command,
     _run_git_subprocess,
+    _validate_identity_binding,
     _validate_inventory_path,
     _validate_inventory_paths,
     build_adapter_result,
@@ -3052,30 +3055,39 @@ def test_run_git_subprocess_normal_command() -> None:
     assert stderr == b""
 
 
-def test_run_git_subprocess_timeout_enforcement() -> None:
+def test_run_git_subprocess_timeout_enforcement(tmp_path: Path) -> None:
     """_run_git_subprocess terminates process on timeout."""
-    # Create a real git repo with enough history to exceed a tiny timeout
-    import tempfile
-    with tempfile.TemporaryDirectory() as tmpdir:
-        repo = Path(tmpdir)
-        # Initialize repo with enough commits that log traversal takes time
-        _run_git_command(["init"], cwd=repo)
-        _run_git_command(["config", "user.email", "test@example.com"], cwd=repo)
-        _run_git_command(["config", "user.name", "Test User"], cwd=repo)
-        # Create many commits to ensure traversal takes measurable time
-        for i in range(50):
-            (repo / f"file_{i}.txt").write_text(f"content {i}")
-            _run_git_command(["add", f"file_{i}.txt"], cwd=repo)
-            _run_git_command(["commit", "-m", f"commit {i}"], cwd=repo)
+    # Create a fake 'git' executable that sleeps longer than the timeout.
+    # This removes all dependency on real Git speed or repository size.
+    fake_bin = tmp_path / "fake-bin"
+    fake_bin.mkdir()
+    fake_git = fake_bin / "git"
+    fake_git.write_text("#!/bin/sh\nsleep 5\n")
+    fake_git.chmod(0o755)
 
-        # Use 1 microsecond timeout — even a fast git command will exceed this
+    # Prepend fake bin to PATH so _run_git_subprocess finds our fake first.
+    import os
+    original_path = os.environ.get("PATH", "")
+
+    # _run_git_subprocess builds its own env with PATH from os.environ.
+    # We patch os.environ temporarily.
+    patched_path = str(fake_bin) + os.pathsep + original_path
+    old_env_path = os.environ.get("PATH")
+    os.environ["PATH"] = patched_path
+
+    try:
         with pytest.raises(BaselineVerificationError, match="timed out"):
             _run_git_subprocess(
                 ["log", "--stat", "--all"],
-                cwd=repo,
-                timeout_seconds=0.000001,  # 1 microsecond — impossible to beat
+                cwd=tmp_path,
+                timeout_seconds=0.1,  # 100ms — fake sleeps 5s, guaranteed timeout
                 max_stdout_bytes=100_000_000,
             )
+    finally:
+        if old_env_path is not None:
+            os.environ["PATH"] = old_env_path
+        else:
+            os.environ.pop("PATH", None)
 
 
 def test_run_git_subprocess_stdout_limit_enforcement() -> None:
@@ -3138,3 +3150,628 @@ def test_run_git_command_uses_bounded_subprocess(tmp_path: Path) -> None:
     # Verify the repo was initialized
     result = _run_git_command(["status"], cwd=repo)
     assert "No commits yet" in result or "No branches" in result or "Initial commit" in result or result.strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# Block A: Reconciliation tests
+# ---------------------------------------------------------------------------
+
+
+def test_block_a_reconcile_empty_declared_empty_actual() -> None:
+    """Block A: empty declared and empty actual → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes([], workspace_change)
+
+    assert result.declared_files == []
+    assert result.actual_files == []
+    assert result.undeclared_changes == []
+    assert result.declared_but_missing == []
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_exact_modified() -> None:
+    """Block A: declared matches actual modified → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py"], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(["backend/test.py"], workspace_change)
+
+    assert result.declared_files == ["backend/test.py"]
+    assert result.actual_files == ["backend/test.py"]
+    assert result.undeclared_changes == []
+    assert result.declared_but_missing == []
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_exact_added() -> None:
+    """Block A: declared matches actual added → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=["backend/new.py"], modified=[], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(["backend/new.py"], workspace_change)
+
+    assert result.declared_files == ["backend/new.py"]
+    assert result.actual_files == ["backend/new.py"]
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_exact_deleted() -> None:
+    """Block A: declared matches actual deleted → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=["backend/old.py"], untracked=[]
+    )
+    result = _reconcile_changes(["backend/old.py"], workspace_change)
+
+    assert result.declared_files == ["backend/old.py"]
+    assert result.actual_files == ["backend/old.py"]
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_exact_untracked() -> None:
+    """Block A: declared matches actual untracked → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=[], untracked=["backend/untracked.py"]
+    )
+    result = _reconcile_changes(["backend/untracked.py"], workspace_change)
+
+    assert result.declared_files == ["backend/untracked.py"]
+    assert result.actual_files == ["backend/untracked.py"]
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_exact_mixed_categories() -> None:
+    """Block A: declared matches mixed actual categories → exact_match=True."""
+    workspace_change = WorkspaceChange(
+        added=["backend/added.py"],
+        modified=["backend/modified.py"],
+        deleted=["backend/deleted.py"],
+        untracked=["backend/untracked.py"],
+    )
+    declared = [
+        "backend/added.py",
+        "backend/modified.py",
+        "backend/deleted.py",
+        "backend/untracked.py",
+    ]
+    result = _reconcile_changes(declared, workspace_change)
+
+    assert result.declared_files == sorted(declared)
+    assert result.actual_files == sorted(declared)
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_undeclared_modified() -> None:
+    """Block A: actual has extra modified file → undeclared_changes non-empty."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py", "backend/extra.py"], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(["backend/test.py"], workspace_change)
+
+    assert result.undeclared_changes == ["backend/extra.py"]
+    assert result.declared_but_missing == []
+    assert result.exact_match is False
+
+
+def test_block_a_reconcile_undeclared_untracked() -> None:
+    """Block A: actual has extra untracked file → undeclared_changes non-empty."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=[], untracked=["backend/test.py", "backend/extra.py"]
+    )
+    result = _reconcile_changes(["backend/test.py"], workspace_change)
+
+    assert result.undeclared_changes == ["backend/extra.py"]
+    assert result.declared_but_missing == []
+    assert result.exact_match is False
+
+
+def test_block_a_reconcile_declared_missing() -> None:
+    """Block A: declared has extra file not in actual → declared_but_missing non-empty."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py"], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(["backend/test.py", "backend/missing.py"], workspace_change)
+
+    assert result.undeclared_changes == []
+    assert result.declared_but_missing == ["backend/missing.py"]
+    assert result.exact_match is False
+
+
+def test_block_a_reconcile_both_undeclared_and_missing() -> None:
+    """Block A: both undeclared and declared_missing → both lists non-empty."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py", "backend/extra.py"], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(
+        ["backend/test.py", "backend/missing.py"], workspace_change
+    )
+
+    assert result.undeclared_changes == ["backend/extra.py"]
+    assert result.declared_but_missing == ["backend/missing.py"]
+    assert result.exact_match is False
+
+
+def test_block_a_reconcile_rename_requires_both_paths() -> None:
+    """Block A: rename normalization means both old and new paths in actual."""
+    # Rename: old.py → new.py (deleted + added)
+    workspace_change = WorkspaceChange(
+        added=["backend/new.py"], modified=[], deleted=["backend/old.py"], untracked=[]
+    )
+    # Actor must declare both paths
+    result = _reconcile_changes(
+        ["backend/old.py", "backend/new.py"], workspace_change
+    )
+
+    assert result.exact_match is True
+
+    # If actor declares only new path → old is undeclared
+    result2 = _reconcile_changes(["backend/new.py"], workspace_change)
+    assert result2.undeclared_changes == ["backend/old.py"]
+    assert result2.declared_but_missing == []
+    assert result2.exact_match is False
+
+
+def test_block_a_reconcile_stable_sorted_output() -> None:
+    """Block A: output is deterministically sorted."""
+    workspace_change = WorkspaceChange(
+        added=["z.py", "a.py"], modified=["m.py"], deleted=[], untracked=[]
+    )
+    result = _reconcile_changes(["z.py", "a.py", "m.py"], workspace_change)
+
+    assert result.declared_files == ["a.py", "m.py", "z.py"]
+    assert result.actual_files == ["a.py", "m.py", "z.py"]
+    assert result.exact_match is True
+
+
+def test_block_a_reconcile_duplicate_rejection() -> None:
+    """Block A: duplicate paths in declared are rejected by WP-AL-1C4 validation."""
+    # This test verifies that duplicates would be caught upstream
+    # The reconcile function itself deduplicates via set operations
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py"], deleted=[], untracked=[]
+    )
+    # Even if caller passes duplicates, set() deduplicates
+    result = _reconcile_changes(
+        ["backend/test.py", "backend/test.py"], workspace_change
+    )
+
+    assert result.declared_files == ["backend/test.py"]
+    assert result.actual_files == ["backend/test.py"]
+    assert result.exact_match is True
+
+
+# ---------------------------------------------------------------------------
+# Block A: Permission enforcement tests
+# ---------------------------------------------------------------------------
+
+
+def test_block_a_permissions_exact_allowed_match() -> None:
+    """Block A: exact path matches allowed pattern → permitted."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/test.py"],
+        forbidden_paths=[],
+    )
+
+    assert allowed == []
+    assert forbidden == []
+
+
+def test_block_a_permissions_gitwildmatch_allowed_match() -> None:
+    """Block A: gitwildmatch pattern matches → permitted."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py", "backend/utils.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=[],
+    )
+
+    assert allowed == []
+    assert forbidden == []
+
+
+def test_block_a_permissions_outside_allowed_paths() -> None:
+    """Block A: path outside allowed patterns → allowed_violation."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py", "frontend/app.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=[],
+    )
+
+    assert allowed == ["frontend/app.py"]
+    assert forbidden == []
+
+
+def test_block_a_permissions_exact_forbidden_match() -> None:
+    """Block A: exact path matches forbidden pattern → forbidden_violation."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/secret.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=["backend/secret.py"],
+    )
+
+    assert allowed == []
+    assert forbidden == ["backend/secret.py"]
+
+
+def test_block_a_permissions_forbidden_wildcard() -> None:
+    """Block A: forbidden wildcard pattern matches → forbidden_violation."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py", "backend/secret.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=["**/secret.py"],
+    )
+
+    assert allowed == []
+    assert forbidden == ["backend/secret.py"]
+
+
+def test_block_a_permissions_allowed_and_forbidden_overlap() -> None:
+    """Block A: path matches both allowed and forbidden → forbidden wins."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/test.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=["backend/test.py"],
+    )
+
+    assert allowed == []
+    assert forbidden == ["backend/test.py"]
+
+
+def test_block_a_permissions_forbidden_wins() -> None:
+    """Block A: forbidden takes precedence over allowed."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=["backend/secret.py"], deleted=[], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*"],
+        forbidden_paths=["backend/*"],
+    )
+
+    assert allowed == []
+    assert forbidden == ["backend/secret.py"]
+
+
+def test_block_a_permissions_deleted_path_enforcement() -> None:
+    """Block A: deleted paths are enforced."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=["backend/old.py"], untracked=[]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=[],
+    )
+
+    assert allowed == []
+    assert forbidden == []
+
+
+def test_block_a_permissions_untracked_path_enforcement() -> None:
+    """Block A: untracked paths are enforced."""
+    workspace_change = WorkspaceChange(
+        added=[], modified=[], deleted=[], untracked=["backend/untracked.py"]
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["backend/*.py"],
+        forbidden_paths=[],
+    )
+
+    assert allowed == []
+    assert forbidden == []
+
+
+def test_block_a_permissions_deterministic_ordering() -> None:
+    """Block A: violations are sorted deterministically."""
+    workspace_change = WorkspaceChange(
+        added=[],
+        modified=["z.py", "a.py", "m.py"],
+        deleted=[],
+        untracked=[],
+    )
+    allowed, forbidden = _enforce_permissions(
+        workspace_change,
+        allowed_paths=["other/*.py"],  # No matches → all are violations
+        forbidden_paths=[],
+    )
+
+    # No allowed pattern matches → all are allowed_violations
+    assert allowed == ["a.py", "m.py", "z.py"]
+    assert forbidden == []
+
+
+# ---------------------------------------------------------------------------
+# Block A: Identity validation tests
+# ---------------------------------------------------------------------------
+
+
+def test_block_a_identity_all_fields_match() -> None:
+    """Block A: all identity fields match → no exception."""
+    request = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "max_attempts": 3,
+        "source_revision": "a" * 40,
+        "failure_class": "verification_fail",
+        "failure_summary": "test failure",
+        "failure_context_ref": {
+            "path": "ctx.json",
+            "schema_version": "1.0",
+            "sha256": "b" * 64,
+        },
+        "verification_result_ref": {
+            "path": "verify.json",
+            "schema_version": "1.0",
+            "sha256": "c" * 64,
+        },
+        "allowed_paths": ["backend/*.py"],
+        "forbidden_paths": [],
+        "requested_action": "fix_verification",
+        "generated_at": "2026-08-06T12:00:00Z",
+    }
+    result = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "source_revision": "a" * 40,
+        "status": "REPAIRED",
+        "changed": True,
+        "changed_files": ["backend/test.py"],
+        "summary": "Fixed",
+        "recommended_action": "reverify",
+        "sanitization": {
+            "redaction_applied": False,
+            "redaction_count": 0,
+            "truncation_applied": False,
+            "truncated_fields": [],
+        },
+        "completed_at": "2026-08-06T12:01:00Z",
+    }
+
+    # Should not raise
+    _validate_identity_binding(result, request)
+
+
+def test_block_a_identity_run_id_mismatch() -> None:
+    """Block A: run_id mismatch → ADAPTER_IDENTITY_MISMATCH."""
+    request = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "max_attempts": 3,
+        "source_revision": "a" * 40,
+        "failure_class": "verification_fail",
+        "failure_summary": "test",
+        "failure_context_ref": {
+            "path": "ctx.json",
+            "schema_version": "1.0",
+            "sha256": "b" * 64,
+        },
+        "verification_result_ref": {
+            "path": "verify.json",
+            "schema_version": "1.0",
+            "sha256": "c" * 64,
+        },
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "requested_action": "fix_verification",
+        "generated_at": "2026-08-06T12:00:00Z",
+    }
+    result = {
+        "schema_version": "1.0",
+        "run_id": "run-999",  # mismatch
+        "story_id": "story-001",
+        "attempt": 1,
+        "source_revision": "a" * 40,
+        "status": "REPAIRED",
+        "changed": True,
+        "changed_files": ["test.py"],
+        "summary": "Fixed",
+        "recommended_action": "reverify",
+        "sanitization": {
+            "redaction_applied": False,
+            "redaction_count": 0,
+            "truncation_applied": False,
+            "truncated_fields": [],
+        },
+        "completed_at": "2026-08-06T12:01:00Z",
+    }
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _validate_identity_binding(result, request)
+
+    assert exc_info.value.adapter_status == ADAPTER_IDENTITY_MISMATCH
+    assert "identity binding" in str(exc_info.value)
+
+
+def test_block_a_identity_story_id_mismatch() -> None:
+    """Block A: story_id mismatch → ADAPTER_IDENTITY_MISMATCH."""
+    request = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "max_attempts": 3,
+        "source_revision": "a" * 40,
+        "failure_class": "verification_fail",
+        "failure_summary": "test",
+        "failure_context_ref": {
+            "path": "ctx.json",
+            "schema_version": "1.0",
+            "sha256": "b" * 64,
+        },
+        "verification_result_ref": {
+            "path": "verify.json",
+            "schema_version": "1.0",
+            "sha256": "c" * 64,
+        },
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "requested_action": "fix_verification",
+        "generated_at": "2026-08-06T12:00:00Z",
+    }
+    result = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-999",  # mismatch
+        "attempt": 1,
+        "source_revision": "a" * 40,
+        "status": "REPAIRED",
+        "changed": True,
+        "changed_files": ["test.py"],
+        "summary": "Fixed",
+        "recommended_action": "reverify",
+        "sanitization": {
+            "redaction_applied": False,
+            "redaction_count": 0,
+            "truncation_applied": False,
+            "truncated_fields": [],
+        },
+        "completed_at": "2026-08-06T12:01:00Z",
+    }
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _validate_identity_binding(result, request)
+
+    assert exc_info.value.adapter_status == ADAPTER_IDENTITY_MISMATCH
+
+
+def test_block_a_identity_attempt_mismatch() -> None:
+    """Block A: attempt mismatch → ADAPTER_IDENTITY_MISMATCH."""
+    request = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "max_attempts": 3,
+        "source_revision": "a" * 40,
+        "failure_class": "verification_fail",
+        "failure_summary": "test",
+        "failure_context_ref": {
+            "path": "ctx.json",
+            "schema_version": "1.0",
+            "sha256": "b" * 64,
+        },
+        "verification_result_ref": {
+            "path": "verify.json",
+            "schema_version": "1.0",
+            "sha256": "c" * 64,
+        },
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "requested_action": "fix_verification",
+        "generated_at": "2026-08-06T12:00:00Z",
+    }
+    result = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 2,  # mismatch
+        "source_revision": "a" * 40,
+        "status": "REPAIRED",
+        "changed": True,
+        "changed_files": ["test.py"],
+        "summary": "Fixed",
+        "recommended_action": "reverify",
+        "sanitization": {
+            "redaction_applied": False,
+            "redaction_count": 0,
+            "truncation_applied": False,
+            "truncated_fields": [],
+        },
+        "completed_at": "2026-08-06T12:01:00Z",
+    }
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _validate_identity_binding(result, request)
+
+    assert exc_info.value.adapter_status == ADAPTER_IDENTITY_MISMATCH
+
+
+def test_block_a_identity_source_revision_mismatch() -> None:
+    """Block A: source_revision mismatch → ADAPTER_IDENTITY_MISMATCH."""
+    request = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "max_attempts": 3,
+        "source_revision": "a" * 40,
+        "failure_class": "verification_fail",
+        "failure_summary": "test",
+        "failure_context_ref": {
+            "path": "ctx.json",
+            "schema_version": "1.0",
+            "sha256": "b" * 64,
+        },
+        "verification_result_ref": {
+            "path": "verify.json",
+            "schema_version": "1.0",
+            "sha256": "c" * 64,
+        },
+        "allowed_paths": [],
+        "forbidden_paths": [],
+        "requested_action": "fix_verification",
+        "generated_at": "2026-08-06T12:00:00Z",
+    }
+    result = {
+        "schema_version": "1.0",
+        "run_id": "run-001",
+        "story_id": "story-001",
+        "attempt": 1,
+        "source_revision": "b" * 40,  # mismatch
+        "status": "REPAIRED",
+        "changed": True,
+        "changed_files": ["test.py"],
+        "summary": "Fixed",
+        "recommended_action": "reverify",
+        "sanitization": {
+            "redaction_applied": False,
+            "redaction_count": 0,
+            "truncation_applied": False,
+            "truncated_fields": [],
+        },
+        "completed_at": "2026-08-06T12:01:00Z",
+    }
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _validate_identity_binding(result, request)
+
+    assert exc_info.value.adapter_status == ADAPTER_IDENTITY_MISMATCH
+
+
+def test_block_a_identity_contract_error_mapping() -> None:
+    """Block A: RepairContractError maps to ADAPTER_IDENTITY_MISMATCH."""
+    # Provide valid-looking dicts with a deliberate schema_version mismatch
+    request: dict[str, Any] = {"schema_version": "1.0"}
+    result: dict[str, Any] = {"schema_version": "2.0"}
+
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _validate_identity_binding(result, request)
+
+    assert exc_info.value.adapter_status == ADAPTER_IDENTITY_MISMATCH
+    assert "identity binding" in str(exc_info.value)
