@@ -278,7 +278,7 @@ Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9
 - [x] Review contract (WP-AL-1C1 — MERGED — PR #48)
 - [x] Reviewer adapter with mock reviewer (WP-AL-1C2 — MERGED — PR #49)
 - [x] Review-Result Reporting Guard (WP-AL-1C3 — MERGED — PR #52, merge commit d715b2c)
-- [ ] Repair Contract (WP-AL-1C4 — PLANNING COMPLETE, AWAITING REVIEW, implementation NOT STARTED)
+- [x] Repair Contract (WP-AL-1C4 — IMPLEMENTATION COMPLETE, AWAITING REVIEW)
 - [ ] Story manifest parsing (full implementation)
 - [ ] Diff-based test selection (fallback)
 - [ ] Review invocation/configuration bridge (separate future WP, NOT PLANNED)
@@ -338,6 +338,7 @@ Unit/integration test files:
 - `tests/test_review_contract.py` — review request/result schemas (WP-AL-1C1)
 - `tests/test_review_adapter.py` — reviewer adapter (WP-AL-1C2, 62 tests: R01-R59, H01-H03)
 - `tests/test_mock_reviewer.py` — mock reviewer (WP-AL-1C2, 8 tests: M01-M08)
+- `tests/test_repair_contract.py` — repair request/result schemas (WP-AL-1C4, 75 tests: U01-U30, R01-R15, B01-B15, C01-C05, D01-D10)
 
 **WP-AL-1C2 Implementation Details:**
 

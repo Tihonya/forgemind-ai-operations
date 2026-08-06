@@ -176,22 +176,33 @@ gates.
   - review invocation/configuration bridge remains deferred (separate future WP)
 
 **WP-AL-1C4: Repair Contract**
-- Status: PLANNING COMPLETE — AWAITING REVIEW (implementation NOT STARTED)
+- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW
 - Objective: Define repair-request and repair-result schemas with structural validators,
   identity binding rules, path-safety constraints, and bounded diagnostics. No repair
   execution, no adapter, no orchestrator wiring.
-- Branch: `feature/agent-loop-repair-contract-planning`
+- Branch: `feature/agent-loop-repair-contract`
 - Planning document: [wp_al_1c4_repair_contract.md](planning/wp_al_1c4_repair_contract.md)
-- Implementation files (planned):
-  - `.agent-loop/repair/SCHEMA.md` — request + result schemas v1.0
-  - `scripts/agent-loop/lib/repair_contract.py` — validator + builder
-  - `scripts/agent-loop/tests/test_repair_contract.py` — 75 planned unit tests
+- Implementation files:
+  - `.agent-loop/repair/SCHEMA.md` — request + result schemas v1.0 (392 lines)
+  - `scripts/agent-loop/lib/repair_contract.py` — validator + builder (1261 lines)
+  - `scripts/agent-loop/tests/test_repair_contract.py` — 75 unit tests (75/75 PASS)
+- Test results: 75 passed, 0 failed, 0 skipped, ruff clean, mypy --strict clean
+- Full agent-loop suite: 481 passed, 2 pre-existing fixture skips, 0 WP-AL-1C4 skips
+- Harness scenarios: A-X = 24/24 PASS (no new scenarios)
+- Request contract: 16 top-level fields
+- Result contract: 13 top-level fields
 - Status semantics: REPAIRED (changed files, requires reverify), NO_CHANGE (no changes), ERROR (infrastructure failure)
 - Key invariants:
   - REPAIRED does NOT mean verification passed (repair success ≠ verification success)
   - Identity binding: run_id, story_id, attempt, source_revision must match request
   - Path safety: gitwildmatch semantics, forbidden-path protection, allowed-path allowlist
+  - No PARTIAL status (DEC-C4-02)
+  - Confidence is optional, informational only, no authorization semantics (DEC-C4-03)
+  - Artifact validation ≠ workspace enforcement (DEC-C4-01)
   - No repair execution, no adapter, no orchestrator changes
+  - No runtime script changes (run-story.sh, verify-story.sh, report-story.sh unchanged)
+- DEC-C4-01 through DEC-C4-03: RESOLVED
+- WP-AL-1C5 NOT STARTED
 
 **Future (separate work package): Review invocation/configuration bridge**
 - Status: NOT PLANNED
