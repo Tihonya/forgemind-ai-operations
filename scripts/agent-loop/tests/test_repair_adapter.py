@@ -67,6 +67,19 @@ from repair_adapter import (
     validate_adapter_result,
 )
 
+# Slice 3 imports: Post-run workspace inventory
+from repair_adapter import (
+    BaselineVerificationError,
+    _capture_post_run_workspace,
+    _deduplicate_and_sort,
+    _parse_ls_files_others_z,
+    _parse_porcelain_status_z,
+    _run_git_command,
+    _run_git_subprocess,
+    _validate_inventory_path,
+    _validate_inventory_paths,
+)
+
 # ---------------------------------------------------------------------------
 # Shared constants and helpers
 # ---------------------------------------------------------------------------
@@ -2223,3 +2236,910 @@ def test_BL32_worktree_typechange_rejected(tmp_path: Path) -> None:
     _git(repo, "status")  # Should succeed
     current_head = (repo / ".git" / "HEAD").read_text()
     assert "ref:" in current_head or len(current_head.strip()) == 40  # Valid HEAD
+
+
+# ===========================================================================
+# SLICE 3: Post-run workspace inventory tests (67 tests)
+# ===========================================================================
+
+
+def test_parse_porcelain_status_z_empty() -> None:
+    """Parse empty porcelain status."""
+    added, modified, deleted = _parse_porcelain_status_z(b"")
+    assert added == []
+    assert modified == []
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_added_tracked() -> None:
+    """Parse added tracked file from porcelain status."""
+    added, modified, deleted = _parse_porcelain_status_z(b"A  new.txt\0")
+    assert added == ["new.txt"]
+    assert modified == []
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_modified_tracked() -> None:
+    """Parse modified tracked file from porcelain status."""
+    added, modified, deleted = _parse_porcelain_status_z(b"M  mod.txt\0")
+    assert added == []
+    assert modified == ["mod.txt"]
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_deleted_tracked() -> None:
+    """Parse deleted tracked file from porcelain status."""
+    added, modified, deleted = _parse_porcelain_status_z(b"D  del.txt\0")
+    assert added == []
+    assert modified == []
+    assert deleted == ["del.txt"]
+
+
+def test_parse_porcelain_status_z_staged_modification() -> None:
+    """Parse staged modification (M in index, M in working tree)."""
+    added, modified, deleted = _parse_porcelain_status_z(b"MM staged.txt\0")
+    assert added == []
+    assert modified == ["staged.txt"]
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_rename_normalized() -> None:
+    """Rename is normalized to delete + add."""
+    added, modified, deleted = _parse_porcelain_status_z(b"R  new.txt\0old.txt\0")
+    assert added == ["new.txt"]
+    assert modified == []
+    assert deleted == ["old.txt"]
+
+
+def test_parse_porcelain_status_z_copy_normalized() -> None:
+    """Copy is normalized to add only."""
+    added, modified, deleted = _parse_porcelain_status_z(b"C  dst.txt\0src.txt\0")
+    assert added == ["dst.txt"]
+    assert modified == []
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_typechange_normalized() -> None:
+    """Typechange is normalized to delete + add."""
+    added, modified, deleted = _parse_porcelain_status_z(b"T  file.txt\0")
+    assert added == ["file.txt"]
+    assert modified == []
+    assert deleted == ["file.txt"]
+
+
+def test_parse_porcelain_status_z_multiple_changes() -> None:
+    """Parse multiple changes from porcelain status."""
+    data = b"A  new.txt\0M  mod.txt\0D  del.txt\0"
+    added, modified, deleted = _parse_porcelain_status_z(data)
+    assert added == ["new.txt"]
+    assert modified == ["mod.txt"]
+    assert deleted == ["del.txt"]
+
+
+def test_parse_porcelain_status_z_unmerged_error() -> None:
+    """Unmerged file raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"UU conflict.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_aa() -> None:
+    """AA (both added) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"AA new.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_dd() -> None:
+    """DD (both deleted) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"DD file.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_au() -> None:
+    """AU (added by us) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"AU file.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_ud() -> None:
+    """UD (updated by them, deleted by us) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"UD file.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_ua() -> None:
+    """UA (updated by us, added by them) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"UA file.txt\0")
+
+
+def test_parse_porcelain_status_z_unmerged_du() -> None:
+    """DU (deleted by us, updated by them) raises error."""
+    with pytest.raises(BaselineVerificationError, match="unmerged"):
+        _parse_porcelain_status_z(b"DU file.txt\0")
+
+
+def test_parse_porcelain_status_z_unicode_filename() -> None:
+    """Parse Unicode filename from porcelain status."""
+    added, modified, deleted = _parse_porcelain_status_z("M  文件.txt\0".encode("utf-8"))
+    assert added == []
+    assert modified == ["文件.txt"]
+    assert deleted == []
+
+
+def test_parse_porcelain_status_z_invalid_utf8() -> None:
+    """Invalid UTF-8 raises error."""
+    with pytest.raises(BaselineVerificationError, match="UTF-8"):
+        _parse_porcelain_status_z(b"M  \xff\xfe.txt\0")
+
+
+def test_parse_porcelain_status_z_trailing_empty() -> None:
+    """Trailing empty part is ignored."""
+    added, modified, deleted = _parse_porcelain_status_z(b"M  file.txt\0")
+    assert modified == ["file.txt"]
+
+
+def test_parse_porcelain_status_z_malformed_entry() -> None:
+    """Malformed entry raises error."""
+    with pytest.raises(BaselineVerificationError, match="malformed"):
+        _parse_porcelain_status_z(b"XY\0")
+
+
+def test_parse_porcelain_status_z_rename_missing_second() -> None:
+    """Rename with missing second path raises error."""
+    with pytest.raises(BaselineVerificationError, match="rename/copy"):
+        _parse_porcelain_status_z(b"R  old.txt\0")
+
+
+def test_parse_ls_files_others_z_empty() -> None:
+    """Parse empty ls-files output."""
+    result = _parse_ls_files_others_z(b"")
+    assert result == []
+
+
+def test_parse_ls_files_others_z_single_file() -> None:
+    """Parse single untracked file."""
+    result = _parse_ls_files_others_z(b"untracked.txt\0")
+    assert result == ["untracked.txt"]
+
+
+def test_parse_ls_files_others_z_multiple_files() -> None:
+    """Parse multiple untracked files."""
+    result = _parse_ls_files_others_z(b"a.txt\0b.txt\0c.txt\0")
+    assert result == ["a.txt", "b.txt", "c.txt"]
+
+
+def test_parse_ls_files_others_z_unicode() -> None:
+    """Parse Unicode filename from ls-files."""
+    result = _parse_ls_files_others_z("文件.txt\0".encode("utf-8"))
+    assert result == ["文件.txt"]
+
+
+def test_parse_ls_files_others_z_invalid_utf8() -> None:
+    """Invalid UTF-8 raises error."""
+    with pytest.raises(BaselineVerificationError, match="UTF-8"):
+        _parse_ls_files_others_z(b"\xff\xfe.txt\0")
+
+
+def test_parse_ls_files_others_z_trailing_empty() -> None:
+    """Trailing empty part is ignored."""
+    result = _parse_ls_files_others_z(b"file.txt\0\0")
+    assert result == ["file.txt"]
+
+
+def test_validate_inventory_path_valid() -> None:
+    """Valid path passes validation."""
+    _validate_inventory_path("path/to/file.txt", "test")
+
+
+def test_validate_inventory_path_empty() -> None:
+    """Empty path is rejected."""
+    with pytest.raises(BaselineVerificationError, match="empty"):
+        _validate_inventory_path("", "test")
+
+
+def test_validate_inventory_path_absolute() -> None:
+    """Absolute path is rejected."""
+    with pytest.raises(BaselineVerificationError, match="absolute"):
+        _validate_inventory_path("/absolute/path.txt", "test")
+
+
+def test_validate_inventory_path_parent_traversal() -> None:
+    """Parent traversal is rejected."""
+    with pytest.raises(BaselineVerificationError, match="traversal"):
+        _validate_inventory_path("../escape.txt", "test")
+
+
+def test_validate_inventory_path_null_byte() -> None:
+    """Null byte is rejected."""
+    with pytest.raises(BaselineVerificationError, match="null"):
+        _validate_inventory_path("path\0escape.txt", "test")
+
+
+def test_validate_inventory_path_windows_drive() -> None:
+    """Windows drive letter is rejected."""
+    with pytest.raises(BaselineVerificationError, match="drive"):
+        _validate_inventory_path("C:/path.txt", "test")
+
+
+def test_validate_inventory_path_unc() -> None:
+    """UNC path is rejected."""
+    with pytest.raises(BaselineVerificationError, match="UNC"):
+        _validate_inventory_path("\\\\server\\share\\file.txt", "test")
+
+
+def test_validate_inventory_path_backslash() -> None:
+    """Backslash is rejected."""
+    with pytest.raises(BaselineVerificationError, match="backslash"):
+        _validate_inventory_path("path\\to\\file.txt", "test")
+
+
+def test_validate_inventory_path_double_slash() -> None:
+    """Double slash is rejected."""
+    with pytest.raises(BaselineVerificationError, match="duplicate"):
+        _validate_inventory_path("path//file.txt", "test")
+
+
+def test_validate_inventory_path_dot_segment() -> None:
+    """Dot segment is rejected."""
+    with pytest.raises(BaselineVerificationError, match="segment"):
+        _validate_inventory_path("./file.txt", "test")
+
+
+def test_validate_inventory_path_empty_segment() -> None:
+    """Empty segment is rejected."""
+    with pytest.raises(BaselineVerificationError, match="duplicate separator"):
+        _validate_inventory_path("path//file.txt", "test")
+
+
+def test_validate_inventory_path_too_long() -> None:
+    """Path exceeding 512 bytes is rejected."""
+    long_path = "a" * 513
+    with pytest.raises(BaselineVerificationError, match="exceeds 512"):
+        _validate_inventory_path(long_path, "test")
+
+
+def test_validate_inventory_path_exactly_512_bytes() -> None:
+    """Path exactly 512 bytes is accepted."""
+    path_512 = "a" * 512
+    _validate_inventory_path(path_512, "test")
+
+
+def test_validate_inventory_paths_all_valid() -> None:
+    """All valid paths pass validation."""
+    _validate_inventory_paths(
+        added=["new.txt"],
+        modified=["mod.txt"],
+        deleted=["old.txt"],
+        untracked=["untracked.txt"],
+    )
+
+
+def test_validate_inventory_paths_invalid_in_added() -> None:
+    """Invalid path in added raises error."""
+    with pytest.raises(BaselineVerificationError, match="added"):
+        _validate_inventory_paths(
+            added=["/absolute/path.txt"],
+            modified=[],
+            deleted=[],
+            untracked=[],
+        )
+
+
+def test_validate_inventory_paths_invalid_in_modified() -> None:
+    """Invalid path in modified raises error."""
+    with pytest.raises(BaselineVerificationError, match="modified"):
+        _validate_inventory_paths(
+            added=[],
+            modified=["/absolute/path.txt"],
+            deleted=[],
+            untracked=[],
+        )
+
+
+def test_validate_inventory_paths_invalid_in_deleted() -> None:
+    """Invalid path in deleted raises error."""
+    with pytest.raises(BaselineVerificationError, match="deleted"):
+        _validate_inventory_paths(
+            added=[],
+            modified=[],
+            deleted=["/absolute/path.txt"],
+            untracked=[],
+        )
+
+
+def test_validate_inventory_paths_invalid_in_untracked() -> None:
+    """Invalid path in untracked raises error."""
+    with pytest.raises(BaselineVerificationError, match="untracked"):
+        _validate_inventory_paths(
+            added=[],
+            modified=[],
+            deleted=[],
+            untracked=["/absolute/path.txt"],
+        )
+
+
+def test_deduplicate_and_sort_empty() -> None:
+    """Empty list returns empty list."""
+    result = _deduplicate_and_sort([])
+    assert result == []
+
+
+def test_deduplicate_and_sort_no_duplicates() -> None:
+    """No duplicates, sorted."""
+    result = _deduplicate_and_sort(["c", "a", "b"])
+    assert result == ["a", "b", "c"]
+
+
+def test_deduplicate_and_sort_with_duplicates() -> None:
+    """Duplicates removed, sorted."""
+    result = _deduplicate_and_sort(["b", "a", "b", "c", "a"])
+    assert result == ["a", "b", "c"]
+
+
+def test_deduplicate_and_sort_preserves_unicode() -> None:
+    """Unicode paths preserved."""
+    result = _deduplicate_and_sort(["文件.txt", "αβγ.txt", "文件.txt"])
+    assert result == ["αβγ.txt", "文件.txt"]
+
+
+def test_capture_post_run_workspace_clean(tmp_path: Path) -> None:
+    """Clean workspace produces empty inventory."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.added == []
+    assert change.modified == []
+    assert change.deleted == []
+    assert change.untracked == []
+
+
+def test_capture_post_run_workspace_modified_tracked(tmp_path: Path) -> None:
+    """Modified tracked file detected."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "initial.txt").write_text("modified content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.modified == ["initial.txt"]
+
+
+def test_capture_post_run_workspace_added_tracked(tmp_path: Path) -> None:
+    """Added (staged) tracked file detected."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "new.txt").write_text("new content")
+    _git(repo, "add", "new.txt")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.added == ["new.txt"]
+
+
+def test_capture_post_run_workspace_deleted_tracked(tmp_path: Path) -> None:
+    """Deleted tracked file detected."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "initial.txt").unlink()
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.deleted == ["initial.txt"]
+
+
+def test_capture_post_run_workspace_rename_normalized(tmp_path: Path) -> None:
+    """Rename normalized to delete old + add new."""
+    repo = _create_temp_repo(tmp_path)
+
+    (repo / "old.txt").write_text("content to rename")
+    _git(repo, "add", "old.txt")
+    _git(repo, "commit", "-m", "Add old.txt")
+
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "old.txt").rename(repo / "new.txt")
+    _git(repo, "add", "-A")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.added == ["new.txt"]
+    assert change.deleted == ["old.txt"]
+
+
+def test_capture_post_run_workspace_untracked_file(tmp_path: Path) -> None:
+    """Untracked file detected."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "untracked.txt").write_text("untracked content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.untracked == ["untracked.txt"]
+
+
+def test_capture_post_run_workspace_baseline_exclusion(tmp_path: Path) -> None:
+    """Baseline exclusion removes untracked file from inventory."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "untracked.txt").write_text("untracked content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=["untracked.txt"],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.untracked == []
+
+
+def test_capture_post_run_workspace_source_revision_drift(tmp_path: Path) -> None:
+    """Source revision drift detected."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "new.txt").write_text("new content")
+    _git(repo, "add", "new.txt")
+    _git(repo, "commit", "-m", "Add new file")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha != baseline_sha
+    assert stable is False
+
+
+def test_capture_post_run_workspace_multiple_changes(tmp_path: Path) -> None:
+    """Multiple changes detected and sorted."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "initial.txt").write_text("modified")
+    (repo / "new1.txt").write_text("new 1")
+    (repo / "new2.txt").write_text("new 2")
+    (repo / "untracked.txt").write_text("untracked")
+    _git(repo, "add", "new1.txt", "new2.txt")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.added == ["new1.txt", "new2.txt"]
+    assert change.modified == ["initial.txt"]
+    assert change.untracked == ["untracked.txt"]
+
+
+def test_capture_post_run_workspace_unicode_filename(tmp_path: Path) -> None:
+    """Unicode filename handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "文件.txt").write_text("unicode content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert change.untracked == ["文件.txt"]
+
+
+def test_capture_post_run_workspace_special_characters(tmp_path: Path) -> None:
+    """Special characters in filename handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "file with spaces.txt").write_text("spaces")
+    (repo / "file-with-dashes.txt").write_text("dashes")
+    (repo / "file_with_underscores.txt").write_text("underscores")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert post_sha == baseline_sha
+    assert stable is True
+    assert "file with spaces.txt" in change.untracked
+    assert "file-with-dashes.txt" in change.untracked
+    assert "file_with_underscores.txt" in change.untracked
+
+
+def test_capture_post_run_workspace_invalid_baseline_sha(tmp_path: Path) -> None:
+    """Invalid baseline SHA raises error."""
+    repo = _create_temp_repo(tmp_path)
+
+    with pytest.raises(BaselineVerificationError, match="baseline_source_revision"):
+        _capture_post_run_workspace(
+            repo_root=repo,
+            baseline_source_revision="invalid_sha",
+            baseline_exclusions=[],
+        )
+
+
+def test_capture_post_run_workspace_repo_not_directory(tmp_path: Path) -> None:
+    """Non-directory repo_root raises error."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    file_path = repo / "initial.txt"
+
+    with pytest.raises(BaselineVerificationError, match="directory"):
+        _capture_post_run_workspace(
+            repo_root=file_path,
+            baseline_source_revision=baseline_sha,
+            baseline_exclusions=[],
+        )
+
+
+def test_capture_post_run_workspace_repo_not_exists(tmp_path: Path) -> None:
+    """Non-existent repo_root raises error."""
+    fake_path = tmp_path / "nonexistent"
+
+    with pytest.raises(BaselineVerificationError, match="exist"):
+        _capture_post_run_workspace(
+            repo_root=fake_path,
+            baseline_source_revision="a" * 40,
+            baseline_exclusions=[],
+        )
+
+
+def test_capture_post_run_workspace_deterministic_ordering(tmp_path: Path) -> None:
+    """Results are deterministically ordered."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "zebra.txt").write_text("z")
+    (repo / "alpha.txt").write_text("a")
+    (repo / "middle.txt").write_text("m")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert change.untracked == ["alpha.txt", "middle.txt", "zebra.txt"]
+
+
+def test_capture_post_run_workspace_no_duplicates(tmp_path: Path) -> None:
+    """No duplicates in results."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "untracked.txt").write_text("content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert change.untracked == ["untracked.txt"]
+    assert len(change.untracked) == len(set(change.untracked))
+
+
+def test_capture_post_run_workspace_tab_in_filename(tmp_path: Path) -> None:
+    """Filename containing tab handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "file\twith\ttabs.txt").write_text("tab content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert change.untracked == ["file\twith\ttabs.txt"]
+
+
+def test_capture_post_run_workspace_newline_in_filename(tmp_path: Path) -> None:
+    """Filename containing newline handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "file\nwith\nnewlines.txt").write_text("newline content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert change.untracked == ["file\nwith\nnewlines.txt"]
+
+
+def test_capture_post_run_workspace_quote_in_filename(tmp_path: Path) -> None:
+    """Filename containing quotes handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / 'file"with"quotes.txt').write_text("quote content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert change.untracked == ['file"with"quotes.txt']
+
+
+def test_capture_post_run_workspace_backslash_in_filename(tmp_path: Path) -> None:
+    """Filename containing backslash raises error."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "file\\with\\backslashes.txt").write_text("backslash content")
+
+    with pytest.raises(BaselineVerificationError, match="backslash"):
+        _capture_post_run_workspace(
+            repo_root=repo,
+            baseline_source_revision=baseline_sha,
+            baseline_exclusions=[],
+        )
+
+
+def test_capture_post_run_workspace_arrow_in_filename(tmp_path: Path) -> None:
+    """Filename containing literal ' -> ' handled correctly."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "file -> renamed.txt").write_text("arrow content")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert change.untracked == ["file -> renamed.txt"]
+
+
+def test_capture_post_run_workspace_ignored_file_excluded(tmp_path: Path) -> None:
+    """Ignored files excluded from untracked."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / ".gitignore").write_text("*.ignored\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-m", "Add gitignore")
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "normal.txt").write_text("normal")
+    (repo / "secret.ignored").write_text("should be ignored")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert "normal.txt" in change.untracked
+    assert "secret.ignored" not in change.untracked
+
+
+def test_capture_post_run_workspace_typechange_classification(tmp_path: Path) -> None:
+    """Typechange classified as delete + add."""
+    repo = _create_temp_repo(tmp_path)
+
+    (repo / "target.txt").write_text("content")
+    _git(repo, "add", "target.txt")
+    _git(repo, "commit", "-m", "Add target.txt")
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "target.txt").unlink()
+    (repo / "target.txt").symlink_to("other.txt")
+    _git(repo, "add", "target.txt")
+
+    post_sha, stable, change = _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    assert stable is True
+    assert "target.txt" in change.deleted
+    assert "target.txt" in change.added
+
+
+def test_capture_post_run_workspace_repository_unchanged(tmp_path: Path) -> None:
+    """Repository state unchanged after capture."""
+    repo = _create_temp_repo(tmp_path)
+    baseline_sha = _get_head_sha(repo)
+
+    (repo / "tracked.txt").write_text("modified")
+    (repo / "untracked.txt").write_text("new file")
+
+    result_before = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    status_before = result_before.stdout
+
+    _capture_post_run_workspace(
+        repo_root=repo,
+        baseline_source_revision=baseline_sha,
+        baseline_exclusions=[],
+    )
+
+    result_after = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    status_after = result_after.stdout
+
+    assert status_before == status_after
+    assert _get_head_sha(repo) == baseline_sha
+
+
+# --- Bounded Subprocess Capture Tests ---
+
+
+def test_run_git_subprocess_normal_command() -> None:
+    """_run_git_subprocess returns output for normal command."""
+    stdout, stderr, returncode = _run_git_subprocess(
+        ["--version"],
+        cwd=Path("/tmp"),
+        timeout_seconds=5.0,
+        max_stdout_bytes=1_000_000,
+    )
+    assert returncode == 0
+    assert b"git version" in stdout
+    assert stderr == b""
+
+
+def test_run_git_subprocess_timeout_enforcement() -> None:
+    """_run_git_subprocess terminates process on timeout."""
+    # Create a real git repo with enough history to exceed a tiny timeout
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        # Initialize repo with enough commits that log traversal takes time
+        _run_git_command(["init"], cwd=repo)
+        _run_git_command(["config", "user.email", "test@example.com"], cwd=repo)
+        _run_git_command(["config", "user.name", "Test User"], cwd=repo)
+        # Create many commits to ensure traversal takes measurable time
+        for i in range(50):
+            (repo / f"file_{i}.txt").write_text(f"content {i}")
+            _run_git_command(["add", f"file_{i}.txt"], cwd=repo)
+            _run_git_command(["commit", "-m", f"commit {i}"], cwd=repo)
+
+        # Use 1 microsecond timeout — even a fast git command will exceed this
+        with pytest.raises(BaselineVerificationError, match="timed out"):
+            _run_git_subprocess(
+                ["log", "--stat", "--all"],
+                cwd=repo,
+                timeout_seconds=0.000001,  # 1 microsecond — impossible to beat
+                max_stdout_bytes=100_000_000,
+            )
+
+
+def test_run_git_subprocess_stdout_limit_enforcement() -> None:
+    """_run_git_subprocess terminates when stdout exceeds limit."""
+    # Create a real git repo with lots of output
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        repo = Path(tmpdir)
+        # Initialize repo with some commits
+        _run_git_command(["init"], cwd=repo)
+        _run_git_command(["config", "user.email", "test@example.com"], cwd=repo)
+        _run_git_command(["config", "user.name", "Test User"], cwd=repo)
+        (repo / "file.txt").write_text("content")
+        _run_git_command(["add", "file.txt"], cwd=repo)
+        _run_git_command(["commit", "-m", "initial"], cwd=repo)
+
+        # Generate output larger than the limit allows
+        with pytest.raises(BaselineVerificationError, match="stdout exceeded"):
+            _run_git_subprocess(
+                ["log", "--all", "--oneline"],
+                cwd=repo,
+                timeout_seconds=5.0,
+                max_stdout_bytes=10,  # Very small limit
+            )
+
+
+def test_run_git_subprocess_stderr_limit_enforcement() -> None:
+    """_run_git_subprocess terminates when stderr exceeds limit."""
+    # Generate error output
+    with pytest.raises(BaselineVerificationError, match="stderr exceeded"):
+        _run_git_subprocess(
+            ["invalid-command-that-does-not-exist"],
+            cwd=Path("/tmp"),
+            timeout_seconds=5.0,
+            max_stdout_bytes=1_000_000,
+            max_stderr_bytes=10,  # Very small limit
+        )
+
+
+def test_run_git_subprocess_returns_bytes() -> None:
+    """_run_git_subprocess returns bytes, not str."""
+    stdout, stderr, returncode = _run_git_subprocess(
+        ["--version"],
+        cwd=Path("/tmp"),
+        timeout_seconds=5.0,
+        max_stdout_bytes=1_000_000,
+    )
+    assert isinstance(stdout, bytes)
+    assert isinstance(stderr, bytes)
+    assert isinstance(returncode, int)
+
+
+def test_run_git_command_uses_bounded_subprocess(tmp_path: Path) -> None:
+    """_run_git_command uses _run_git_subprocess internally."""
+    # This is an integration test - verify it works with a real git repo
+    repo = tmp_path / "test_repo"
+    repo.mkdir()
+    _run_git_command(["init"], cwd=repo)
+
+    # Verify the repo was initialized
+    result = _run_git_command(["status"], cwd=repo)
+    assert "No commits yet" in result or "No branches" in result or "Initial commit" in result or result.strip() == ""

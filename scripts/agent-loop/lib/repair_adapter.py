@@ -13,6 +13,17 @@ Slice 2: Clean tracked baseline verification.
 - Validates exclusion paths lexically.
 - Does NOT invoke actor, does NOT write files, does NOT mutate repository.
 
+Slice 3: Post-run workspace inventory.
+- Captures post-run HEAD revision.
+- Detects source revision drift.
+- Collects actual workspace changes (added/modified/deleted/untracked).
+- Normalizes renames to delete + add.
+- Applies baseline exclusions to untracked files.
+- Validates all paths.
+- Ensures stable lexicographic ordering.
+- No duplicates.
+- Does NOT reconcile, does NOT enforce permissions, does NOT invoke actor.
+
 Schema: .agent-loop/repair-adapter/SCHEMA.md
 """
 
@@ -20,10 +31,12 @@ from __future__ import annotations
 
 import copy
 import json
+import json
 import os
-import re
+import selectors
 import subprocess
-from dataclasses import dataclass, field
+import time
+from pathlib import Path
 from pathlib import Path
 from typing import Any
 
@@ -1052,6 +1065,159 @@ def _validate_baseline_exclusions(exclusions: list[str]) -> list[str]:
     return sorted(exclusions)
 
 
+def _run_git_subprocess(
+    args: list[str],
+    cwd: Path,
+    timeout_seconds: float = 30.0,
+    max_stdout_bytes: int = 10_485_760,  # 10 MB
+    max_stderr_bytes: int = 1_048_576,   # 1 MB
+) -> tuple[bytes, bytes, int]:
+    """
+    Run a git command with bounded output capture.
+
+    Uses selectors to read stdout/stderr incrementally, preventing unbounded
+    memory consumption. Terminates the process if either stream exceeds its limit.
+
+    Returns: (stdout_bytes, stderr_bytes, return_code)
+    Raises: BaselineVerificationError on timeout, size limit, or execution failure
+    """
+    # Minimal environment — no leakage beyond what Git requires
+    env = {
+        "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        # Prevent Git from reading user/system config
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        # Deterministic output
+        "GIT_PAGER": "cat",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+    try:
+        proc = subprocess.Popen(
+            ["git"] + args,
+            cwd=str(cwd),
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+        )
+    except OSError as e:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"git command failed to execute: {e}",
+        ) from e
+
+    # Ensure stdout/stderr are available
+    if proc.stdout is None or proc.stderr is None:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            "failed to create subprocess pipes",
+        )
+
+    # Incremental read using selectors on file descriptors
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    stdout_len = 0
+    stderr_len = 0
+
+    stdout_fd = proc.stdout.fileno()
+    stderr_fd = proc.stderr.fileno()
+
+    sel = selectors.DefaultSelector()
+    sel.register(stdout_fd, selectors.EVENT_READ)
+    sel.register(stderr_fd, selectors.EVENT_READ)
+
+    start_time = os.times().elapsed
+    open_streams = 2
+
+    try:
+        while open_streams > 0:
+            # Check timeout
+            elapsed = os.times().elapsed - start_time
+            if elapsed >= timeout_seconds:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+                raise BaselineVerificationError(
+                    ADAPTER_INTERNAL_ERROR,
+                    f"git command timed out after {timeout_seconds}s: git {' '.join(args)}",
+                )
+
+            events = sel.select(timeout=0.1)
+            for key, _ in events:
+                fd = key.fileobj
+                assert isinstance(fd, int), "selector key fileobj should be fd int"
+                try:
+                    data = os.read(fd, 65536)  # 64 KB chunks
+                except OSError:
+                    data = b""
+
+                if not data:
+                    # EOF
+                    sel.unregister(fd)
+                    open_streams -= 1
+                    continue
+
+                if fd == stdout_fd:
+                    stdout_len += len(data)
+                    if stdout_len > max_stdout_bytes:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5.0)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                        raise BaselineVerificationError(
+                            ADAPTER_INTERNAL_ERROR,
+                            f"git command stdout exceeded {max_stdout_bytes} bytes: git {' '.join(args)}",
+                        )
+                    stdout_chunks.append(data)
+                elif fd == stderr_fd:
+                    stderr_len += len(data)
+                    if stderr_len > max_stderr_bytes:
+                        proc.terminate()
+                        try:
+                            proc.wait(timeout=5.0)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                            proc.wait()
+                        raise BaselineVerificationError(
+                            ADAPTER_INTERNAL_ERROR,
+                            f"git command stderr exceeded {max_stderr_bytes} bytes: git {' '.join(args)}",
+                        )
+                    stderr_chunks.append(data)
+
+        # Final timeout check — command may have completed but exceeded the budget
+        elapsed = os.times().elapsed - start_time
+        if elapsed >= timeout_seconds:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5.0)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"git command timed out after {timeout_seconds}s: git {' '.join(args)}",
+            )
+
+        returncode = proc.wait()
+        return b"".join(stdout_chunks), b"".join(stderr_chunks), returncode
+
+    finally:
+        sel.close()
+        # Ensure process is reaped
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
 def _run_git_command(
     args: list[str],
     cwd: Path,
@@ -1062,50 +1228,16 @@ def _run_git_command(
     Returns stdout as string (stripped of trailing newline).
     Raises BaselineVerificationError(ADAPTER_INTERNAL_ERROR) on failure.
     """
-    # Minimal environment — no leakage beyond what Git requires
-    env = {
-        "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "LANG": "C.UTF-8",
-        "LC_ALL": "C.UTF-8",
-        "HOME": os.environ.get("HOME", "/tmp"),
-        # Prevent Git from reading user/system config
-        "GIT_CONFIG_NOSYSTEM": "1",
-        "GIT_CONFIG_GLOBAL": "/dev/null",
-        # Deterministic output
-        "GIT_PAGER": "cat",
-        "GIT_TERMINAL_PROMPT": "0",
-    }
+    stdout_bytes, stderr_bytes, returncode = _run_git_subprocess(args, cwd)
 
-    try:
-        result = subprocess.run(
-            ["git"] + args,
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=30,  # Bounded: git commands should be fast
-            check=False,
-            shell=False,
-        )
-    except subprocess.TimeoutExpired as e:
+    if returncode != 0:
+        stderr_msg = stderr_bytes.decode("utf-8", errors="replace").strip()[:512]
         raise BaselineVerificationError(
             ADAPTER_INTERNAL_ERROR,
-            f"git command timed out: git {' '.join(args)}",
-        ) from e
-    except OSError as e:
-        raise BaselineVerificationError(
-            ADAPTER_INTERNAL_ERROR,
-            f"git command failed to execute: {e}",
-        ) from e
-
-    if result.returncode != 0:
-        stderr_msg = result.stderr.strip()[:512]
-        raise BaselineVerificationError(
-            ADAPTER_INTERNAL_ERROR,
-            f"git {' '.join(args)} failed (exit {result.returncode}): {stderr_msg}",
+            f"git {' '.join(args)} failed (exit {returncode}): {stderr_msg}",
         )
 
-    return result.stdout.rstrip("\n")
+    return stdout_bytes.decode("utf-8").rstrip("\n")
 
 
 def _capture_source_revision(repo_root: Path) -> str:
@@ -1298,3 +1430,459 @@ def _verify_clean_tracked_baseline(
         baseline_exclusions=validated_exclusions,
         captured_at=captured_at,
     )
+
+
+# ---------------------------------------------------------------------------
+# Slice 3: Post-run workspace inventory
+# ---------------------------------------------------------------------------
+
+# Maximum size for workspace inventory lists (prevent abuse)
+MAX_INVENTORY_ENTRIES_PER_CATEGORY = 512
+
+
+def _parse_porcelain_status_z(
+    status_output_bytes: bytes,
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Parse git status --porcelain=v1 -z output (NUL-delimited).
+
+    Format: Each entry is "XY path\0" or for R/C: "XY path1\0path2\0"
+    - X = index (staged) status
+    - Y = worktree status
+    - path = repo-relative path (no quoting, no escaping)
+
+    Returns (added, modified, deleted) paths, each sorted.
+    Raises BaselineVerificationError(ADAPTER_INTERNAL_ERROR) on unmerged state.
+
+    Classification:
+    - 'A' (staged add) → added
+    - 'M' (modified in either column) → modified
+    - 'D' (deleted in either column) → deleted
+    - 'R' (rename) → delete old + add new (normalized)
+    - 'C' (copy) → add new (destination)
+    - 'T' (typechange) → delete + add (normalized)
+    - 'U' (unmerged) → raise error (out of scope)
+    """
+    added: list[str] = []
+    modified: list[str] = []
+    deleted: list[str] = []
+
+    # Split by NUL
+    parts = status_output_bytes.split(b"\0")
+
+    # Remove trailing empty part (if output ends with NUL)
+    if parts and parts[-1] == b"":
+        parts = parts[:-1]
+
+    i = 0
+    while i < len(parts):
+        entry = parts[i]
+
+        # Each entry must be at least 3 bytes: "XY "
+        if len(entry) < 3:
+            # Malformed entry
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"malformed porcelain entry (too short): {entry!r}",
+            )
+
+        # Extract XY codes and path
+        x_code = chr(entry[0])
+        y_code = chr(entry[1])
+        # Path starts after "XY " (3 bytes)
+        path1_bytes = entry[3:]
+
+        # Decode path (UTF-8, no escaping with -z)
+        try:
+            path1 = path1_bytes.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"path is not valid UTF-8: {path1_bytes!r}",
+            ) from e
+
+        # Git porcelain v1 defines 7 unmerged XY states:
+        # DD (both deleted), AU (added by us), UD (updated by them),
+        # UA (added by them), DU (deleted by us), AA (both added), UU (both updated)
+        xy_str = x_code + y_code
+        if xy_str in ("DD", "AU", "UD", "UA", "DU", "AA", "UU"):
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"unmerged state detected (out of scope): {path1}",
+            )
+
+        # Classify based on XY codes
+        # Handle rename (R) and copy (C) — two paths
+        if x_code in ("R", "C"):
+            # Second path follows
+            if i + 1 >= len(parts):
+                raise BaselineVerificationError(
+                    ADAPTER_INTERNAL_ERROR,
+                    f"rename/copy missing second path: {path1}",
+                )
+            path2_bytes = parts[i + 1]
+            try:
+                path2 = path2_bytes.decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise BaselineVerificationError(
+                    ADAPTER_INTERNAL_ERROR,
+                    f"rename/copy path is not valid UTF-8: {path2_bytes!r}",
+                ) from e
+            i += 1  # Advance to skip path2
+
+            if x_code == "R":
+                # Rename: Git -z format is R  <new_path>\0<old_path>\0
+                # path1 = new (destination), path2 = old (source)
+                # Delete old + add new
+                deleted.append(path2)
+                added.append(path1)
+            else:  # C (copy)
+                # Copy: Git -z format is C  <dest_path>\0<src_path>\0
+                # path1 = destination, path2 = source
+                # Add destination only
+                added.append(path1)
+        elif x_code == "A":
+            # Staged add
+            added.append(path1)
+        elif x_code == "M" or y_code == "M":
+            # Modified (staged or worktree)
+            modified.append(path1)
+        elif x_code == "D" or y_code == "D":
+            # Deleted (staged or worktree)
+            deleted.append(path1)
+        elif x_code == "T" or y_code == "T":
+            # Typechange: treat as delete + add
+            deleted.append(path1)
+            added.append(path1)
+        # else: clean tracked file or ignored — no action
+
+        i += 1
+
+    # Sort for determinism
+    added.sort()
+    modified.sort()
+    deleted.sort()
+
+    return added, modified, deleted
+
+
+def _parse_ls_files_others_z(
+    ls_files_output_bytes: bytes,
+) -> list[str]:
+    """
+    Parse git ls-files -z --others --exclude-standard output (NUL-delimited).
+
+    Returns sorted list of untracked non-ignored paths.
+    """
+    # Split by NUL
+    parts = ls_files_output_bytes.split(b"\0")
+
+    # Remove trailing empty part (if output ends with NUL)
+    if parts and parts[-1] == b"":
+        parts = parts[:-1]
+
+    untracked: list[str] = []
+    for path_bytes in parts:
+        if not path_bytes:
+            continue  # Skip empty parts
+
+        # Decode path (UTF-8, no escaping with -z)
+        try:
+            path = path_bytes.decode("utf-8")
+        except UnicodeDecodeError as e:
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"untracked path is not valid UTF-8: {path_bytes!r}",
+            ) from e
+
+        untracked.append(path)
+
+    # Sort for determinism
+    untracked.sort()
+
+    return untracked
+
+
+def _run_git_command_bytes(
+    args: list[str],
+    cwd: Path,
+    max_stdout_bytes: int = 1_000_000,
+) -> bytes:
+    """
+    Run a Git command with shell=False, explicit cwd, minimal environment.
+
+    Returns stdout as bytes (no decoding).
+    Raises BaselineVerificationError(ADAPTER_INTERNAL_ERROR) on failure.
+    Bounded: rejects output exceeding max_stdout_bytes.
+    """
+    stdout_bytes, stderr_bytes, returncode = _run_git_subprocess(
+        args, cwd, max_stdout_bytes=max_stdout_bytes
+    )
+
+    if returncode != 0:
+        stderr_msg = stderr_bytes.decode("utf-8", errors="replace").strip()[:512]
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"git {' '.join(args)} failed (exit {returncode}): {stderr_msg}",
+        )
+
+    return stdout_bytes
+
+
+def _validate_inventory_path(path: str, category: str) -> None:
+    """
+    Validate a workspace inventory path lexically.
+
+    Must be repo-relative, no traversal, no absolute, no null bytes,
+    no backslashes, no empty segments, max 512 bytes.
+    """
+    if not isinstance(path, str):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: path must be string, got {type(path).__name__}",
+        )
+    if not path:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: empty path",
+        )
+    if "\x00" in path:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: null byte in path",
+        )
+    if path.startswith("/"):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: absolute path not allowed",
+        )
+    if re.match(r"^[A-Za-z]:", path):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: Windows drive letter not allowed",
+        )
+    if path.startswith("\\\\"):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: UNC path not allowed",
+        )
+    if "\\" in path:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: backslash not allowed (use forward slash)",
+        )
+    if "//" in path:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: duplicate separator",
+        )
+    segments = path.split("/")
+    for segment in segments:
+        if segment == "":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"{category}: empty segment",
+            )
+        if segment == ".":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"{category}: '.' segment not allowed",
+            )
+        if segment == "..":
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"{category}: parent traversal not allowed",
+            )
+    if _byte_len(path) > MAX_PATH_BYTES:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"{category}: exceeds {MAX_PATH_BYTES} bytes",
+        )
+
+
+def _validate_inventory_paths(
+    added: list[str],
+    modified: list[str],
+    deleted: list[str],
+    untracked: list[str],
+) -> None:
+    """
+    Validate all workspace inventory paths lexically.
+
+    Raises BaselineVerificationError on any invalid path.
+    """
+    for path in added:
+        _validate_inventory_path(path, "workspace_changes.added")
+    for path in modified:
+        _validate_inventory_path(path, "workspace_changes.modified")
+    for path in deleted:
+        _validate_inventory_path(path, "workspace_changes.deleted")
+    for path in untracked:
+        _validate_inventory_path(path, "workspace_changes.untracked")
+
+
+def _deduplicate_and_sort(paths: list[str]) -> list[str]:
+    """
+    Remove duplicates and sort paths lexicographically.
+
+    Returns new sorted list with no duplicates.
+    """
+    # Use dict to preserve order while deduplicating (Python 3.7+)
+    seen: dict[str, None] = {}
+    for p in paths:
+        if p not in seen:
+            seen[p] = None
+    return sorted(seen.keys())
+
+
+def _capture_post_run_workspace(
+    repo_root: Path,
+    baseline_source_revision: str,
+    baseline_exclusions: list[str],
+) -> tuple[str, bool, WorkspaceChange]:
+    """
+    Capture post-run workspace inventory and detect source revision drift.
+
+    Parameters:
+        repo_root: repository root directory (must exist, must be a directory).
+        baseline_source_revision: 40-char hex SHA from baseline capture.
+        baseline_exclusions: orchestrator-supplied list of approved pre-existing
+            untracked artifact paths (repo-relative, lexically validated).
+
+    Returns:
+        Tuple of (post_source_revision, source_revision_stable, workspace_change).
+        - post_source_revision: 40-char hex SHA of current HEAD.
+        - source_revision_stable: True if post matches baseline, False if drifted.
+        - workspace_change: WorkspaceChange with added/modified/deleted/untracked lists.
+
+    Raises:
+        BaselineVerificationError:
+            - adapter_status=ADAPTER_INTERNAL_ERROR: repo_root invalid, git failure,
+              unmerged state, path validation failure, output size exceeded.
+            - adapter_status=ADAPTER_SOURCE_REVISION_DRIFT: source revision changed.
+
+    Semantics:
+        - Captures current HEAD revision (post-run).
+        - Detects source revision drift (compares to baseline).
+        - Collects actual workspace changes (added/modified/deleted/untracked).
+        - Normalizes renames to delete + add.
+        - Applies baseline exclusions to untracked files (excludes from inventory).
+        - Validates all paths lexically.
+        - Ensures stable lexicographic ordering.
+        - No duplicates.
+        - Does NOT reconcile, does NOT enforce permissions, does NOT invoke actor.
+    """
+    # Validate repo_root
+    if not isinstance(repo_root, Path):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"repo_root must be Path, got {type(repo_root).__name__}",
+        )
+
+    try:
+        if not repo_root.exists():
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"repo_root does not exist: {repo_root}",
+            )
+        if not repo_root.is_dir():
+            raise BaselineVerificationError(
+                ADAPTER_INTERNAL_ERROR,
+                f"repo_root is not a directory: {repo_root}",
+            )
+    except OSError as e:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"cannot access repo_root: {e}",
+        ) from e
+
+    # Validate baseline_source_revision
+    if not isinstance(baseline_source_revision, str):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_source_revision must be string, got {type(baseline_source_revision).__name__}",
+        )
+    if not RE_SHA40.match(baseline_source_revision):
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"baseline_source_revision is not 40-char lowercase hex: {baseline_source_revision!r}",
+        )
+
+    # Validate baseline_exclusions
+    validated_exclusions = _validate_baseline_exclusions(baseline_exclusions)
+
+    # Capture post-run source revision
+    post_source_revision = _capture_source_revision(repo_root)
+
+    # Detect source revision drift
+    source_revision_stable = post_source_revision == baseline_source_revision
+
+    # Collect tracked changes via git status --porcelain=v1 -z -uno
+    # -uno: only show tracked files (untracked come from ls-files separately)
+    status_output_bytes = _run_git_command_bytes(
+        ["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "-uno"],
+        repo_root,
+        max_stdout_bytes=1_000_000,  # 1 MB bound
+    )
+
+    # Parse tracked changes (added, modified, deleted)
+    added_tracked, modified_tracked, deleted_tracked = _parse_porcelain_status_z(
+        status_output_bytes
+    )
+
+    # Collect untracked non-ignored files via git ls-files -z --others --exclude-standard
+    ls_files_output_bytes = _run_git_command_bytes(
+        ["ls-files", "-z", "--others", "--exclude-standard"],
+        repo_root,
+        max_stdout_bytes=1_000_000,  # 1 MB bound
+    )
+
+    # Parse untracked files
+    untracked_all = _parse_ls_files_others_z(ls_files_output_bytes)
+
+    # Apply baseline exclusions to untracked files
+    exclusion_set = set(validated_exclusions)
+    untracked_filtered = [p for p in untracked_all if p not in exclusion_set]
+
+    # Validate all paths lexically
+    _validate_inventory_paths(
+        added_tracked, modified_tracked, deleted_tracked, untracked_filtered
+    )
+
+    # Deduplicate and sort (should already be sorted, but ensure determinism)
+    added_final = _deduplicate_and_sort(added_tracked)
+    modified_final = _deduplicate_and_sort(modified_tracked)
+    deleted_final = _deduplicate_and_sort(deleted_tracked)
+    untracked_final = _deduplicate_and_sort(untracked_filtered)
+
+    # Check inventory size bounds
+    if len(added_final) > MAX_INVENTORY_ENTRIES_PER_CATEGORY:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"workspace_changes.added exceeds {MAX_INVENTORY_ENTRIES_PER_CATEGORY} entries",
+        )
+    if len(modified_final) > MAX_INVENTORY_ENTRIES_PER_CATEGORY:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"workspace_changes.modified exceeds {MAX_INVENTORY_ENTRIES_PER_CATEGORY} entries",
+        )
+    if len(deleted_final) > MAX_INVENTORY_ENTRIES_PER_CATEGORY:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"workspace_changes.deleted exceeds {MAX_INVENTORY_ENTRIES_PER_CATEGORY} entries",
+        )
+    if len(untracked_final) > MAX_INVENTORY_ENTRIES_PER_CATEGORY:
+        raise BaselineVerificationError(
+            ADAPTER_INTERNAL_ERROR,
+            f"workspace_changes.untracked exceeds {MAX_INVENTORY_ENTRIES_PER_CATEGORY} entries",
+        )
+
+    # Build workspace change
+    workspace_change = WorkspaceChange(
+        added=added_final,
+        modified=modified_final,
+        deleted=deleted_final,
+        untracked=untracked_final,
+    )
+
+    return post_source_revision, source_revision_stable, workspace_change
