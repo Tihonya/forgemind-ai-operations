@@ -42,6 +42,7 @@ import re
 import selectors
 import signal
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -2954,4 +2955,111 @@ def run_repair(
     adapter_status = ADAPTER_SUCCESS
     diagnostics["adapter_error_message"] = None
     return _build_result()
+
+
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+def main() -> int:
+    """CLI entry point for the repair adapter."""
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Repair adapter for WP-AL-1C5"
+    )
+    parser.add_argument(
+        "--repo-root",
+        required=True,
+        type=Path,
+        help="Repository root directory",
+    )
+    parser.add_argument(
+        "--run-dir",
+        required=True,
+        type=Path,
+        help="Run artifact directory",
+    )
+    parser.add_argument(
+        "--repair-request",
+        required=True,
+        type=Path,
+        help="Path to pre-built repair-request.json",
+    )
+    parser.add_argument(
+        "--actor-command",
+        required=True,
+        help="Repair actor executable",
+    )
+    parser.add_argument(
+        "--actor-arg",
+        action="append",
+        default=[],
+        help="Repair actor fixed argument (repeatable)",
+    )
+    parser.add_argument(
+        "--timeout-seconds",
+        type=int,
+        default=120,
+        help="Actor timeout in seconds (1-600, default 120)",
+    )
+    parser.add_argument(
+        "--max-output-bytes",
+        type=int,
+        default=4096,
+        help="stdout/stderr capture limit (default 4096)",
+    )
+    parser.add_argument(
+        "--baseline-exclusion",
+        action="append",
+        default=[],
+        help="Pre-existing untracked path to exclude (repeatable)",
+    )
+    parser.add_argument(
+        "--completed-at",
+        required=True,
+        help="ISO-8601 UTC timestamp",
+    )
+
+    args = parser.parse_args()
+
+    # Read repair request
+    try:
+        with open(args.repair_request, "r", encoding="utf-8") as f:
+            repair_request = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(
+            f"Adapter error: cannot read repair request: {e}",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Run adapter
+    result = run_repair(
+        repo_root=args.repo_root,
+        run_dir=args.run_dir,
+        repair_request=repair_request,
+        actor_executable=args.actor_command,
+        actor_arguments=args.actor_arg,
+        timeout_seconds=args.timeout_seconds,
+        max_output_bytes=args.max_output_bytes,
+        baseline_exclusions=args.baseline_exclusion,
+        completed_at=args.completed_at,
+    )
+
+    if result.adapter_status == ADAPTER_SUCCESS:
+        return 0
+
+    # Print adapter status and error to stderr
+    print(
+        f"Adapter status: {result.adapter_status}",
+        file=sys.stderr,
+    )
+    error_msg = result.diagnostics.get("adapter_error_message")
+    if error_msg:
+        print(f"Adapter error: {error_msg}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
 
