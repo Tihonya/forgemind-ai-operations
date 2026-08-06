@@ -19,7 +19,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import Generator
+from collections.abc import Generator, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -207,7 +207,7 @@ def temp_git_repo() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def run_dir(temp_git_repo: Path) -> Path:
+def run_dir(temp_git_repo: Path) -> Iterator[Path]:
     """Create run directory outside repo to avoid workspace pollution."""
     with tempfile.TemporaryDirectory() as tmpdir:
         rd = Path(tmpdir) / "runs" / "run-123"

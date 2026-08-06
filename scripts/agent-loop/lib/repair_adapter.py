@@ -2621,7 +2621,7 @@ def run_repair(
             # Best-effort write of adapter result
             try:
                 _atomic_write_json(adapter_result_path, result_dict)
-            except (OSError, RepairAdapterContractError):  # noqa: BLE001, S110
+            except (OSError, RepairAdapterContractError):
                 pass  # Do not recursively retry
 
             return RepairAdapterResult(
@@ -2639,7 +2639,7 @@ def run_repair(
                 sanitization=sanitization,
                 integrity_scope=integrity_scope,
             )
-        except Exception as e:
+        except (RepairAdapterContractError, OSError, TypeError, ValueError) as e:
             # Fallback: return minimal INTERNAL_ERROR result
             error_msg = f"failed to build adapter result: {type(e).__name__}"
             return RepairAdapterResult(
@@ -2697,7 +2697,7 @@ def run_repair(
 
     # Validate repair request (WP-AL-1C4)
     try:
-        validate_repair_request(repair_request)  # type: ignore[arg-type]
+        validate_repair_request(repair_request)
     except RepairContractError as e:
         diagnostics["adapter_error_message"] = f"repair request validation failed: {e}"
         return _build_result()
@@ -2737,8 +2737,8 @@ def run_repair(
 
     # Write repair request atomically
     try:
-        _atomic_write_json(request_path, repair_request)  # type: ignore[arg-type]
-    except Exception as e:
+        _atomic_write_json(request_path, repair_request)
+    except (OSError, TypeError, ValueError) as e:
         diagnostics["adapter_error_message"] = f"failed to write repair request: {e}"
         return _build_result()
 
@@ -2848,7 +2848,7 @@ def run_repair(
     # Validate identity binding
     identity_error: BaselineVerificationError | None = None
     try:
-        _validate_identity_binding(result_data, repair_request)  # type: ignore[arg-type]
+        _validate_identity_binding(result_data, repair_request)
     except BaselineVerificationError as e:
         identity_error = e
         failures.append(e.adapter_status)
@@ -2856,8 +2856,7 @@ def run_repair(
     # Only check reconciliation if identity binding succeeded
     # (we can't trust changed_files if identity is wrong)
     recon: ReconciliationResult | None = None
-    reconciliation: dict[str, Any] | None = None
-    
+
     if identity_error is None:
         # Build repair result summary
         repair_result_summary = {
@@ -2887,10 +2886,10 @@ def run_repair(
 
     # Always check permissions on actual workspace changes
     # (even if identity binding failed, we can still check actual workspace)
-    allowed_paths = repair_request.get("allowed_paths", [])  # type: ignore[union-attr]
-    forbidden_paths = repair_request.get("forbidden_paths", [])  # type: ignore[union-attr]
+    allowed_paths = repair_request.get("allowed_paths", [])
+    forbidden_paths = repair_request.get("forbidden_paths", [])
     allowed_v, forbidden_v = _enforce_permissions(
-        ws_change, allowed_paths, forbidden_paths  # type: ignore[arg-type]
+        ws_change, allowed_paths, forbidden_paths
     )
 
     permission_enforcement = {
