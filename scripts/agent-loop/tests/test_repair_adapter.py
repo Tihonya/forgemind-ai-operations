@@ -56,20 +56,12 @@ from repair_adapter import (
     MAX_SUMMARY_BYTES,
     MAX_TRUNCATED_FIELDS,
     VALID_ADAPTER_STATUSES,
+    BaselineVerificationError,
     ReconciliationResult,
     RepairAdapterContractError,
     RepairAdapterResult,
     WorkspaceBaseline,
     WorkspaceChange,
-    build_adapter_result,
-    canonical_json_bytes,
-    pretty_json_string,
-    validate_adapter_result,
-)
-
-# Slice 3 imports: Post-run workspace inventory
-from repair_adapter import (
-    BaselineVerificationError,
     _capture_post_run_workspace,
     _deduplicate_and_sort,
     _parse_ls_files_others_z,
@@ -78,6 +70,10 @@ from repair_adapter import (
     _run_git_subprocess,
     _validate_inventory_path,
     _validate_inventory_paths,
+    build_adapter_result,
+    canonical_json_bytes,
+    pretty_json_string,
+    validate_adapter_result,
 )
 
 # ---------------------------------------------------------------------------
@@ -1558,7 +1554,6 @@ def test_P07_output_size_exceeded_presence() -> None:
 # ===========================================================================
 
 from repair_adapter import (
-    BaselineVerificationError,
     _verify_clean_tracked_baseline,
 )
 
@@ -2360,7 +2355,7 @@ def test_parse_porcelain_status_z_unmerged_du() -> None:
 
 def test_parse_porcelain_status_z_unicode_filename() -> None:
     """Parse Unicode filename from porcelain status."""
-    added, modified, deleted = _parse_porcelain_status_z("M  文件.txt\0".encode("utf-8"))
+    added, modified, deleted = _parse_porcelain_status_z("M  文件.txt\0".encode())
     assert added == []
     assert modified == ["文件.txt"]
     assert deleted == []
@@ -2374,7 +2369,7 @@ def test_parse_porcelain_status_z_invalid_utf8() -> None:
 
 def test_parse_porcelain_status_z_trailing_empty() -> None:
     """Trailing empty part is ignored."""
-    added, modified, deleted = _parse_porcelain_status_z(b"M  file.txt\0")
+    _added, modified, _deleted = _parse_porcelain_status_z(b"M  file.txt\0")
     assert modified == ["file.txt"]
 
 
@@ -2410,7 +2405,7 @@ def test_parse_ls_files_others_z_multiple_files() -> None:
 
 def test_parse_ls_files_others_z_unicode() -> None:
     """Parse Unicode filename from ls-files."""
-    result = _parse_ls_files_others_z("文件.txt\0".encode("utf-8"))
+    result = _parse_ls_files_others_z("文件.txt\0".encode())
     assert result == ["文件.txt"]
 
 
@@ -2726,7 +2721,7 @@ def test_capture_post_run_workspace_source_revision_drift(tmp_path: Path) -> Non
     _git(repo, "add", "new.txt")
     _git(repo, "commit", "-m", "Add new file")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    post_sha, stable, _change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2848,7 +2843,7 @@ def test_capture_post_run_workspace_deterministic_ordering(tmp_path: Path) -> No
     (repo / "alpha.txt").write_text("a")
     (repo / "middle.txt").write_text("m")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, _stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2864,7 +2859,7 @@ def test_capture_post_run_workspace_no_duplicates(tmp_path: Path) -> None:
 
     (repo / "untracked.txt").write_text("content")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, _stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2881,7 +2876,7 @@ def test_capture_post_run_workspace_tab_in_filename(tmp_path: Path) -> None:
 
     (repo / "file\twith\ttabs.txt").write_text("tab content")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2898,7 +2893,7 @@ def test_capture_post_run_workspace_newline_in_filename(tmp_path: Path) -> None:
 
     (repo / "file\nwith\nnewlines.txt").write_text("newline content")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2915,7 +2910,7 @@ def test_capture_post_run_workspace_quote_in_filename(tmp_path: Path) -> None:
 
     (repo / 'file"with"quotes.txt').write_text("quote content")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2947,7 +2942,7 @@ def test_capture_post_run_workspace_arrow_in_filename(tmp_path: Path) -> None:
 
     (repo / "file -> renamed.txt").write_text("arrow content")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2970,7 +2965,7 @@ def test_capture_post_run_workspace_ignored_file_excluded(tmp_path: Path) -> Non
     (repo / "normal.txt").write_text("normal")
     (repo / "secret.ignored").write_text("should be ignored")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
@@ -2994,7 +2989,7 @@ def test_capture_post_run_workspace_typechange_classification(tmp_path: Path) ->
     (repo / "target.txt").symlink_to("other.txt")
     _git(repo, "add", "target.txt")
 
-    post_sha, stable, change = _capture_post_run_workspace(
+    _post_sha, stable, change = _capture_post_run_workspace(
         repo_root=repo,
         baseline_source_revision=baseline_sha,
         baseline_exclusions=[],
