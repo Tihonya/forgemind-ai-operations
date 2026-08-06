@@ -1618,21 +1618,22 @@ def test_BL01_clean_baseline_accepted(tmp_path: Path) -> None:
     assert baseline.captured_at == VALID_TIMESTAMP
 
 
-def test_BL02_clean_baseline_with_untracked_files_accepted(tmp_path: Path) -> None:
-    """BL02: Clean repository with untracked files (not in exclusions) should be accepted."""
+def test_BL02_clean_baseline_with_untracked_files_rejected(tmp_path: Path) -> None:
+    """BL02: Clean repository with untracked files NOT in exclusions must be
+    rejected with ADAPTER_DIRTY_BASELINE (DEC-R1 fail-closed policy)."""
     repo = _create_temp_repo(tmp_path)
 
     # Create untracked file
     (repo / "untracked.txt").write_text("untracked content\n")
 
-    baseline = _verify_clean_tracked_baseline(
-        repo_root=repo,
-        baseline_exclusions=[],
-        captured_at=VALID_TIMESTAMP,
-    )
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
 
-    assert isinstance(baseline, WorkspaceBaseline)
-    assert baseline.source_revision == _get_head_sha(repo)
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
 
 
 def test_BL03_clean_baseline_with_excluded_untracked_files(tmp_path: Path) -> None:
@@ -2089,7 +2090,9 @@ def test_BL27_no_temp_files_created_during_inspection(tmp_path: Path) -> None:
 
 
 def test_BL28_no_hard_coded_exceptions_for_real_artifacts(tmp_path: Path) -> None:
-    """BL28: Verification must not hard-code exceptions for specific review artifacts."""
+    """BL28: Verification must not hard-code exceptions for specific review
+    artifacts. Under DEC-R1 (fail-closed), ANY non-excluded untracked file
+    causes ADAPTER_DIRTY_BASELINE — there is no implicit allowlist."""
     repo = _create_temp_repo(tmp_path)
 
     # Create a file that looks like a review artifact
@@ -2097,14 +2100,14 @@ def test_BL28_no_hard_coded_exceptions_for_real_artifacts(tmp_path: Path) -> Non
     review_artifact.parent.mkdir(parents=True, exist_ok=True)
     review_artifact.write_text("test review content\n")
 
-    # Without exclusion, this untracked file should not cause baseline failure
-    baseline = _verify_clean_tracked_baseline(
-        repo_root=repo,
-        baseline_exclusions=[],
-        captured_at=VALID_TIMESTAMP,
-    )
-
-    assert isinstance(baseline, WorkspaceBaseline)
+    # Without exclusion, the fail-closed policy rejects the untracked file.
+    with pytest.raises(BaselineVerificationError) as exc_info:
+        _verify_clean_tracked_baseline(
+            repo_root=repo,
+            baseline_exclusions=[],
+            captured_at=VALID_TIMESTAMP,
+        )
+    assert exc_info.value.adapter_status == ADAPTER_DIRTY_BASELINE
 
     # Now test that it CAN be excluded if needed
     baseline_with_exclusion = _verify_clean_tracked_baseline(

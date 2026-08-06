@@ -1245,14 +1245,6 @@ write_scenario_manifest "$MANIFEST_Y" "HARNESS-Y" \
   '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
 
 add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
-add_candidate_content "backend/src/synthetic/module_y.py" <<'PYEOF'
-"""Module Y for repair scenario."""
-
-
-def original_function():
-    """Original implementation."""
-    return 42
-PYEOF
 
 run_isolated_verify "$MANIFEST_Y" > "$SUITE_TMP/y-verify.log" 2>&1
 Y_VERIFY_EXIT=$?
@@ -1594,6 +1586,7 @@ PYEOF
       --timeout-seconds 30 \
       --baseline-exclusion "backend/tests/synthetic/test_harness_a.py" \
       --baseline-exclusion "mock_repair_actor.py" \
+      --baseline-exclusion "backend/src/synthetic/module_aa.py" \
       --completed-at "2026-01-01T00:00:00Z" > "$SUITE_TMP/aa-repair.log" 2>&1 || AA_REPAIR_EXIT=$?
 
     # Verify repair adapter result

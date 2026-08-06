@@ -40,6 +40,8 @@ from repair_adapter import (
     ADAPTER_SUCCESS,
     ADAPTER_TIMEOUT,
     ADAPTER_UNDECLARED_CHANGE,
+    APPROVED_GIT_SUBCOMMANDS,
+    PROHIBITED_GIT_SUBCOMMANDS,
     BoundedByteStream,
     _atomic_write_json,
     _build_minimal_env,
@@ -306,13 +308,12 @@ def test_BB_ATOMIC_06_temporary_artifact_cleanup() -> None:
     """BB-ATOMIC-06: Temporary artifact cleaned after success."""
     with tempfile.TemporaryDirectory() as tmpdir:
         path = Path(tmpdir) / "test.json"
-        pid = os.getpid()
-        tmp_path = path.parent / f".{path.name}-tmp-{pid}"
 
         _atomic_write_json(path, {"key": "value"})
 
-        # Temp file should not exist after success
-        assert not tmp_path.exists()
+        # No temp files (prefix .test.json-*) should remain after success.
+        remaining = list(path.parent.glob(f".{path.name}-*-tmp"))
+        assert len(remaining) == 0
         # Final file should exist
         assert path.exists()
 
@@ -1652,9 +1653,44 @@ with open(result_path, "w") as f:
 
 
 def test_BB_SAFETY_05_no_git_commands() -> None:
-    """BB-SAFETY-05: No Git commit/reset/clean/stash/restore commands."""
-    # Static analysis: the implementation only uses read-only git commands
-    # (rev-parse, status, ls-files). Verified by code review.
+    """BB-SAFETY-05: No mutating Git commands (commit/push/reset/clean/
+    stash/restore/checkout/switch/rebase) are present at the Git invocation
+    boundary.
+
+    The repair adapter only uses read-only Git subcommands
+    (rev-parse, status, ls-files) via _run_git_command / _run_git_command_bytes.
+    This test asserts the approved-subcommand boundary is read-only and that
+    no prohibited mutating subcommand is ever dispatched.
+    """
+    # 1. The approved set must contain only read-only subcommands.
+    assert APPROVED_GIT_SUBCOMMANDS == frozenset(
+        {"rev-parse", "status", "ls-files"}
+    )
+
+    # 2. No prohibited subcommand may overlap with the approved set.
+    assert not (PROHIBITED_GIT_SUBCOMMANDS & APPROVED_GIT_SUBCOMMANDS)
+
+    # 3. The module source must not contain any prohibited subcommand as a
+    # dispatched git argument (a quoted list element), excluding the
+    # frozenset definition that names each subcommand once as a constant.
+    import re as _re
+
+    import repair_adapter as ra
+
+    source = Path(ra.__file__).read_text() if ra.__file__ else ""
+    # Locate the frozenset definition block so we can exclude it.
+    fs_start = source.find("PROHIBITED_GIT_SUBCOMMANDS: frozenset")
+    fs_end = source.find("})", fs_start) + 2 if fs_start != -1 else 0
+    # Search the source outside the frozenset definition.
+    search_region = source[:fs_start] + source[fs_end:]
+    for sub in PROHIBITED_GIT_SUBCOMMANDS:
+        # A dispatched argument appears as a quoted standalone element.
+        pattern = _re.compile(rf'["\']({_re.escape(sub)})["\']')
+        matches = pattern.findall(search_region)
+        assert matches == [], (
+            f"prohibited git subcommand '{sub}' appears as a dispatched "
+            f"argument at the Git invocation boundary"
+        )
 
 
 # ===========================================================================
