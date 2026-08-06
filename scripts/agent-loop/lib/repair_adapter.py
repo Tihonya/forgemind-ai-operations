@@ -2845,7 +2845,7 @@ def run_repair(
     # Collect all failures and apply precedence
     # (IDENTITY_MISMATCH, UNDECLARED_CHANGE, DECLARED_MISSING, FORBIDDEN_CHANGE)
     failures: list[str] = []
-    
+
     # Validate identity binding
     identity_error: BaselineVerificationError | None = None
     try:
@@ -2918,14 +2918,14 @@ def run_repair(
     # 11. NON_ZERO_EXIT (already handled above)
     # 12. TIMEOUT (already handled above)
     # 13. OUTPUT_SIZE_EXCEEDED (already handled above)
-    
+
     precedence = [
         ADAPTER_FORBIDDEN_CHANGE,
         ADAPTER_UNDECLARED_CHANGE,
         ADAPTER_DECLARED_MISSING,
         ADAPTER_IDENTITY_MISMATCH,
     ]
-    
+
     for status in precedence:
         if status in failures:
             adapter_status = status
@@ -3062,4 +3062,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-
