@@ -1398,8 +1398,8 @@ def _verify_clean_tracked_baseline(
 
     Semantics:
         - Untracked files in baseline_exclusions are excluded from baseline.
-        - Untracked files NOT in baseline_exclusions are allowed at baseline time
-          (they will be caught by post-run reconciliation if actor didn't declare them).
+        - Untracked files NOT in baseline_exclusions cause
+          ADAPTER_DIRTY_BASELINE before actor invocation (DEC-R1 fail-closed).
         - Ignored files are outside integrity scope (never inspected).
         - No filesystem mutation. No repository state change.
         - Deterministic: same inputs → same baseline.
@@ -2635,12 +2635,20 @@ def _invoke_actor(
     stdout_raw = stdout_stream.tail_bytes()
     stderr_raw = stderr_stream.tail_bytes()
 
-    stdout_sanitized, stdout_redaction_count, stdout_truncated = _sanitize_output(
+    stdout_sanitized, stdout_redaction_count, stdout_san_truncated = _sanitize_output(
         stdout_raw, max_output_bytes, sensitive_paths
     )
-    stderr_sanitized, stderr_redaction_count, stderr_truncated = _sanitize_output(
+    stderr_sanitized, stderr_redaction_count, stderr_san_truncated = _sanitize_output(
         stderr_raw, max_output_bytes, sensitive_paths
     )
+
+    # Per-stream truncation: combine the sanitizer's byte-level truncation
+    # flag with the ring-buffer overflow flag for each stream independently
+    # (DEC-R4). The global output_size_exceeded flag sets the causal status,
+    # but per-stream truncation metadata must be independent — an overflow
+    # in stdout must not mark stderr as truncated and vice versa.
+    stdout_truncated = stdout_san_truncated or stdout_stream.exceeded
+    stderr_truncated = stderr_san_truncated or stderr_stream.exceeded
 
     stdout_tail = stdout_sanitized
     stderr_tail = stderr_sanitized
@@ -2748,6 +2756,12 @@ def run_repair(
     # no recursive retry and no raw path/secret leakage.
     def _build_result() -> RepairAdapterResult:
         nonlocal adapter_status
+        nonlocal repair_result_summary
+        nonlocal workspace_changes
+        nonlocal reconciliation
+        nonlocal permission_enforcement
+        nonlocal diagnostics
+        nonlocal sanitization
         publication_failed = False
         try:
             result_dict = build_adapter_result(
@@ -2772,12 +2786,36 @@ def run_repair(
                 publication_failed = True
 
             # If the caller intended success but publication failed, the
-            # truthful outcome is ADAPTER_INTERNAL_ERROR.
+            # truthful outcome is ADAPTER_INTERNAL_ERROR. Construct a fresh
+            # internal-error result that conforms exactly to the schema
+            # status-presence rules: clear all success-only conditional
+            # fields (repair_result_summary, workspace_changes,
+            # reconciliation, permission_enforcement). Do not recursively
+            # retry the artifact write. Do not leak raw exception messages
+            # or absolute paths in the error text.
             if publication_failed and adapter_status == ADAPTER_SUCCESS:
                 adapter_status = ADAPTER_INTERNAL_ERROR
-                diagnostics["adapter_error_message"] = (
-                    "failed to publish repair-adapter-result.json"
-                )
+                # Clear success-only conditional fields per schema.
+                repair_result_summary = None
+                workspace_changes = None
+                reconciliation = None
+                permission_enforcement = None
+                # Sanitized diagnostic: no raw exception or absolute path.
+                diagnostics = {
+                    "actor_exit_code": diagnostics.get("actor_exit_code"),
+                    "actor_stdout_tail": "",
+                    "actor_stderr_tail": "",
+                    "adapter_error_message": (
+                        "failed to publish repair-adapter-result.json"
+                    ),
+                }
+                # Reset sanitization metadata for the error result.
+                sanitization = {
+                    "redaction_applied": False,
+                    "redaction_count": 0,
+                    "truncation_applied": False,
+                    "truncated_fields": [],
+                }
 
             return RepairAdapterResult(
                 schema_version="1.0",
@@ -2903,17 +2941,22 @@ def run_repair(
     # Build sensitive absolute paths for output sanitization (DEC-R3).
     # These are redacted from actor stdout/stderr before diagnostics are
     # persisted so actor-derived output never leaks host filesystem paths.
+    # Only absolute actor paths are sensitive; relative actor paths (e.g.
+    # scripts/agent-loop/lib/mock_repair_actor.py) are contractually useful
+    # and must be preserved in diagnostics.
     sensitive_paths: list[str] = [
         str(repo_root),
         str(run_dir),
         str(request_path),
         str(result_path),
         str(adapter_result_path),
-        actor_executable,
     ]
+    # Include actor_executable only when absolute (DEC-R3).
+    if os.path.isabs(actor_executable):
+        sensitive_paths.append(actor_executable)
     # Include any actor argument that is an absolute path (scripts, etc.).
     for arg in actor_arguments:
-        if isinstance(arg, str) and arg.startswith("/"):
+        if isinstance(arg, str) and os.path.isabs(arg):
             sensitive_paths.append(arg)
 
     # Invoke actor
@@ -2941,12 +2984,14 @@ def run_repair(
     )
     truncated_fields: list[str] = []
     # The ring buffer retains only the tail when output exceeds max_output_bytes;
-    # the byte-level sanitizer truncation flag and the overflow flag both
-    # indicate that the persisted diagnostic is a truncated view of the actor
-    # output. Either source of truncation must be reflected truthfully.
-    if invocation.stdout_truncated or invocation.output_size_exceeded:
+    # the byte-level sanitizer truncation flag indicates that the persisted
+    # diagnostic is a truncated view of the actor output. Per-stream
+    # truncation must be reflected truthfully and independently — a global
+    # output_size_exceeded flag may set the causal status, but must not
+    # automatically mark both streams as truncated (DEC-R4).
+    if invocation.stdout_truncated:
         truncated_fields.append("actor_stdout_tail")
-    if invocation.stderr_truncated or invocation.output_size_exceeded:
+    if invocation.stderr_truncated:
         truncated_fields.append("actor_stderr_tail")
     truncated_fields.sort()
     sanitization = {
