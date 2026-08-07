@@ -937,7 +937,7 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 | OW-60 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
 | OW-61 | verify-context file ABSENT → backward-compatible defaults: verify_type=initial, attempt=0 | Backward compatible (existing harness scenarios) |
 | OW-62 | verify-context PRESENT but malformed JSON → INFRASTRUCTURE_ERROR | Fail closed, no success path |
-| OW-63 | repair_budget=0 + review recommends repair → VERIFICATION_FAILED, exit 1, no actor/reverify invoked | final_status=VERIFICATION_FAILED, exit 1 |
+| OW-63 | repair_budget=0 + review recommends repair → repair adapter invocation count == 0, repair actor invocation count == 0, reverify invocation count == 0, final_status=VERIFICATION_FAILED, exit 1 | All repair subprocesses skipped |
 | OW-64 | Bare reverify PASS without valid adapter evidence → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
 | OW-65 | Reconciliation evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
 | OW-66 | Permission enforcement evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
