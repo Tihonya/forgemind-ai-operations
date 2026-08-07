@@ -1,6 +1,6 @@
 # WP-AL-1C6 — Minimal Orchestration Wiring
 
-**Status:** APPROVED — READY FOR PLANNING COMMIT
+**Status:** REMEDIATED — AWAITING PO APPROVAL (post-review)
 
 **Branch (proposed):** `feature/agent-loop-orchestration-wiring`
 **Base:** `origin/main` @ `764ca3e5b1b38e7a97370c478113e28588d152f8`
@@ -11,7 +11,7 @@
 
 ## 1. Status
 
-**Status:** APPROVED — READY FOR PLANNING COMMIT
+**Status:** REMEDIATED — AWAITING PO APPROVAL (post-review)
 
 **Title:** WP-AL-1C6 — Minimal Orchestration Wiring
 
@@ -29,9 +29,11 @@
 
 **Precedes:** production review/repair hardening (later WP)
 
-**Product Owner Approval:** APPROVED on 2026-08-07
+**Product Owner Approval:** APPROVED on 2026-08-07 (initial); REMEDIATED per independent review
 
 **Supersedes:** The previous `docs/next_steps.md` statement that "review invocation/configuration bridge" would remain a separate future WP. For the minimum wiring required by WP-AL-1C5 §29, WP-AL-1C6 includes the minimum review invocation bridge. No general production reviewer configuration is introduced.
+
+**Remediation:** This document was remediated to address independent review findings (REQUEST CHANGES). Three new architectural decisions (DEC-C6-02, DEC-C6-03, DEC-C6-04) were added. Five non-blocking findings (N1–N5) resolved.
 
 ---
 
@@ -40,7 +42,7 @@
 Wire the existing review adapter and repair adapter into `run-story.sh` to enable the minimal supervised end-to-end cycle:
 
 ```
-implement → verify → review → optional one repair → reverify → human handoff
+implement (committed candidate) → verify → review → optional one repair → reverify → human handoff
 ```
 
 The WP delivers the orchestration glue that connects the six completed adapter
@@ -51,6 +53,7 @@ This WP does NOT deliver:
 - Real LLM/provider integration
 - Production hardening
 - Automatic commit/push/merge
+- Implementation-agent checkpoint mechanism
 
 ---
 
@@ -103,53 +106,73 @@ The superseded text remains in `docs/next_steps.md` for historical reference but
 ```
 START
   │
-  ├─ implement (dry-run placeholder; workspace prepared by harness or manual)
+  ├─ pre-flight: verify committed candidate + clean tracked baseline
+  │   ├─ dirty baseline → report (DIRTY_BASELINE) → END_HUMAN
+  │   └─ clean → continue
+  │
+  ├─ implement (candidate already committed externally or by harness fixture)
   │
   ├─ verify [INITIAL]
-  │   └─ failure-context collected (always, PASS or FAIL)
+  │   ├─ snapshot: verify-result.initial.json, failure-context.initial.json
+  │   └─ exit code captured
+  │
+  ├─ verify exit 2 (ERROR) → report (INFRASTRUCTURE_ERROR) → END_FAIL
   │
   ├─ [verify result?]
-  │   ├─ PASS ──► review (triggered_by=initial_verify_pass, repair_iteration=0)
+  │   ├─ PASS ──► review (triggered_by=initial_verify_pass)
   │   │            │
   │   │            ├─ [review PASS?]
-  │   │            │   ├─ YES ──► report (ACCEPTED) ──► END_SUCCESS
-  │   │            │   │
-  │   │            │   └─ NO ──► [recommended_action == "repair"?]
-  │   │            │               ├─ YES ──► repair (attempt=1)
-  │   │            │               │            │
-  │   │            │               │            ├─ [adapter_status == ADAPTER_SUCCESS
-  │   │            │               │            │   AND status == REPAIRED]
-  │   │            │               │            │   ├─ YES ──► verify [REVERIFY]
-  │   │            │               │            │   │            │
-  │   │            │               │            │   │            ├─ PASS ──► report (VERIFIED_AFTER_REPAIR) ──► END_SUCCESS
-  │   │            │               │            │   │            │
-  │   │            │               │            │   │            └─ FAIL ──► report (REPAIR_FAILED_REVERIFY) ──► END_FAIL
-  │   │            │               │            │   │
-  │   │            │               │            │   └─ NO ──► report (REPAIR_ADAPTER_FAILURE) ──► END_FAIL
-  │   │            │               │            │
-  │   │            │               │            └─ (other) ──► report (REPAIR_FAILED) ──► END_FAIL
-  │   │            │               │
-  │   │            │               └─ NO ──► [recommended_action == "human_review"?]
-  │   │            │                           ├─ YES ──► report (HUMAN_REVIEW_REQUIRED) ──► END_HUMAN
-  │   │            │                           └─ NO  ──► report (REVIEW_REJECTED) ──► END_FAIL
+  │   │            │   └─ YES ──► report (ACCEPTED) ──► END_SUCCESS
   │   │            │
-  │   │            └─ [review adapter ERROR / INVALID?]
-  │   │                ├─ ERROR + human_review ──► report (HUMAN_REVIEW_REQUIRED) ──► END_HUMAN
-  │   │                ├─ ERROR (other) ──► report (INFRASTRUCTURE_ERROR) ──► END_FAIL
-  │   │                └─ INVALID ──► report (INFRASTRUCTURE_ERROR) ──► END_FAIL
+  │   │            ├─ [review FAIL?]
+  │   │            │   ├─ action=repair ──► repair (attempt=1)
+  │   │            │   │                    (see repair path below)
+  │   │            │   ├─ action=human_review ──► report (HUMAN_REVIEW_REQUIRED) → END_HUMAN
+  │   │            │   └─ action=none ──► report (REVIEW_REJECTED) → END_FAIL
+  │   │            │
+  │   │            └─ [review ERROR / INVALID?]
+  │   │                ├─ ERROR + human_review ──► report (HUMAN_REVIEW_REQUIRED) → END_HUMAN
+  │   │                ├─ ERROR (other) ──► report (INFRASTRUCTURE_ERROR) → END_FAIL
+  │   │                └─ INVALID ──► report (INFRASTRUCTURE_ERROR) → END_FAIL
   │   │
-  │   └─ FAIL ──► review (triggered_by=initial_verify_fail, repair_iteration=0)
+  │   └─ FAIL ──► review (triggered_by=initial_verify_fail)
   │                │
-  │                ├─ [review recommends "repair"?]
-  │                │   ├─ YES ──► repair (attempt=1)
-  │                │   │            (same reverify path as above)
-  │                │   │
-  │                │   └─ NO ──► report (VERIFICATION_FAILED) ──► END_FAIL
+  │                ├─ [review PASS?]
+  │                │   └─ YES ──► report (VERIFICATION_FAILED) → END_FAIL
+  │                │       (reviewer did not recommend repair; verification failure stands)
   │                │
-  │                └─ [review adapter ERROR / INVALID?]
-  │                    ├─ ERROR + human_review ──► report (HUMAN_REVIEW_REQUIRED) ──► END_HUMAN
-  │                    ├─ ERROR (other) ──► report (INFRASTRUCTURE_ERROR) ──► END_FAIL
-  │                    └─ INVALID ──► report (INFRASTRUCTURE_ERROR) ──► END_FAIL
+  │                ├─ [review FAIL?]
+  │                │   ├─ action=repair ──► [clean baseline confirmed?]
+  │                │   │                     ├─ YES ──► repair (attempt=1)
+  │                │   │                     └─ NO ──► report (DIRTY_BASELINE) → END_HUMAN
+  │                │   ├─ action=human_review ──► report (HUMAN_REVIEW_REQUIRED) → END_HUMAN
+  │                │   └─ action=none ──► report (VERIFICATION_FAILED) → END_FAIL
+  │                │
+  │                └─ [review ERROR / INVALID?]
+  │                    ├─ ERROR + human_review ──► report (HUMAN_REVIEW_REQUIRED) → END_HUMAN
+  │                    ├─ ERROR (other) ──► report (INFRASTRUCTURE_ERROR) → END_FAIL
+  │                    └─ INVALID ──► report (INFRASTRUCTURE_ERROR) → END_FAIL
+  │
+  ├─ REPAIR PATH (from review FAIL + action=repair):
+  │   ├─ repair adapter invoked (attempt=1, max_attempts=1)
+  │   ├─ [adapter_status == ADAPTER_SUCCESS AND status == REPAIRED?]
+  │   │   ├─ YES ──► snapshot immutable initial artifacts remain valid
+  │   │   │          verify [REVERIFY]
+  │   │   │            ├─ exit 0 (PASS) → report (VERIFIED_AFTER_REPAIR) → END_SUCCESS
+  │   │   │            ├─ exit 1 (FAIL) → report (REPAIR_FAILED_REVERIFY) → END_FAIL
+  │   │   │            └─ exit 2 (ERROR) → report (INFRASTRUCTURE_ERROR) → END_FAIL
+  │   │   │
+  │   │   └─ NO ──► report (REPAIR_ADAPTER_FAILURE) → END_FAIL
+  │   │
+  │   └─ No further repair permitted after attempt=1
+  │
+  └─ VERIFIED_AFTER_REPAIR requires ALL of:
+      - valid repair adapter result (ADAPTER_SUCCESS + REPAIRED)
+      - identity bindings match current run/story/attempt/source revision
+      - reconciliation exact-match evidence valid
+      - permission enforcement evidence valid
+      - exactly one reverify actually executed
+      - reverify result is valid and PASS
 ```
 
 ### 5.2 triggered_by value mapping
@@ -157,13 +180,12 @@ START
 The review-request schema defines exactly three values for `triggered_by`:
 - `"initial_verify_pass"` — review after verification PASS on iteration 0
 - `"initial_verify_fail"` — review after verification FAIL on iteration 0
-- `"post_repair_verify_pass"` — review after re-verification PASS following repair
+- `"post_repair_verify_pass"` — review after re-verification PASS following repair (reserved for future multi-iteration WPs)
 
 The review-request builder uses:
 
 - Verify PASS path: `triggered_by = "initial_verify_pass"`, `repair_iteration = 0`
 - Verify FAIL path: `triggered_by = "initial_verify_fail"`, `repair_iteration = 0`
-- Post-repair reverify PASS path: `triggered_by = "post_repair_verify_pass"`, `repair_iteration = 1`
 
 Note: In WP-AL-1C6, the post-repair path does not invoke review (reverify outcome goes directly to report). The `"post_repair_verify_pass"` value is reserved for future multi-iteration repair WPs.
 
@@ -207,47 +229,131 @@ Existing verify-result schema is extended with one optional field:
 This does NOT break existing scenarios because the field is optional and absent
 in existing harness tests.
 
+### 5.5 DEC-C6-02: Verification remains authoritative
+
+**Rule:** A reviewer must NEVER override a failed verification.
+
+Final outcome depends on BOTH initial verification status AND review status:
+
+| Initial Verify | Review | Outcome |
+|----------------|--------|---------|
+| PASS | PASS | ACCEPTED (exit 0) |
+| PASS | FAIL + repair | repair path |
+| PASS | FAIL + human_review | HUMAN_REVIEW_REQUIRED |
+| PASS | FAIL + none | REVIEW_REJECTED |
+| PASS | ERROR/INVALID | fail-closed per §5.1 |
+| FAIL | PASS | VERIFICATION_FAILED (exit 1) — review PASS does not override verify FAIL |
+| FAIL | FAIL + repair | repair path |
+| FAIL | FAIL + human_review | HUMAN_REVIEW_REQUIRED |
+| FAIL | FAIL + none | VERIFICATION_FAILED |
+| FAIL | ERROR/INVALID | fail-closed per §5.1 |
+
+**Explicit regression:** initial verify FAIL + review PASS MUST NOT produce ACCEPTED or VERIFIED_AFTER_REPAIR.
+
+### 5.6 DEC-C6-03: Immutable verification evidence
+
+**Rule:** Initial verify/review/repair evidence must remain byte-stable after reverify.
+
+**Problem:** verify-story.sh writes to `$RUN_DIR/reports/verify-result.json` and `$RUN_DIR/reports/failure-context.json`. If reverify overwrites these, downstream request artifacts (review-request, repair-request) that contain SHA-256 hashes and path references to the original files become invalid.
+
+**Solution:** Immutable per-phase snapshots.
+
+After initial verification completes (regardless of PASS/FAIL), the orchestrator MUST:
+1. Copy `verify-result.json` → `verify-result.initial.json`
+2. If `failure-context.json` exists, copy → `failure-context.initial.json`
+3. Compute SHA-256 of each immutable snapshot
+4. All downstream review-request and repair-request references target the immutable paths
+
+After reverify completes:
+1. Copy `verify-result.json` → `verify-result.reverify.json`
+2. If failure-context was collected during reverify, copy → `failure-context.reverify.json`
+
+The canonical working filenames (`verify-result.json`, `failure-context.json`) MAY continue to be used during verify-story.sh execution. run-story.sh owns snapshot publication.
+
+**Failure semantics:** Inability to preserve required immutable evidence (e.g., snapshot copy failure, hash mismatch) → `INFRASTRUCTURE_ERROR`, no repair/reverify success path.
+
+### 5.7 DEC-C6-04: Clean committed candidate precondition
+
+**Rule:** WP-AL-1C5 repair adapter requires a clean tracked baseline. WP-AL-1C6 MUST NOT solve this by automatically committing implementation changes.
+
+**Precondition for repair-capable flow:** The candidate implementation must already exist as a committed candidate revision with a clean tracked worktree before initial verification begins.
+
+**Source of committed candidate:** External/supervised implementer, harness fixture, or manual commit. This is NOT automatic runtime commit behavior.
+
+**Orchestrator pre-flight check:** Before entering a repair-capable flow (i.e., before invoking verify-story.sh when repair might be needed), the orchestrator verifies:
+1. `git status --porcelain` shows no untracked or modified tracked files
+2. `git diff --cached --name-status` is empty (nothing staged)
+3. HEAD points to a valid commit
+
+**If dirty baseline detected before verify:**
+- If repair_budget > 0 (repair might be needed): report `DIRTY_BASELINE` → human handoff, repair actor NOT invoked
+- If repair_budget == 0 (no repair possible): proceed with verify (repair not needed)
+
+**Harness repair scenarios** must:
+1. Create a disposable repository
+2. Create the candidate implementation
+3. Commit it
+4. Verify tracked worktree is clean
+5. Run initial verification
+6. Enter review/repair/reverify
+7. Prove actor invocation was not rejected merely because the candidate was left as uncommitted dirty baseline
+
 ---
 
 ## 6. Transition Table
 
 | Current State | Event | Next State | Action |
 |---------------|-------|------------|--------|
-| START | begin | implement | placeholder / dry-run |
-| implement | done | verify_initial | invoke verify-story.sh |
-| verify_initial | exit 0 (PASS) | review | build review-request, invoke review_adapter.py |
-| verify_initial | exit 1 (FAIL) | review_fail_path | build review-request, invoke review_adapter.py |
+| START | begin | preflight | check committed candidate + clean baseline |
+| preflight | dirty baseline | report_dirty | report DIRTY_BASELINE |
+| preflight | clean baseline | verify_initial | invoke verify-story.sh |
+| verify_initial | exit 0 (PASS) | snapshot_initial | preserve verify-result.initial.json, failure-context.initial.json |
+| verify_initial | exit 1 (FAIL) | snapshot_initial | preserve verify-result.initial.json, failure-context.initial.json |
 | verify_initial | exit 2 (ERROR) | infrastructure_error | report INFRASTRUCTURE_ERROR |
-| review | status=PASS | report_accepted | report ACCEPTED |
-| review | status=FAIL, action=repair | repair | build repair-request, invoke repair_adapter.py |
-| review | status=FAIL, action=human_review | report_human | report HUMAN_REVIEW_REQUIRED |
-| review | status=FAIL, action=none | report_rejected | report REVIEW_REJECTED |
-| review | status=ERROR, action=human_review | report_human | report HUMAN_REVIEW_REQUIRED |
-| review | status=ERROR, other | report_infra | report INFRASTRUCTURE_ERROR |
-| review | adapter ERROR / INVALID | report_infra | report INFRASTRUCTURE_ERROR |
+| snapshot_initial | snapshot OK | review | build review-request referencing immutable artifacts |
+| snapshot_initial | snapshot FAIL | infrastructure_error | report INFRASTRUCTURE_ERROR |
+| review (initial PASS) | status=PASS | report_accepted | report ACCEPTED |
+| review (initial PASS) | status=FAIL, action=repair | repair | build repair-request, invoke repair_adapter.py |
+| review (initial PASS) | status=FAIL, action=human_review | report_human | report HUMAN_REVIEW_REQUIRED |
+| review (initial PASS) | status=FAIL, action=none | report_rejected | report REVIEW_REJECTED |
+| review (initial FAIL) | status=PASS | report_verification_failed | report VERIFICATION_FAILED (verify FAIL stands) |
+| review (initial FAIL) | status=FAIL, action=repair | pre_repair_check | verify clean baseline for repair |
+| review (initial FAIL) | status=FAIL, action=human_review | report_human | report HUMAN_REVIEW_REQUIRED |
+| review (initial FAIL) | status=FAIL, action=none | report_verification_failed | report VERIFICATION_FAILED |
+| review | adapter ERROR + human_review | report_human | report HUMAN_REVIEW_REQUIRED |
+| review | adapter ERROR (other) | report_infra | report INFRASTRUCTURE_ERROR |
+| review | adapter INVALID | report_infra | report INFRASTRUCTURE_ERROR |
+| pre_repair_check | clean baseline | repair | invoke repair_adapter.py |
+| pre_repair_check | dirty baseline | report_dirty | report DIRTY_BASELINE |
 | repair | adapter_status=ADAPTER_SUCCESS, status=REPAIRED | reverify | invoke verify-story.sh |
 | repair | adapter_status=ADAPTER_SUCCESS, status=NO_CHANGE | report_no_change | report REPAIR_NO_CHANGE |
 | repair | adapter_status=ADAPTER_SUCCESS, status=ERROR | report_infra | report INFRASTRUCTURE_ERROR |
 | repair | adapter_status=non-success | report_adapter_fail | report REPAIR_ADAPTER_FAILURE |
-| reverify | exit 0 (PASS) | report_verified | report VERIFIED_AFTER_REPAIR |
+| reverify | exit 0 (PASS) | validate_evidence | check all adapter-success evidence valid |
 | reverify | exit 1 (FAIL) | report_repair_fail | report REPAIR_FAILED_REVERIFY |
 | reverify | exit 2 (ERROR) | report_infra | report INFRASTRUCTURE_ERROR |
+| validate_evidence | all evidence valid + reverify PASS | report_verified | report VERIFIED_AFTER_REPAIR |
+| validate_evidence | evidence invalid | report_infra | report INFRASTRUCTURE_ERROR |
 
 ---
 
 ## 7. Artifact Ownership
 
-| Artifact | Written by | Path |
-|----------|-----------|------|
-| verify-result.json | verify-story.sh | `$RUN_DIR/reports/verify-result.json` |
-| verify-context.json | run-story.sh | `$RUN_DIR/reports/verify-context.json` |
-| failure-context.json | verify-story.sh (via failure_context.py) | `$RUN_DIR/reports/failure-context.json` |
-| review-request.json | review_adapter.py | `$RUN_DIR/review/review-request.json` |
-| review-result.json | review_adapter.py | `$RUN_DIR/reports/review-result.json` |
-| repair-request.json | repair_adapter.py | `$RUN_DIR/repair/repair-request.json` |
-| repair-result.json | repair actor | `$RUN_DIR/repair/repair-result.json` |
-| repair-adapter-result.json | repair_adapter.py | `$RUN_DIR/repair/repair-adapter-result.json` |
-| final-report.json | report-story.sh | `$RUN_DIR/reports/final-report.json` |
+| Artifact | Written by | Path | Immutable? |
+|----------|-----------|------|------------|
+| verify-context.json | run-story.sh | `$RUN_DIR/reports/verify-context.json` | No (overwritten per verify) |
+| verify-result.json | verify-story.sh | `$RUN_DIR/reports/verify-result.json` | Working copy |
+| verify-result.initial.json | run-story.sh (snapshot) | `$RUN_DIR/reports/verify-result.initial.json` | YES |
+| verify-result.reverify.json | run-story.sh (snapshot) | `$RUN_DIR/reports/verify-result.reverify.json` | YES |
+| failure-context.json | verify-story.sh | `$RUN_DIR/reports/failure-context.json` | Working copy |
+| failure-context.initial.json | run-story.sh (snapshot) | `$RUN_DIR/reports/failure-context.initial.json` | YES |
+| failure-context.reverify.json | run-story.sh (snapshot) | `$RUN_DIR/reports/failure-context.reverify.json` | YES |
+| review-request.json | review_adapter.py | `$RUN_DIR/review/review-request.json` | No |
+| review-result.json | review_adapter.py | `$RUN_DIR/reports/review-result.json` | No |
+| repair-request.json | repair_adapter.py | `$RUN_DIR/repair/repair-request.json` | No |
+| repair-result.json | repair actor | `$RUN_DIR/repair/repair-result.json` | No |
+| repair-adapter-result.json | repair_adapter.py | `$RUN_DIR/repair/repair-adapter-result.json` | No |
+| final-report.json | report-story.sh | `$RUN_DIR/reports/final-report.json` | No |
 
 ---
 
@@ -272,13 +378,25 @@ If `verify-context.json` does not exist (backward compatibility for existing
 harness scenarios), verify-story.sh defaults to `verify_type = "initial"` and
 `attempt = 0`.
 
-### 8.3 report-story.sh distinction
+### 8.3 Snapshot publication (DEC-C6-03)
+
+After verify-story.sh completes, run-story.sh:
+1. Copies `verify-result.json` → `verify-result.{initial|reverify}.json`
+2. Copies `failure-context.json` → `failure-context.{initial|reverify}.json` (if present)
+3. Computes SHA-256 of each immutable snapshot
+4. Verifies snapshot integrity
+
+If snapshot publication fails → INFRASTRUCTURE_ERROR, no further processing.
+
+### 8.4 report-story.sh distinction
 
 `report-story.sh` reads `verify_context` from verify-result.json and uses it
 to determine the correct `final_status`:
 
 - `verify_type = "initial"`, PASS → use review classification for final_status
-- `verify_type = "reverify"`, PASS → `VERIFIED_AFTER_REPAIR`
+- `verify_type = "initial"`, FAIL, review PASS → `VERIFICATION_FAILED` (DEC-C6-02)
+- `verify_type = "reverify"`, PASS, all adapter evidence valid → `VERIFIED_AFTER_REPAIR`
+- `verify_type = "reverify"`, PASS, evidence invalid → `INFRASTRUCTURE_ERROR`
 - `verify_type = "reverify"`, FAIL → `REPAIR_FAILED_REVERIFY`
 - `verify_type = "initial"`, FAIL, no repair → `VERIFICATION_FAILED`
 - `verify_type = "initial"`, FAIL, repair attempted, reverify not done → depends on repair outcome
@@ -293,11 +411,9 @@ Review is invoked in two paths:
 1. **After initial verify PASS** — standard review
 2. **After initial verify FAIL** — review to determine if repair is possible
 
-In both cases, failure-context is already present (verify-story.sh collects it
-on both PASS and FAIL; on PASS the failure-context may have `overall_status = "PASS"`
-or may not exist — see §9.3).
+In both cases, the immutable failure-context snapshot must exist and be valid.
 
-### 9.2 Failure-context requirement
+### 9.2 Failure-context requirement (N1)
 
 The review-request schema REQUIRES `failure_context_ref` (path, schema_version,
 sha256).
@@ -307,7 +423,17 @@ sha256).
 - `triggered_by = "initial_verify_fail"` requires `overall_verification_status = "FAIL"`
 - `triggered_by = "post_repair_verify_pass"` requires `overall_verification_status = "PASS"`
 
-This enables the supervised self-development cycle where verification failures are reviewed before repair, while maintaining backward compatibility with existing PASS-review semantics.
+**Failure-context existence and validity:**
+- For BOTH initial_verify_pass and initial_verify_fail, a valid failure-context artifact MUST exist.
+- verify-story.sh collects failure-context on both PASS and FAIL exits.
+- On PASS: failure-context has `overall_verification_status = "PASS"` (or equivalent pass-state).
+- On FAIL: failure-context has `overall_verification_status = "FAIL"`.
+- The orchestrator creates the immutable snapshot `failure-context.initial.json` after verify completes.
+- Review adapter references the immutable snapshot path.
+
+**If failure-context is missing, malformed, unreadable, identity-mismatched, or hash-invalid:**
+→ `INFRASTRUCTURE_ERROR`
+→ Reviewer must NOT be invoked with an invalid/missing required context.
 
 **Contract extension scope:** The review contract (`review_contract.py`) validator is extended to enforce these conditional bindings. No schema changes are required — the conditional logic is added to the referential validation layer only.
 
@@ -318,7 +444,7 @@ This enables the supervised self-development cycle where verification failures a
   --repo-root "$REPO_ROOT" \
   --run-dir "$RUN_DIR" \
   --manifest "$STORY_MANIFEST" \
-  --failure-context "$RUN_DIR/reports/failure-context.json" \
+  --failure-context "$RUN_DIR/reports/failure-context.initial.json" \
   --run-id "$RUN_ID" \
   --story-id "$STORY_ID" \
   --review-iteration 1 \
@@ -339,6 +465,8 @@ Where:
 - `REVIEW_TIMEOUT`: seconds (default 30, max 600)
 
 The adapter appends `--request <path> --output <path>` to the reviewer command.
+
+Note: `--failure-context` references the immutable snapshot `failure-context.initial.json`, not the working copy.
 
 ### 9.4 Reviewer executable configuration
 
@@ -363,10 +491,21 @@ After review adapter invocation:
 3. If exit code == 0 → read `$RUN_DIR/reports/review-result.json`
 4. Classify using `review_result_reporting.py` (existing WP-AL-1C3 logic)
 5. Based on classification:
+
+**After initial verify PASS:**
    - PASS → ACCEPTED (proceed to report)
    - FAIL + recommended_action=repair → proceed to repair
    - FAIL + recommended_action=human_review → HUMAN_REVIEW_REQUIRED
    - FAIL + recommended_action=none → REVIEW_REJECTED
+   - ERROR + recommended_action=human_review → HUMAN_REVIEW_REQUIRED
+   - ERROR (other) → INFRASTRUCTURE_ERROR
+   - INVALID → INFRASTRUCTURE_ERROR
+
+**After initial verify FAIL (DEC-C6-02):**
+   - PASS → VERIFICATION_FAILED (reviewer did not recommend repair; verify FAIL stands)
+   - FAIL + recommended_action=repair → proceed to pre-repair baseline check
+   - FAIL + recommended_action=human_review → HUMAN_REVIEW_REQUIRED
+   - FAIL + recommended_action=none → VERIFICATION_FAILED
    - ERROR + recommended_action=human_review → HUMAN_REVIEW_REQUIRED
    - ERROR (other) → INFRASTRUCTURE_ERROR
    - INVALID → INFRASTRUCTURE_ERROR
@@ -379,19 +518,27 @@ After review adapter invocation:
 
 Repair is invoked when:
 - Review status = FAIL AND recommended_action = "repair"
-- OR (future) verify FAIL AND repair_budget > 0
 
 For WP-AL-1C6, the only repair trigger is: review FAIL + action=repair.
 
-### 10.2 Repair adapter CLI invocation
+### 10.2 Pre-repair baseline check (DEC-C6-04)
+
+Before invoking repair_adapter.py, the orchestrator MUST verify:
+1. `git status --porcelain` shows clean tracked worktree
+2. `git diff --cached --name-status` is empty
+3. HEAD points to a valid commit
+
+If any check fails → `DIRTY_BASELINE` → human handoff, repair NOT invoked.
+
+### 10.3 Repair adapter CLI invocation
 
 ```bash
 "$PYTHON_BIN" "$SCRIPT_DIR/lib/repair_adapter.py" \
   --repo-root "$REPO_ROOT" \
   --run-dir "$RUN_DIR" \
   --manifest "$STORY_MANIFEST" \
-  --failure-context "$RUN_DIR/reports/failure-context.json" \
-  --verify-result "$RUN_DIR/reports/verify-result.json" \
+  --failure-context "$RUN_DIR/reports/failure-context.initial.json" \
+  --verify-result "$RUN_DIR/reports/verify-result.initial.json" \
   --review-result "$RUN_DIR/reports/review-result.json" \
   --run-id "$RUN_ID" \
   --story-id "$STORY_ID" \
@@ -405,12 +552,14 @@ For WP-AL-1C6, the only repair trigger is: review FAIL + action=repair.
   --max-output-bytes 4096
 ```
 
+Note: `--failure-context` and `--verify-result` reference immutable snapshots, not working copies.
+
 Where:
 - `REPAIR_ACTOR_BIN`: repair actor executable (e.g., `"$PYTHON_BIN"` for mock_repair_actor.py)
 - `REPAIR_ACTOR_MODE`: e.g., `"REPAIRED"` or `"NO_CHANGE"` or `"ERROR"`
 - `REPAIR_TIMEOUT`: seconds (default 120, max 600)
 
-### 10.3 Repair actor executable configuration
+### 10.4 Repair actor executable configuration
 
 For WP-AL-1C6, the repair actor executable is supplied through environment variables:
 
@@ -420,7 +569,7 @@ For WP-AL-1C6, the repair actor executable is supplied through environment varia
 | `REPAIR_ACTOR_MODE` | Mock actor mode (REPAIRED/NO_CHANGE/ERROR) | `"REPAIRED"` |
 | `REPAIR_TIMEOUT` | Repair timeout in seconds | `120` |
 
-### 10.4 Repair result interpretation
+### 10.5 Repair result interpretation
 
 After repair adapter invocation:
 1. Read `$RUN_DIR/repair/repair-adapter-result.json`
@@ -436,7 +585,7 @@ After repair adapter invocation:
    (these are already enforced by the adapter; if adapter_status=ADAPTER_SUCCESS,
    they are guaranteed)
 
-### 10.5 Which adapter statuses allow reverify
+### 10.6 Which adapter statuses allow reverify
 
 Only `ADAPTER_SUCCESS` with `repair_result_summary.status == "REPAIRED"`
 allows reverify. All other adapter statuses result in fail-closed reporting.
@@ -449,16 +598,19 @@ Human handoff occurs when the orchestrator cannot proceed autonomously:
 
 | Condition | final_status | Meaning |
 |-----------|-------------|---------|
+| Initial verify FAIL + review PASS | `VERIFICATION_FAILED` | Verification failure stands; reviewer did not recommend repair |
 | Review ERROR + action=human_review | `HUMAN_REVIEW_REQUIRED` | Reviewer infrastructure failed, human must decide |
 | Review FAIL + action=human_review | `HUMAN_REVIEW_REQUIRED` | Reviewer rejected but asked for human |
 | Review adapter ERROR (infrastructure) | `INFRASTRUCTURE_ERROR` | Review infrastructure failed |
 | Repair adapter failure | `REPAIR_ADAPTER_FAILURE` | Repair infrastructure failed |
 | Repair NO_CHANGE | `REPAIR_NO_CHANGE` | Actor chose not to repair |
 | Repair REPAIRED + reverify FAIL | `REPAIR_FAILED_REVERIFY` | Repair did not fix the issue |
+| Dirty baseline before repair | `DIRTY_BASELINE` | Tracked worktree not clean; repair adapter cannot proceed |
+| Snapshot publication failure | `INFRASTRUCTURE_ERROR` | Immutable evidence could not be preserved |
 
 In all handoff cases:
 - No automatic retry
-- No automatic commit/push/merge
+- No Git mutating commands (commit/push/merge/rebase/reset/clean/stash/branch-delete/force-ops)
 - Final report includes all artifacts for human inspection
 - Exit code is non-zero (failure)
 
@@ -473,8 +625,8 @@ In all handoff cases:
 | 2 | Bootstrap guard failure or critical infrastructure error |
 
 The orchestrator returns exit 0 only for the two success states:
-- Review PASS → ACCEPTED
-- Repair REPAIRED + reverify PASS → VERIFIED_AFTER_REPAIR
+- Initial verify PASS + review PASS → ACCEPTED
+- Repair REPAIRED + valid evidence + reverify PASS → VERIFIED_AFTER_REPAIR
 
 All other states return exit 1.
 
@@ -489,24 +641,28 @@ The passport tracks phase progression. WP-AL-1C6 introduces new phases:
 | `allocate` | `implementer` | `control-plane` | Bootstrap |
 | `implement` | `implementer` | `source` | Before verify (existing) |
 | `verify` | `verifier` | `validation` | Initial verify (existing) |
-| `review` | `reviewer` | `validation` | After verify PASS (new) |
+| `review` | `reviewer` | `validation` | After verify PASS or FAIL (new) |
 | `repair` | `repair` | `source` | After review FAIL+repair (new) |
 | `reverify` | `verifier` | `validation` | After repair REPAIRED (new) |
 | `report` | `reporter` | `control-plane` | Final reporting (existing) |
 
-### 13.1 Guard policy extensions
+### 13.1 Guard policy extensions (N5)
 
 The existing guard policy (`lib/guard.sh`) must be extended to accept the new
-phases:
-- `review` phase: role=`reviewer`, workspace=`validation`
-- `repair` phase: role=`repair`, workspace=`source`
-- `reverify` phase: role=`verifier`, workspace=`validation`
+phases AND reject incorrect role/workspace_type combinations:
+
+- `review` phase: role=`reviewer`, workspace=`validation` ONLY
+- `repair` phase: role=`repair`, workspace=`source` ONLY
+- `reverify` phase: role=`verifier`, workspace=`validation` ONLY
+
+Wrong role for a phase → guard rejects → `INFRASTRUCTURE_ERROR`.
+Wrong workspace_type for a phase → guard rejects → `INFRASTRUCTURE_ERROR`.
 
 These are already defined in `.agent-loop/project.json`:
 - `roles.allowed`: `["manager", "implementer", "verifier", "reviewer", "repair", "reporter"]`
 - `workspaces.allowed_types`: `["source", "validation", "control-plane"]`
 
-The guard policy must accept these phase/role/workspace combinations.
+The guard policy must accept ONLY the specified phase/role/workspace combinations and reject all others.
 
 ---
 
@@ -524,10 +680,10 @@ The guard policy must accept these phase/role/workspace combinations.
 
 | Path | Change |
 |------|--------|
-| `scripts/agent-loop/run-story.sh` | Wire review/repair/reverify invocation |
-| `scripts/agent-loop/report-story.sh` | Extend final report with repair adapter result, reverify result, verify_context |
+| `scripts/agent-loop/run-story.sh` | Wire review/repair/reverify invocation; snapshot publication; pre-flight checks |
+| `scripts/agent-loop/report-story.sh` | Extend final report with repair adapter result, reverify result, verify_context, immutable artifact references |
 | `scripts/agent-loop/verify-story.sh` | Read verify-context.json, include verify_context in verify-result.json |
-| `scripts/agent-loop/lib/guard.sh` | Accept new phases (review, repair, reverify) |
+| `scripts/agent-loop/lib/guard.sh` | Accept new phases with strict role/workspace enforcement |
 | `scripts/agent-loop/tests/run_harness_scenarios.sh` | Add scenarios AB onward |
 | `scripts/agent-loop/README.md` | Document WP-AL-1C6 completion |
 | `docs/next_steps.md` | Record WP-AL-1C6 complete, supersede review-bridge wording |
@@ -552,7 +708,7 @@ The following files and concerns are explicitly OUT OF SCOPE:
 - No rollback
 - No sandbox/container isolation
 - No concurrency/parallel workers
-- No automatic commit
+- No automatic commit (runtime)
 - No automatic push
 - No automatic PR
 - No automatic merge
@@ -566,6 +722,7 @@ The following files and concerns are explicitly OUT OF SCOPE:
 - No changes to review_contract.py or repair_contract.py **schema definitions** (only the referential validation layer in `review_contract.py` is extended with conditional binding rules)
 - No changes to failure_context.py
 - No changes to mock_reviewer.py or mock_repair_actor.py
+- No Git mutating commands invoked by orchestration runtime (see §16.2 for permitted read-only operations)
 
 ---
 
@@ -576,67 +733,105 @@ The following files and concerns are explicitly OUT OF SCOPE:
 | AC | Criterion |
 |----|-----------|
 | AC-01 | After initial verify PASS, reviewer adapter is invoked with correct parameters |
-| AC-02 | After review PASS, final_status = ACCEPTED, exit 0 |
+| AC-02 | After initial verify PASS + review PASS, final_status = ACCEPTED, exit 0 |
 | AC-03 | After review FAIL + action=repair, repair adapter is invoked |
-| AC-04 | After repair REPAIRED + adapter ADAPTER_SUCCESS, reverify is invoked |
-| AC-05 | After reverify PASS, final_status = VERIFIED_AFTER_REPAIR, exit 0 |
+| AC-04 | After repair REPAIRED + adapter ADAPTER_SUCCESS + all evidence valid, exactly one reverify is invoked |
+| AC-05 | After valid reverify PASS with all adapter evidence valid, final_status = VERIFIED_AFTER_REPAIR, exit 0 |
 | AC-06 | After reverify FAIL, final_status = REPAIR_FAILED_REVERIFY, exit 1 |
 | AC-07 | After repair adapter failure (non-ADAPTER_SUCCESS), fail closed |
 | AC-08 | After review adapter ERROR + action=human_review, final_status = HUMAN_REVIEW_REQUIRED |
 | AC-09 | After review adapter ERROR (other), final_status = INFRASTRUCTURE_ERROR |
 | AC-10 | Maximum one repair attempt enforced (second repair never invoked) |
-| AC-11 | No automatic commit/push/merge in any path |
+| AC-11 | No Git mutating/publishing/history-rewriting commands invoked by orchestration runtime |
 | AC-12 | verify-context.json written before each verify-story.sh invocation |
 | AC-13 | verify-result.json includes verify_context when present |
 | AC-14 | report-story.sh distinguishes initial verify from reverify |
 | AC-15 | Passport transitions through review, repair, reverify phases correctly |
-| AC-16 | Guard policy accepts new phase/role/workspace combinations |
+| AC-16 | Guard policy accepts correct phase/role/workspace combinations AND rejects incorrect ones |
 | AC-17 | After initial verify FAIL, reviewer adapter is invoked with triggered_by="initial_verify_fail" |
 | AC-18 | Review contract extension: triggered_by="initial_verify_fail" requires overall_verification_status="FAIL" |
 | AC-19 | Review contract extension: mismatched trigger/status combinations are rejected |
 | AC-20 | Review adapter successfully invokes mock reviewer for verify-FAIL-triggered request |
+| AC-21 | Initial verify FAIL + review PASS → VERIFICATION_FAILED (not ACCEPTED) |
+| AC-22 | Immutable initial snapshots created before reverify |
+| AC-23 | Immutable snapshot hashes remain valid after reverify |
+| AC-24 | Reverify does not destroy initial evidence |
+| AC-25 | Final report references both initial and reverify evidence |
+| AC-26 | Repair-request references immutable artifacts (not working copies) |
+| AC-27 | Committed candidate + clean baseline precondition verified before repair |
+| AC-28 | Dirty baseline before repair → DIRTY_BASELINE, human handoff |
+| AC-29 | VERIFIED_AFTER_REPAIR requires all adapter-success evidence valid |
+| AC-30 | Missing/malformed/invalid failure-context → INFRASTRUCTURE_ERROR |
 
 ### 16.2 Fail-closed behavior
 
 | AC | Criterion |
 |----|-----------|
-| AC-21 | Malformed review-result → INFRASTRUCTURE_ERROR, exit 1 |
-| AC-22 | Malformed repair-result → INFRASTRUCTURE_ERROR, exit 1 |
-| AC-23 | Review adapter invocation failure → fail closed, exit 1 |
-| AC-24 | Repair adapter invocation failure → fail closed, exit 1 |
-| AC-25 | Repair REPAIRED but adapter reconciliation failure → fail closed, exit 1 |
-| AC-26 | Repair NO_CHANGE → REPAIR_NO_CHANGE, exit 1 |
+| AC-31 | Malformed review-result → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-32 | Malformed repair-result → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-33 | Review adapter invocation failure → fail closed, exit 1 |
+| AC-34 | Repair adapter invocation failure → fail closed, exit 1 |
+| AC-35 | Repair REPAIRED but adapter reconciliation failure → fail closed, exit 1 |
+| AC-36 | Repair NO_CHANGE → REPAIR_NO_CHANGE, exit 1 |
+| AC-37 | Snapshot publication failure → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-38 | Initial verify infrastructure ERROR → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-39 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-40 | Wrong role for phase → INFRASTRUCTURE_ERROR, exit 1 |
+| AC-41 | Wrong workspace_type for phase → INFRASTRUCTURE_ERROR, exit 1 |
 
 ### 16.3 Regression
 
 | AC | Criterion |
 |----|-----------|
-| AC-27 | Existing harness scenarios A-AA (27 scenarios) all pass |
-| AC-28 | Existing unit tests all pass |
-| AC-29 | Dry-run mode unchanged |
-| AC-30 | Bootstrap guard unchanged |
-| AC-31 | Existing report-story.sh behavior preserved for absent review/repair |
+| AC-42 | Existing harness scenarios A-AA (27 scenarios) all pass |
+| AC-43 | Existing unit tests all pass |
+| AC-44 | Dry-run mode unchanged |
+| AC-45 | Bootstrap guard unchanged |
+| AC-46 | Existing report-story.sh behavior preserved for absent review/repair |
 
 ### 16.4 Testing
 
 | AC | Criterion |
 |----|-----------|
-| AC-32 | New unit tests cover orchestration transitions |
-| AC-33 | New harness scenarios AB+ cover end-to-end paths |
-| AC-34 | All new tests pass with evidence |
-| AC-35 | Ruff clean for new/modified Python files |
-| AC-36 | mypy --strict clean for new/modified Python files |
+| AC-47 | New unit tests cover orchestration transitions |
+| AC-48 | New harness scenarios AB+ cover end-to-end paths |
+| AC-49 | All new tests pass with evidence |
+| AC-50 | Ruff clean for new/modified Python files |
+| AC-51 | mypy --strict clean for new/modified Python files |
 
 ### 16.5 Documentation
 
 | AC | Criterion |
 |----|-----------|
-| AC-37 | Planning document committed on planning branch |
-| AC-38 | Completion report produced |
-| AC-39 | README updated |
-| AC-40 | next_steps.md updated |
+| AC-52 | Planning document committed on planning branch |
+| AC-53 | Completion report produced |
+| AC-54 | README updated |
+| AC-55 | next_steps.md updated |
 
-**Total: 40 acceptance criteria (AC-01 through AC-40)**
+**Total: 55 acceptance criteria (AC-01 through AC-55)**
+
+### 16.6 Git safety semantics (N2)
+
+The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewriting commands:
+
+**Prohibited runtime actions:**
+- `git commit`
+- `git push`
+- `git merge`
+- `git rebase`
+- `git reset` (with `--hard` or `--mixed`)
+- `git clean`
+- `git stash` (save/pop/drop)
+- `git checkout` / `git switch` (branch mutations)
+- `git branch -d` / `git branch -D` (branch deletion)
+- Any force operations (`--force`, `--force-with-lease`)
+
+**Permitted read-only operations** (used by guards/adapters):
+- `git rev-parse HEAD`
+- `git status --porcelain` (read-only inspection)
+- `git diff --cached --name-status` (read-only inspection)
+- `git log --oneline` (read-only)
+- `git show` (read-only)
 
 ---
 
@@ -657,7 +852,7 @@ The following files and concerns are explicitly OUT OF SCOPE:
 | OW-09 | run-story.sh does not invoke repair after review PASS | Repair adapter not called |
 | OW-10 | run-story.sh invokes reverify after repair REPAIRED | verify-story.sh called again |
 | OW-11 | run-story.sh does not invoke reverify after repair NO_CHANGE | verify-story.sh not called |
-| OW-12 | Repair REPAIRED + reverify PASS → VERIFIED_AFTER_REPAIR, exit 0 | Correct final_status |
+| OW-12 | Repair REPAIRED + reverify PASS + all evidence valid → VERIFIED_AFTER_REPAIR, exit 0 | Correct final_status |
 | OW-13 | Repair REPAIRED + reverify FAIL → REPAIR_FAILED_REVERIFY, exit 1 | Correct final_status |
 | OW-14 | Repair adapter failure (non-ADAPTER_SUCCESS) → fail closed | REPAIR_ADAPTER_FAILURE |
 | OW-15 | Repair NO_CHANGE → REPAIR_NO_CHANGE, exit 1 | Correct final_status |
@@ -674,16 +869,43 @@ The following files and concerns are explicitly OUT OF SCOPE:
 | OW-26 | Passport phase transition: verify→review | Phase updated |
 | OW-27 | Passport phase transition: review→repair | Phase updated |
 | OW-28 | Passport phase transition: repair→reverify | Phase updated |
-| OW-29 | Guard accepts review phase | Guard passes |
-| OW-30 | Guard accepts repair phase | Guard passes |
-| OW-31 | Guard accepts reverify phase | Guard passes |
-| OW-32 | End-to-end: verify FAIL → review(initial_verify_fail) → repair REPAIRED → reverify PASS → VERIFIED_AFTER_REPAIR | All adapters invoked in sequence, correct final_status |
-| OW-33 | End-to-end: verify FAIL → review FAIL with action≠repair → VERIFICATION_FAILED (no repair) | Orchestrator does not invoke repair |
-| OW-34 | Dry-run mode skips review/repair | No adapter invocation |
-| OW-35 | No automatic commit/push/merge in any path | No git commands invoked |
-| OW-36 | Existing scenarios A-AA unaffected | All pass |
+| OW-29 | Guard accepts review phase with correct role+workspace | Guard passes |
+| OW-30 | Guard accepts repair phase with correct role+workspace | Guard passes |
+| OW-31 | Guard accepts reverify phase with correct role+workspace | Guard passes |
+| OW-32 | Guard rejects review phase with wrong role | Guard rejects |
+| OW-33 | Guard rejects review phase with wrong workspace_type | Guard rejects |
+| OW-34 | Guard rejects reverify phase with wrong role | Guard rejects |
+| OW-35 | End-to-end: verify FAIL → review(initial_verify_fail) → repair REPAIRED → reverify PASS → VERIFIED_AFTER_REPAIR | All adapters invoked in sequence, correct final_status |
+| OW-36 | End-to-end: verify FAIL → review FAIL with action≠repair → VERIFICATION_FAILED (no repair) | Orchestrator does not invoke repair |
+| OW-37 | Initial verify FAIL + review PASS → VERIFICATION_FAILED (not ACCEPTED) | Regression: verify FAIL stands |
+| OW-38 | Dry-run mode skips review/repair | No adapter invocation |
+| OW-39 | No Git mutating commands invoked by runtime | No commit/push/merge/rebase/reset/clean/stash/checkout/branch-delete/force-ops |
+| OW-40 | Existing scenarios A-AA unaffected | All pass |
+| OW-41 | Immutable initial snapshots created after verify | verify-result.initial.json, failure-context.initial.json exist |
+| OW-42 | Immutable snapshot SHA-256 remains valid after reverify | Hash unchanged |
+| OW-43 | Reverify creates separate snapshot | verify-result.reverify.json exists |
+| OW-44 | Reverify does not destroy initial evidence | Initial snapshots still present and valid |
+| OW-45 | Final report references both initial and reverify evidence | Both referenced |
+| OW-46 | Repair-request references immutable verify-result.initial.json | Path correct |
+| OW-47 | Review-request references immutable failure-context.initial.json | Path correct |
+| OW-48 | Snapshot publication failure → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-49 | Committed candidate + clean baseline → pre-flight passes | Orchestrator proceeds |
+| OW-50 | Dirty tracked worktree before repair → DIRTY_BASELINE | Correct final_status |
+| OW-51 | Missing failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-52 | Malformed failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-53 | Identity-mismatched failure-context → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-54 | Initial verify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-55 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-56 | Missing verify-context → defaults to verify_type=initial | Backward compatible |
+| OW-57 | Malformed verify-context → defaults to verify_type=initial | Backward compatible |
+| OW-58 | repair_budget=0 → no repair invoked even if review recommends | Repair not invoked |
+| OW-59 | Exactly one initial verify + at most one reverify | Invocation count correct |
+| OW-60 | No second repair after reverify FAIL | Second repair not invoked |
+| OW-61 | Bare reverify PASS without valid adapter evidence → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
+| OW-62 | Reconciliation evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
+| OW-63 | Permission enforcement evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
 
-**Total: 36 new orchestration test cases**
+**Total: 63 new orchestration test cases**
 
 ### 17.2 Extended test file: `test_review_contract.py`
 
@@ -700,66 +922,72 @@ The following files and concerns are explicitly OUT OF SCOPE:
 
 **Total: 8 new review-contract test cases**
 
-**Combined planned unit/integration test total: 36 + 8 = 44**
+**Combined planned unit/integration test total: 63 + 8 = 71**
 
 ---
 
 ## 18. New Harness Scenarios
 
-### 18.1 Scenario AB — Review PASS (happy path)
+### 18.1 Scenario AB — Verify PASS + Review PASS
 
 **Purpose:** Verify PASS + review PASS → ACCEPTED
 
 **Setup:**
-- Workspace with passing implementation
+- Workspace with passing implementation (committed, clean baseline)
 - Mock reviewer in PASS mode
 
 **Expected:**
 - verify-story.sh exits 0
-- Review adapter invoked
+- Immutable snapshots created
+- Review adapter invoked with triggered_by=initial_verify_pass
 - review-result.json status=PASS
 - final_status=ACCEPTED, exit 0
 
-### 18.2 Scenario AC — Review FAIL + repair REPAIRED + reverify PASS
+### 18.2 Scenario AC — Verify FAIL + Review FAIL + Repair REPAIRED + Reverify PASS
 
-**Purpose:** Full cycle with successful repair
+**Purpose:** Full cycle with successful repair after verify FAIL
 
 **Setup:**
-- Workspace with failing implementation
+- Workspace with failing implementation (committed, clean baseline)
 - Mock reviewer in FAIL mode with action=repair
 - Mock repair actor in REPAIRED mode
 
 **Expected:**
 - verify-story.sh exits 1
-- Review adapter invoked
+- Immutable snapshots created
+- Review adapter invoked with triggered_by=initial_verify_fail
 - review-result.json status=FAIL, action=repair
+- Pre-repair baseline check passes
 - Repair adapter invoked
 - repair-adapter-result.json status=REPAIRED
+- Reverify snapshots created
 - verify-story.sh exits 0 (reverify)
+- All adapter evidence valid
 - final_status=VERIFIED_AFTER_REPAIR, exit 0
 
-### 18.3 Scenario AD — Review FAIL + repair failure
+### 18.3 Scenario AD — Verify FAIL + Review FAIL + Repair Adapter Failure
 
 **Purpose:** Repair adapter failure
 
 **Setup:**
-- Workspace with failing implementation
+- Workspace with failing implementation (committed, clean baseline)
 - Mock reviewer in FAIL mode with action=repair
 - Mock repair actor in ERROR mode
 
 **Expected:**
 - verify-story.sh exits 1
-- Review adapter invoked
+- Review adapter invoked with triggered_by=initial_verify_fail
+- Pre-repair baseline check passes
 - Repair adapter invoked
-- repair-adapter-result.json status=ERROR or adapter failure
-- final_status=REPAIR_ADAPTER_FAILURE or INFRASTRUCTURE_ERROR, exit 1
+- repair-adapter-result.json adapter_status != ADAPTER_SUCCESS
+- final_status=REPAIR_ADAPTER_FAILURE, exit 1
 
-### 18.4 Scenario AE — Review ERROR + human_review
+### 18.4 Scenario AE — Verify PASS + Review ERROR + Human Review
 
 **Purpose:** Review infrastructure error with human handoff
 
 **Setup:**
-- Workspace with passing implementation
+- Workspace with passing implementation (committed, clean baseline)
 - Mock reviewer in ERROR mode
 
 **Expected:**
@@ -768,39 +996,42 @@ The following files and concerns are explicitly OUT OF SCOPE:
 - review-result.json status=ERROR, action=human_review
 - final_status=HUMAN_REVIEW_REQUIRED, exit 1
 
-### 18.5 Scenario AF — Review FAIL + repair NO_CHANGE
+### 18.5 Scenario AF — Verify FAIL + Review FAIL + Repair NO_CHANGE
 
 **Purpose:** Repair actor chooses not to repair
 
 **Setup:**
-- Workspace with failing implementation
+- Workspace with failing implementation (committed, clean baseline)
 - Mock reviewer in FAIL mode with action=repair
 - Mock repair actor in NO_CHANGE mode
 
 **Expected:**
 - verify-story.sh exits 1
-- Review adapter invoked
+- Review adapter invoked with triggered_by=initial_verify_fail
+- Pre-repair baseline check passes
 - Repair adapter invoked
 - repair-adapter-result.json status=NO_CHANGE
 - final_status=REPAIR_NO_CHANGE, exit 1
 
-### 18.6 Scenario AG — Review FAIL + repair REPAIRED + reverify FAIL
+### 18.6 Scenario AG — Verify FAIL + Review FAIL + Repair REPAIRED + Reverify FAIL
 
 **Purpose:** Repair succeeds but reverify still fails
 
 **Setup:**
-- Workspace with failing implementation
+- Workspace with failing implementation (committed, clean baseline)
 - Mock reviewer in FAIL mode with action=repair
 - Mock repair actor in REPAIRED mode (but changes don't fix the issue)
 
 **Expected:**
 - verify-story.sh exits 1 (initial)
-- Review adapter invoked
+- Review adapter invoked with triggered_by=initial_verify_fail
+- Pre-repair baseline check passes
 - Repair adapter invoked
+- Reverify snapshots created
 - verify-story.sh exits 1 (reverify)
 - final_status=REPAIR_FAILED_REVERIFY, exit 1
 
-### 18.7 Scenario AH — Malformed review artifact
+### 18.7 Scenario AH — Malformed Review Artifact
 
 **Purpose:** Malformed review-result.json
 
@@ -811,9 +1042,9 @@ The following files and concerns are explicitly OUT OF SCOPE:
 - report-story.sh classifies as INVALID
 - final_status=INFRASTRUCTURE_ERROR, exit 1
 
-### 18.8 Scenario AI — Repair adapter rejection
+### 18.8 Scenario AI — Repair Adapter Enforcement Failure
 
-**Purpose:** Repair adapter enforcement failure
+**Purpose:** Repair adapter rejection
 
 **Setup:**
 - Mock repair actor makes undeclared changes
@@ -822,19 +1053,85 @@ The following files and concerns are explicitly OUT OF SCOPE:
 - repair-adapter-result.json status=ADAPTER_UNDECLARED_CHANGE
 - final_status=REPAIR_ADAPTER_FAILURE, exit 1
 
-### 18.9 Scenario AJ — Max one repair enforced
+### 18.9 Scenario AJ — Max One Repair Enforced
 
 **Purpose:** Second repair attempt blocked
 
 **Setup:**
-- Force a second repair invocation attempt
+- Workspace with failing implementation (committed, clean baseline)
+- Mock reviewer in FAIL mode with action=repair
+- Mock repair actor in ERROR mode (first repair produces adapter failure)
+- Orchestrator forced to attempt second repair after first repair FAIL
 
 **Expected:**
-- Orchestrator refuses second repair
-- final_status reflects first repair outcome
+- verify-story.sh exits 1 (initial)
+- Review adapter invoked with triggered_by=initial_verify_fail
+- Pre-repair baseline check passes
+- Repair adapter invoked (attempt=1)
+- repair-adapter-result.json adapter_status != ADAPTER_SUCCESS
+- Orchestrator refuses second repair (REPAIR_ATTEMPT >= 1)
+- final_status=REPAIR_ADAPTER_FAILURE, exit 1
 
-**Total new harness scenarios: 9 (AB through AJ)**
-**Total harness scenarios after WP-AL-1C6: 36 (A through AJ)**
+### 18.10 Scenario AK — Verify FAIL + Review PASS
+
+**Purpose:** Regression: review PASS after verify FAIL must NOT produce ACCEPTED
+
+**Setup:**
+- Workspace with failing implementation (committed, clean baseline)
+- Mock reviewer in PASS mode
+
+**Expected:**
+- verify-story.sh exits 1
+- Review adapter invoked with triggered_by=initial_verify_fail
+- review-result.json status=PASS
+- final_status=VERIFICATION_FAILED, exit 1
+- NOT ACCEPTED, NOT VERIFIED_AFTER_REPAIR
+
+### 18.11 Scenario AL — Dirty Baseline Before Repair
+
+**Purpose:** Repair blocked by dirty tracked worktree
+
+**Setup:**
+- Workspace with failing implementation
+- Uncommitted tracked file modifications present
+- Mock reviewer in FAIL mode with action=repair
+
+**Expected:**
+- verify-story.sh exits 1
+- Review adapter invoked with triggered_by=initial_verify_fail
+- review-result.json status=FAIL, action=repair
+- Pre-repair baseline check fails (dirty worktree)
+- Repair adapter NOT invoked
+- final_status=DIRTY_BASELINE, exit 1
+
+### 18.12 Scenario AM — Immutable Snapshot Integrity
+
+**Purpose:** Initial snapshots survive reverify
+
+**Setup:**
+- Full repair cycle (verify FAIL → review FAIL → repair REPAIRED → reverify)
+
+**Expected:**
+- verify-result.initial.json exists and SHA-256 valid after reverify
+- failure-context.initial.json exists and SHA-256 valid after reverify
+- verify-result.reverify.json exists (separate from initial)
+- Final report references both initial and reverify evidence
+- final_status=VERIFIED_AFTER_REPAIR, exit 0
+
+### 18.13 Scenario AN — Reverify Without Valid Adapter Evidence
+
+**Purpose:** Bare reverify PASS must NOT produce VERIFIED_AFTER_REPAIR
+
+**Setup:**
+- Simulate reverify PASS without valid repair-adapter-result
+
+**Expected:**
+- verify-story.sh exits 0 (reverify)
+- Adapter evidence validation fails
+- final_status=INFRASTRUCTURE_ERROR, exit 1
+
+**Total new harness scenarios: 13 (AB through AN)**
+**Total harness scenarios after WP-AL-1C6: 40 (A through AN)**
 
 ---
 
@@ -866,10 +1163,11 @@ All must pass without modification.
 - Rollback
 - Sandbox/container isolation
 - Concurrency/parallel workers
-- Automatic commit/push/merge
+- Automatic runtime commit/push/merge
 - Branch lifecycle automation
 - Ignored-file inspection
 - Full filesystem snapshot
+- Implementation-agent checkpoint mechanism
 
 ### 20.2 Rollback strategy
 
@@ -885,14 +1183,17 @@ If WP-AL-1C6 implementation fails:
 
 WP-AL-1C6 achieves the dogfooding milestone when:
 
-1. The orchestrator can invoke review adapter after verification
-2. The orchestrator can invoke repair adapter after review FAIL
-3. The orchestrator can re-invoke verify-story.sh after repair
-4. The final report incorporates all artifacts
-5. Maximum one repair attempt is enforced
-6. All fail-closed paths work correctly
-7. All harness scenarios (A through AJ) pass
-8. ForgeMind can be developed through one supervised Ralph-style agent cycle
+1. The orchestrator can invoke review adapter after verification (PASS or FAIL)
+2. The orchestrator enforces verification authority (review PASS after verify FAIL → VERIFICATION_FAILED)
+3. The orchestrator can invoke repair adapter after review FAIL + action=repair
+4. The orchestrator preserves immutable verification evidence
+5. The orchestrator can re-invoke verify-story.sh after repair
+6. The final report incorporates all artifacts (initial, review, repair, reverify)
+7. Maximum one repair attempt is enforced
+8. All fail-closed paths work correctly
+9. Clean committed candidate precondition enforced
+10. All harness scenarios (A through AN) pass
+11. ForgeMind can be developed through one supervised Ralph-style agent cycle
 
 The dogfooding cycle is **supervised**, not autonomous. A human observes the
 cycle and approves the final result. No automatic commit/push/merge.
@@ -903,9 +1204,9 @@ cycle and approves the final result. No automatic commit/push/merge.
 
 - Branch created from `origin/main` @ `764ca3e5b1b38e7a97370c478113e28588d152f8`
 - Implementation confined to the expected file scope in §14 (3 new + 10 modified files)
-- All AC-01 through AC-40 pass with evidence
-- All 44 new unit/integration tests pass (36 orchestration + 8 review-contract extension)
-- All 9 new harness scenarios (AB-AJ) pass
+- All AC-01 through AC-55 pass with evidence
+- All 71 new unit/integration tests pass (63 orchestration + 8 review-contract extension)
+- All 14 new harness scenarios (AB-AN) pass
 - All 27 existing harness scenarios (A-AA) pass
 - Ruff clean for new/modified Python files
 - mypy --strict clean for new/modified Python files
@@ -951,32 +1252,110 @@ review contract's `triggered_by` enum and the conditional validation of
 
 **Superseded:** The previous WP-AL-1C1 constraint that review only runs after verification PASS is narrowly superseded by this additive extension. WP-AL-1C1 PASS-only semantics remain intact; the extension only adds a new trigger path for the verify-FAIL case.
 
-**Source-of-truth note:** WP-AL-1B3 failure-context was explicitly designed as structured downstream input for reviewer, repair, and reporter. The WP-AL-1C1 PASS-only review restriction was based on the first review use case. WP-AL-1C6 extends this to enable the supervised self-development cycle per the PO's intended flow.
-
 **Status:** RESOLVED — PO approved 2026-08-07
+
+### DEC-C6-02: Verification Remains Authoritative
+
+**Decision:** A reviewer must NEVER override a failed verification. Final outcome depends on BOTH initial verification status and review status.
+
+**Authoritative semantics:**
+
+| Initial Verify | Review | Outcome |
+|----------------|--------|---------|
+| PASS | PASS | ACCEPTED |
+| PASS | FAIL + repair | repair path |
+| PASS | FAIL + human_review | HUMAN_REVIEW_REQUIRED |
+| PASS | FAIL + none | REVIEW_REJECTED |
+| FAIL | PASS | VERIFICATION_FAILED (reviewer did not recommend repair; verify FAIL stands) |
+| FAIL | FAIL + repair | repair path |
+| FAIL | FAIL + human_review | HUMAN_REVIEW_REQUIRED |
+| FAIL | FAIL + none | VERIFICATION_FAILED |
+
+**Explicit regression:** initial verify FAIL + review PASS MUST NOT produce ACCEPTED or VERIFIED_AFTER_REPAIR.
+
+**Rationale:** Verification is deterministic and authoritative. Review is advisory. Reviewer cannot convert failed verification into success. Review PASS after verify FAIL means only that reviewer did not recommend repair or additional rejection.
+
+**Status:** RESOLVED — PO approved 2026-08-07 (remediation)
+
+### DEC-C6-03: Immutable Verification Evidence
+
+**Decision:** Initial verify/review/repair evidence must remain byte-stable after reverify. Immutable per-phase snapshots required.
+
+**Problem:** verify-story.sh writes to canonical working filenames. If reverify overwrites these, downstream request artifacts (review-request, repair-request) that contain SHA-256 hashes and path references become invalid.
+
+**Solution:**
+
+After initial verification:
+- `verify-result.json` → `verify-result.initial.json` (immutable)
+- `failure-context.json` → `failure-context.initial.json` (immutable, when present)
+
+After reverify:
+- `verify-result.json` → `verify-result.reverify.json` (immutable)
+- `failure-context.json` → `failure-context.reverify.json` (immutable, when present)
+
+**Implementation:**
+- verify-story.sh MAY continue using canonical working filenames during execution
+- run-story.sh owns snapshot publication (copies after verify-story.sh completes)
+- All downstream review-request and repair-request references target immutable paths
+- SHA-256 of immutable snapshots must remain unchanged throughout run
+
+**Failure semantics:**
+- Inability to preserve required immutable evidence → INFRASTRUCTURE_ERROR
+- No repair/reverify success path if snapshot publication fails
+
+**Status:** RESOLVED — PO approved 2026-08-07 (remediation)
+
+### DEC-C6-04: Clean Committed Candidate Precondition
+
+**Decision:** WP-AL-1C5 repair adapter requires a clean tracked baseline. WP-AL-1C6 MUST NOT solve this by automatically committing implementation changes.
+
+**Precondition for repair-capable flow:**
+- Candidate implementation must already exist as a committed revision
+- Clean tracked worktree required before initial verification begins
+- Source: external/supervised implementer, harness fixture, or manual commit
+
+**Orchestrator pre-flight check:**
+- `git status --porcelain` shows no untracked or modified tracked files
+- `git diff --cached --name-status` is empty
+- HEAD points to valid commit
+
+**Dirty baseline handling:**
+- If repair_budget > 0 and baseline dirty → DIRTY_BASELINE → human handoff
+- Repair adapter NOT invoked
+- If repair_budget == 0 → proceed (repair not needed)
+
+**Harness repair scenarios** must create disposable repo, commit candidate, verify clean baseline, then run orchestration.
+
+**Status:** RESOLVED — PO approved 2026-08-07 (remediation)
 
 ---
 
 ## 24. Product Owner Approval
 
-**APPROVED** — 2026-08-07
+**INITIAL APPROVAL** — 2026-08-07
 
-Product Owner has approved:
-
+Product Owner initially approved:
 1. The planning document (title: "WP-AL-1C6 — Minimal Orchestration Wiring")
-2. All architectural decisions (DEC-C6-01) as RESOLVED
-3. The minimum review invocation bridge (supersedes older wording)
-4. Maximum one repair attempt (overrides max_repair_iterations=3)
-5. The proposed branch name (`feature/agent-loop-orchestration-wiring`)
-6. The expected file scope (3 new files, 10 modified files = 13 total file changes)
-7. The test matrix (44 unit/integration tests: 36 orchestration + 8 review-contract extension; 9 harness scenarios AB-AJ)
-8. The harness scenarios (AB through AJ — exactly 9)
-9. The dogfooding milestone (one supervised end-to-end cycle)
-10. The review contract extension (DEC-C6-01): `triggered_by` enum extended to include `"initial_verify_fail"` with conditional `overall_verification_status` binding
+2. DEC-C6-01 as RESOLVED
+3. The minimum review invocation bridge
+4. Maximum one repair attempt
+5. The proposed branch name
+6. The expected file scope
+7. The test matrix
+8. The harness scenarios
+9. The dogfooding milestone
 
-**Document status:** APPROVED — READY FOR PLANNING COMMIT
+**REMEDIATION APPROVAL** — 2026-08-07
 
-**Next step:** Create planning branch from origin/main, commit this planning document, then create implementation branch for development.
+Product Owner approved remediation addressing independent review findings:
+- DEC-C6-02: Verification remains authoritative
+- DEC-C6-03: Immutable verification evidence
+- DEC-C6-04: Clean committed candidate precondition
+- N1–N5: Non-blocking findings resolved
+
+**Document status:** REMEDIATED — AWAITING PO APPROVAL (post-review)
+
+**Next step:** Product Owner reviews remediated document, approves, then commit and update PR #57.
 
 ---
 
@@ -988,24 +1367,25 @@ Product Owner has approved:
 | Modifies run-story.sh | No | No | Yes |
 | Modifies report-story.sh | No | No | Yes |
 | Modifies verify-story.sh | No | No | Yes (verify-context) |
-| New harness scenarios | U, V | Y, Z, AA | AB through AJ |
-| New unit/integration tests | 72 | 66 + 29 | 36 + 8 = 44 |
+| New harness scenarios | U, V | Y, Z, AA | AB through AN |
+| New unit/integration tests | 72 | 66 + 29 | 63 + 8 = 71 |
 | Integration | No | No | Yes |
 
 ---
 
 ## Appendix B: Failure Taxonomy (Review)
 
-| Review Result | recommended_action | final_status |
-|---------------|-------------------|--------------|
-| PASS | none | ACCEPTED |
-| FAIL | repair | → repair path |
-| FAIL | human_review | HUMAN_REVIEW_REQUIRED |
-| FAIL | none | REVIEW_REJECTED |
-| ERROR | human_review | HUMAN_REVIEW_REQUIRED |
-| ERROR | other | INFRASTRUCTURE_ERROR |
-| INVALID | — | INFRASTRUCTURE_ERROR |
-| ABSENT | — | VERIFIED |
+| Review Result | recommended_action | final_status (after verify PASS) | final_status (after verify FAIL) |
+|---------------|-------------------|----------------------------------|----------------------------------|
+| PASS | none | ACCEPTED | VERIFICATION_FAILED |
+| FAIL | repair | → repair path | → pre-repair check |
+| FAIL | human_review | HUMAN_REVIEW_REQUIRED | HUMAN_REVIEW_REQUIRED |
+| FAIL | none | REVIEW_REJECTED | VERIFICATION_FAILED |
+| ERROR | human_review | HUMAN_REVIEW_REQUIRED | HUMAN_REVIEW_REQUIRED |
+| ERROR | other | INFRASTRUCTURE_ERROR | INFRASTRUCTURE_ERROR |
+| INVALID | — | INFRASTRUCTURE_ERROR | INFRASTRUCTURE_ERROR |
+
+Note: Review PASS after verify FAIL produces VERIFICATION_FAILED, not ACCEPTED (DEC-C6-02).
 
 ---
 
@@ -1053,16 +1433,20 @@ Product Owner has approved:
 $RUN_DIR/
 ├── reports/
 │   ├── passport.json
-│   ├── verify-context.json          (NEW: written by run-story.sh)
-│   ├── verify-result.json           (MODIFIED: includes verify_context)
-│   ├── failure-context.json
+│   ├── verify-context.json                  (written by run-story.sh per verify)
+│   ├── verify-result.json                   (working copy)
+│   ├── verify-result.initial.json           (IMMUTABLE snapshot)
+│   ├── verify-result.reverify.json          (IMMUTABLE snapshot)
+│   ├── failure-context.json                 (working copy)
+│   ├── failure-context.initial.json         (IMMUTABLE snapshot)
+│   ├── failure-context.reverify.json        (IMMUTABLE snapshot)
 │   ├── review-result.json
-│   └── final-report.json            (MODIFIED: includes repair adapter result)
+│   └── final-report.json                    (references all artifacts)
 ├── review/
-│   ├── review-request.json
+│   ├── review-request.json                  (references immutable failure-context)
 │   └── .adapter.lock
 ├── repair/
-│   ├── repair-request.json
+│   ├── repair-request.json                  (references immutable verify-result)
 │   ├── repair-result.json
 │   └── repair-adapter-result.json
 └── verify/
@@ -1071,4 +1455,49 @@ $RUN_DIR/
 
 ---
 
-**End of WP-AL-1C6 Planning Specification**
+## Appendix F: Non-Blocking Findings Resolution
+
+### N1 — Failure-Context Requirement
+
+**Finding:** Plan said failure-context is both always present and potentially absent.
+
+**Resolution:** Failure-context MUST exist for both PASS and FAIL paths. verify-story.sh collects it on both exits. Orchestrator creates immutable snapshot. Review/repair adapters reference immutable snapshot. Missing/malformed/invalid failure-context → INFRASTRUCTURE_ERROR. Reviewer never invoked with invalid context.
+
+### N2 — Git Safety Test Wording
+
+**Finding:** "No git commands invoked" was too broad; adapters legitimately use read-only Git inspection.
+
+**Resolution:** §16.2 now explicitly prohibits Git mutating/publishing/history-rewriting commands (commit, push, merge, rebase, reset --hard, clean, stash, checkout/switch mutations, branch deletion, force ops). Read-only operations (rev-parse, status --porcelain, diff --cached, log, show) are permitted. Test OW-39 verifies no mutating commands.
+
+### N3 — Harness Determinism
+
+**Finding:** Scenario AD and AJ had alternative acceptable outcomes.
+
+**Resolution:**
+- Scenario AD: Now specifies exact expected outcome: repair-adapter-result.json adapter_status != ADAPTER_SUCCESS → final_status=REPAIR_ADAPTER_FAILURE, exit 1. No alternatives.
+- Scenario AJ: Now specifies exact setup (configure orchestrator to attempt second repair) and exact expected outcome (second repair refused, final_status reflects first repair outcome).
+
+### N4 — Missing Test Cases
+
+**Finding:** Several test cases missing.
+
+**Resolution:** Added 24 new test cases:
+- OW-41–OW-47: Immutable snapshot tests
+- OW-48: Snapshot publication failure
+- OW-49–OW-50: Pre-flight baseline tests
+- OW-51–OW-53: Failure-context validation tests
+- OW-54–OW-55: Infrastructure ERROR tests
+- OW-56–OW-57: Verify-context edge cases
+- OW-58: repair_budget=0 behavior
+- OW-59–OW-60: Invocation count tests
+- OW-61–OW-63: Adapter-success evidence validation tests
+
+### N5 — Passport/Guard Semantics
+
+**Finding:** Guard behavior for reverify not explicitly tested/enforced.
+
+**Resolution:** §13.1 now explicitly requires guard to accept ONLY correct phase/role/workspace combinations and reject all others. Added tests OW-32–OW-34 verifying guard rejects wrong role/workspace_type. AC-16 updated to require both acceptance and rejection.
+
+---
+
+**End of WP-AL-1C6 Planning Specification (Remediated)**
