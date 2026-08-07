@@ -225,11 +225,25 @@ smallest compatible mechanism: a **verify-context file**.
 - `run_id` — must match current run identity
 - `story_id` — must match current story identity
 
-**Deterministic semantics for invalid/inconsistent verify-context:**
-- Invalid `verify_type` value → `INFRASTRUCTURE_ERROR`, no success path
-- Invalid `attempt` value (e.g., reverify with attempt=0, initial with attempt≠0) → `INFRASTRUCTURE_ERROR`
+**Deterministic semantics for verify-context handling:**
+
+**ABSENT verify-context (file does not exist):**
+- Backward-compatible default: `verify_type = "initial"`, `attempt = 0`
+- Only where absence is explicitly permitted (existing harness scenarios)
+
+**PRESENT but invalid/malformed verify-context (file exists):**
+- Malformed JSON → `INFRASTRUCTURE_ERROR`, no success path
+- Invalid `verify_type` value (not "initial" or "reverify") → `INFRASTRUCTURE_ERROR`
+- Invalid `attempt` binding:
+  - `verify_type = "initial"` with `attempt != 0` → `INFRASTRUCTURE_ERROR`
+  - `verify_type = "reverify"` with `attempt != 1` → `INFRASTRUCTURE_ERROR`
 - Identity mismatch (`run_id` or `story_id` does not match current run) → `INFRASTRUCTURE_ERROR`
-- Malformed JSON or missing required fields → `INFRASTRUCTURE_ERROR`
+- Missing required fields → `INFRASTRUCTURE_ERROR`
+
+**Authoritative attempt bindings:**
+- `verify_type = "initial"` requires `attempt = 0`
+- `verify_type = "reverify"` requires `attempt = 1`
+- Any other combination → `INFRASTRUCTURE_ERROR`
 
 Before each verify-story.sh invocation, the orchestrator writes this file.
 `verify-story.sh` reads it and includes `verify_context` in the verify-result.json
@@ -883,8 +897,8 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 | OW-20 | verify-context.json written with verify_type=initial before initial verify | File exists, correct content |
 | OW-21 | verify-context.json written with verify_type=reverify after repair | File exists, correct content |
 | OW-22 | verify-context with invalid verify_type value | INFRASTRUCTURE_ERROR, no success path |
-| OW-23 | verify-context with incorrect attempt value (e.g., reverify with attempt=0) | INFRASTRUCTURE_ERROR |
-| OW-24 | verify-context with identity mismatch (run_id or story_id) | INFRASTRUCTURE_ERROR |
+| OW-23 | verify-context attempt binding mismatch: (a) verify_type="initial" with attempt != 0 → INFRASTRUCTURE_ERROR; (b) verify_type="reverify" with attempt != 1 → INFRASTRUCTURE_ERROR | Fail closed for both directions |
+| OW-24 | verify-context identity mismatch: (a) run_id does not match current run → INFRASTRUCTURE_ERROR; (b) story_id does not match current story → INFRASTRUCTURE_ERROR | Fail closed for both identities |
 | OW-25 | verify-context with malformed JSON | INFRASTRUCTURE_ERROR |
 | OW-26 | verify-story.sh includes verify_context in verify-result when file present | Field present |
 | OW-27 | report-story.sh distinguishes initial verify from reverify | Correct final_status |
@@ -921,8 +935,8 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 | OW-58 | Identity-mismatched failure-context → INFRASTRUCTURE_ERROR | Reviewer not invoked |
 | OW-59 | Initial verify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
 | OW-60 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
-| OW-61 | Missing verify-context → defaults to verify_type=initial | Backward compatible |
-| OW-62 | Malformed verify-context → defaults to verify_type=initial | Backward compatible |
+| OW-61 | verify-context file ABSENT → backward-compatible defaults: verify_type=initial, attempt=0 | Backward compatible (existing harness scenarios) |
+| OW-62 | verify-context PRESENT but malformed JSON → INFRASTRUCTURE_ERROR | Fail closed, no success path |
 | OW-63 | repair_budget=0 + review recommends repair → VERIFICATION_FAILED, exit 1, no actor/reverify invoked | final_status=VERIFICATION_FAILED, exit 1 |
 | OW-64 | Bare reverify PASS without valid adapter evidence → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
 | OW-65 | Reconciliation evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
@@ -1080,22 +1094,26 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 
 ### 18.9 Scenario AJ — Max One Repair Enforced
 
-**Purpose:** Second repair attempt blocked
+**Purpose:** Prove that maximum one repair attempt is enforced regardless of outcome
 
 **Setup:**
 - Workspace with failing implementation (committed, clean baseline)
 - Mock reviewer in FAIL mode with action=repair
-- Mock repair actor in ERROR mode (first repair produces adapter failure)
-- Orchestrator forced to attempt second repair after first repair FAIL
+- Mock repair actor in REPAIRED mode
+- Orchestrator configured to attempt second repair after first repair completes
 
 **Expected:**
 - verify-story.sh exits 1 (initial)
 - Review adapter invoked with triggered_by=initial_verify_fail
 - Pre-repair baseline check passes
 - Repair adapter invoked (attempt=1)
-- repair-adapter-result.json adapter_status != ADAPTER_SUCCESS
-- Orchestrator refuses second repair (REPAIR_ATTEMPT >= 1)
-- final_status=REPAIR_ADAPTER_FAILURE, exit 1
+- repair-adapter-result.json adapter_status=ADAPTER_SUCCESS, status=REPAIRED
+- Reverify invoked, exits 1 (FAIL)
+- Orchestrator attempts second repair (forced by test configuration)
+- Orchestrator blocks second repair attempt (REPAIR_ATTEMPT >= 1)
+- Repair actor invocation count = 1 (proves only one execution)
+- Repair adapter invocation count = 1 (proves only one invocation)
+- final_status=REPAIR_FAILED_REVERIFY, exit 1
 
 ### 18.10 Scenario AK — Verify FAIL + Review PASS
 
@@ -1393,7 +1411,7 @@ Product Owner approved remediation addressing independent review findings:
 | Modifies report-story.sh | No | No | Yes |
 | Modifies verify-story.sh | No | No | Yes (verify-context) |
 | New harness scenarios | U, V | Y, Z, AA | AB through AN |
-| New unit/integration tests | 72 | 66 + 29 | 66 + 8 = 74 |
+| New unit/integration tests | 72 | 66 + 29 | 70 + 8 = 78 |
 | Integration | No | No | Yes |
 
 ---
@@ -1499,23 +1517,25 @@ $RUN_DIR/
 **Finding:** Scenario AD and AJ had alternative acceptable outcomes.
 
 **Resolution:**
-- Scenario AD: Now specifies exact expected outcome: repair-adapter-result.json adapter_status != ADAPTER_SUCCESS → final_status=REPAIR_ADAPTER_FAILURE, exit 1. No alternatives.
-- Scenario AJ: Now specifies exact setup (configure orchestrator to attempt second repair) and exact expected outcome (second repair refused, final_status reflects first repair outcome).
+- Scenario AD: Now specifies exact expected outcome: repair actor returns valid repair-result with status=ERROR, adapter publishes adapter_status=ADAPTER_SUCCESS with repair_result_summary.status=ERROR, orchestrator fails closed with final_status=INFRASTRUCTURE_ERROR, exit 1, no reverify. No alternatives.
+- Scenario AJ: Now specifies exact setup (first repair succeeds with REPAIRED, reverify fails, orchestrator configured to attempt second repair) and exact expected outcome (second repair blocked, repair actor/adapter invocation counts prove exactly one execution, final_status=REPAIR_FAILED_REVERIFY, exit 1).
 
 ### N4 — Missing Test Cases
 
 **Finding:** Several test cases missing.
 
-**Resolution:** Added 24 new test cases:
-- OW-41–OW-47: Immutable snapshot tests
-- OW-48: Snapshot publication failure
-- OW-49–OW-50: Pre-flight baseline tests
-- OW-51–OW-53: Failure-context validation tests
-- OW-54–OW-55: Infrastructure ERROR tests
-- OW-56–OW-57: Verify-context edge cases
-- OW-58: repair_budget=0 behavior
-- OW-59–OW-60: Invocation count tests
-- OW-61–OW-63: Adapter-success evidence validation tests
+**Resolution:** Added 26 new test cases:
+- OW-23: Clarified attempt-binding tests in both directions (initial with attempt≠0; reverify with attempt≠1)
+- OW-24: Clarified identity-mismatch tests for both run_id and story_id
+- OW-61: Clarified absent verify-context defaults to initial/0
+- OW-41–OW-47: Immutable snapshot tests (7)
+- OW-48: Snapshot publication failure (1)
+- OW-49–OW-50: Pre-flight baseline tests (2)
+- OW-51–OW-53: Failure-context validation tests (3)
+- OW-54–OW-55: Infrastructure ERROR tests (2)
+- OW-56–OW-62: Verify-context edge cases including absent, malformed, identity mismatch (7)
+- OW-63: repair_budget=0 behavior (1)
+- OW-64–OW-66: Adapter-success evidence validation tests (3)
 
 ### N5 — Passport/Guard Semantics
 
