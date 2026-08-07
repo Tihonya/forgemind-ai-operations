@@ -35,10 +35,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "lib"))
 from repair_adapter import (
     ADAPTER_DIRTY_BASELINE,
     ADAPTER_INTERNAL_ERROR,
+    ADAPTER_OUTPUT_SIZE_EXCEEDED,
     ADAPTER_SUCCESS,
     _atomic_write_json,
     _sanitize_output,
     run_repair,
+    validate_adapter_result,
 )
 
 # ---------------------------------------------------------------------------
@@ -1088,3 +1090,602 @@ class TestAtomicPublicationExtended:
         _atomic_write_json(p1, data)
         _atomic_write_json(p2, data)
         assert p1.read_bytes() == p2.read_bytes()
+
+
+# ===========================================================================
+# SECOND REVIEW REMEDIATION — F1: relative actor path over-redaction
+# ===========================================================================
+
+
+class TestF1RelativeActorPath:
+    """F1: relative actor_executable must not be redacted from diagnostics;
+    only absolute actor paths are sensitive."""
+
+    def test_relative_actor_executable_preserved_in_stdout(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Actor prints a relative path to stdout; when actor_executable
+        is itself relative, it must NOT appear in sensitive_paths and
+        must survive sanitization in the persisted diagnostics."""
+        source_revision = _get_head_sha(temp_git_repo)
+        relative_actor = "scripts/agent-loop/lib/mock_repair_actor.py"
+        # Create the actor inside the repo at the relative path so
+        # subprocess.Popen(cwd=repo_root, ...) can find it.
+        actor_in_repo = temp_git_repo / relative_actor
+        actor_in_repo.parent.mkdir(parents=True, exist_ok=True)
+        actor_in_repo.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, sys\n"
+            f"print('{relative_actor}')\n"
+            'args = sys.argv[1:]\n'
+            'result_path = args[args.index("--repair-result") + 1]\n'
+            "result = {\n"
+            '    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",\n'
+            f'    "attempt": 1, "source_revision": "{source_revision}",\n'
+            '    "status": "NO_CHANGE", "changed": False, "changed_files": [],\n'
+            '    "summary": "No changes",\n'
+            '    "diagnostics": {"actions_taken": [], "obstacles": []},\n'
+            '    "recommended_action": "abort",\n'
+            '    "sanitization": {"redaction_applied": False, "redaction_count": 0,\n'
+            '        "truncation_applied": False, "truncated_fields": []},\n'
+            '    "completed_at": "2026-08-06T12:00:00Z"\n'
+            "}\n"
+            'with open(result_path, "w") as f:\n'
+            "    json.dump(result, f)\n"
+        )
+        actor_in_repo.chmod(0o755)
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=relative_actor,
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=["scripts/agent-loop/lib/mock_repair_actor.py"],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_SUCCESS
+        stdout_tail = result.diagnostics.get("actor_stdout_tail", "")
+        assert relative_actor in stdout_tail, (
+            f"relative actor path was over-redacted: {stdout_tail!r}"
+        )
+
+    def test_absolute_actor_executable_redacted_from_stdout(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Actor prints its own absolute path to stdout; it must be redacted."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys, os
+print(os.path.abspath(sys.argv[0]))
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        abs_actor = str(actor_script)
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=abs_actor,
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_SUCCESS
+        stdout_tail = result.diagnostics.get("actor_stdout_tail", "")
+        assert abs_actor not in stdout_tail, (
+            f"absolute actor path was not redacted: {stdout_tail!r}"
+        )
+
+    def test_relative_actor_argument_preserved(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """A relative actor argument printed to stdout survives sanitization."""
+        source_revision = _get_head_sha(temp_git_repo)
+        relative_arg = "backend/test_utils/fixture.py"
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+print(sys.argv[1])
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[relative_arg],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_SUCCESS
+        stdout_tail = result.diagnostics.get("actor_stdout_tail", "")
+        assert relative_arg in stdout_tail, (
+            f"relative actor argument was over-redacted: {stdout_tail!r}"
+        )
+
+    def test_absolute_actor_argument_redacted(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """An absolute actor argument printed to stdout is redacted."""
+        source_revision = _get_head_sha(temp_git_repo)
+        abs_arg = str(actor_dir / "config.json")
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+print(sys.argv[1])
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[abs_arg],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_SUCCESS
+        stdout_tail = result.diagnostics.get("actor_stdout_tail", "")
+        assert abs_arg not in stdout_tail, (
+            f"absolute actor argument was not redacted: {stdout_tail!r}"
+        )
+
+
+# ===========================================================================
+# SECOND REVIEW REMEDIATION — F2: per-stream truncation metadata
+# ===========================================================================
+
+
+class TestF2PerStreamTruncation:
+    """F2: stdout_truncated and stderr_truncated must be independent.
+    The global output_size_exceeded flag may set the causal status, but
+    truncated_fields must only include fields actually truncated."""
+
+    def test_stdout_only_overflow_marks_stdout_not_stderr(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Large stdout, minimal stderr: only actor_stdout_tail in
+        truncated_fields, not actor_stderr_tail."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+sys.stdout.write("x" * 10000)
+sys.stderr.write("small")
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=8,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_OUTPUT_SIZE_EXCEEDED
+        tf = result.sanitization.get("truncated_fields", [])
+        assert "actor_stdout_tail" in tf
+        assert "actor_stderr_tail" not in tf, (
+            f"stderr incorrectly marked truncated: {tf}"
+        )
+
+    def test_stderr_only_overflow_marks_stderr_not_stdout(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Small stdout, large stderr: only actor_stderr_tail in
+        truncated_fields, not actor_stdout_tail."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+sys.stdout.write("ok")
+sys.stderr.write("y" * 10000)
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=8,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_OUTPUT_SIZE_EXCEEDED
+        tf = result.sanitization.get("truncated_fields", [])
+        assert "actor_stderr_tail" in tf
+        assert "actor_stdout_tail" not in tf, (
+            f"stdout incorrectly marked truncated: {tf}"
+        )
+
+    def test_both_streams_overflow_marks_both(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Both stdout and stderr overflow: both fields in truncated_fields."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+sys.stdout.write("x" * 10000)
+sys.stderr.write("y" * 10000)
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=8,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_OUTPUT_SIZE_EXCEEDED
+        tf = result.sanitization.get("truncated_fields", [])
+        assert "actor_stdout_tail" in tf
+        assert "actor_stderr_tail" in tf
+        # Must be sorted lexicographically.
+        assert tf == sorted(tf)
+
+    def test_neither_stream_overflow_no_truncation(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+    ) -> None:
+        """Neither stream overflows: truncated_fields is empty."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+sys.stdout.write("small stdout")
+sys.stderr.write("small stderr")
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+        assert result.adapter_status == ADAPTER_SUCCESS
+        tf = result.sanitization.get("truncated_fields", [])
+        assert tf == []
+
+
+# ===========================================================================
+# SECOND REVIEW REMEDIATION — F3: status-presence contract after
+# publication failure
+# ===========================================================================
+
+
+class TestF3PublicationFailureStatusPresence:
+    """F3: when publication fails after a would-be success, the returned
+    in-memory result must conform exactly to ADAPTER_INTERNAL_ERROR
+    status-presence rules (no success-only conditional fields)."""
+
+    def test_publication_failure_validates_against_schema(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Force publication failure and validate the complete returned
+        object against the authoritative result validator."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+
+        original_write = _atomic_write_json
+
+        def failing_write(path: Path, data: Any) -> None:
+            target = str(path)
+            if target.endswith("repair-adapter-result.json"):
+                raise OSError("simulated publication failure")
+            return original_write(path, data)
+
+        import repair_adapter as ra
+
+        monkeypatch.setattr(ra, "_atomic_write_json", failing_write)
+
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+
+        assert result.adapter_status == ADAPTER_INTERNAL_ERROR
+
+        # Build the dict form for the authoritative validator.
+        result_dict = {
+            "schema_version": result.schema_version,
+            "run_id": result.run_id,
+            "story_id": result.story_id,
+            "attempt": result.attempt,
+            "adapter_status": result.adapter_status,
+            "completed_at": result.completed_at,
+            "diagnostics": result.diagnostics,
+            "sanitization": result.sanitization,
+            "integrity_scope": result.integrity_scope,
+        }
+        if result.repair_result_summary is not None:
+            result_dict["repair_result_summary"] = result.repair_result_summary
+        if result.workspace_changes is not None:
+            result_dict["workspace_changes"] = result.workspace_changes
+        if result.reconciliation is not None:
+            result_dict["reconciliation"] = result.reconciliation
+        if result.permission_enforcement is not None:
+            result_dict["permission_enforcement"] = result.permission_enforcement
+
+        # The authoritative validator must accept this result.
+        validate_adapter_result(result_dict)
+
+        # All success-only conditional fields must be absent or None.
+        assert result.repair_result_summary is None
+        assert result.workspace_changes is None
+        assert result.reconciliation is None
+        assert result.permission_enforcement is None
+
+        # No raw exception message or absolute path in the error text.
+        error_msg = result.diagnostics.get("adapter_error_message", "")
+        assert "simulated publication failure" not in error_msg
+        assert "/" not in error_msg or "[REDACTED" in error_msg
+
+    def test_publication_failure_no_artifact_claim(
+        self, temp_git_repo: Path, run_dir: Path, actor_dir: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """After publication failure, no adapter-result artifact should
+        exist on disk and the result must not claim it was published."""
+        source_revision = _get_head_sha(temp_git_repo)
+        actor_script = _create_actor_script(
+            actor_dir,
+            f"""
+import json, sys
+args = sys.argv[1:]
+result_path = args[args.index("--repair-result") + 1]
+result = {{
+    "schema_version": "1.0", "run_id": "run-123", "story_id": "story-456",
+    "attempt": 1, "source_revision": "{source_revision}",
+    "status": "NO_CHANGE", "changed": False, "changed_files": [],
+    "summary": "No changes",
+    "diagnostics": {{"actions_taken": [], "obstacles": []}},
+    "recommended_action": "abort",
+    "sanitization": {{"redaction_applied": False, "redaction_count": 0,
+        "truncation_applied": False, "truncated_fields": []}},
+    "completed_at": "2026-08-06T12:00:00Z"
+}}
+with open(result_path, "w") as f:
+    json.dump(result, f)
+""",
+        )
+        repair_request = _make_valid_repair_request(source_revision=source_revision)
+
+        original_write = _atomic_write_json
+
+        def failing_write(path: Path, data: Any) -> None:
+            target = str(path)
+            if target.endswith("repair-adapter-result.json"):
+                raise OSError("simulated publication failure")
+            return original_write(path, data)
+
+        import repair_adapter as ra
+
+        monkeypatch.setattr(ra, "_atomic_write_json", failing_write)
+
+        result = run_repair(
+            repo_root=temp_git_repo,
+            run_dir=run_dir,
+            repair_request=repair_request,
+            actor_executable=str(actor_script),
+            actor_arguments=[],
+            timeout_seconds=30,
+            max_output_bytes=4096,
+            baseline_exclusions=[],
+            completed_at="2026-08-06T12:00:00Z",
+        )
+
+        assert result.adapter_status == ADAPTER_INTERNAL_ERROR
+        adapter_result_path = run_dir / "repair" / "repair-adapter-result.json"
+        assert not adapter_result_path.exists(), (
+            "adapter-result artifact should not exist after publication failure"
+        )
+
+
+# ===========================================================================
+# SECOND REVIEW REMEDIATION — F4: source-of-truth contradiction
+# ===========================================================================
+
+
+class TestF4SourceOfTruthConsistency:
+    """F4: verify that the production code and planning documents accurately
+    reflect the DEC-R1 fail-closed baseline behavior, not stale wording."""
+
+    def test_production_docstring_reflects_fail_closed(self) -> None:
+        """The docstring at _verify_clean_tracked_baseline must not say
+        that non-excluded untracked files are 'allowed at baseline time'."""
+        adapter_path = (
+            Path(__file__).parent.parent / "lib" / "repair_adapter.py"
+        )
+        source = adapter_path.read_text()
+        # The stale wording claimed untracked files NOT in baseline_exclusions
+        # are "allowed at baseline time". This must be corrected.
+        assert "allowed at baseline time" not in source, (
+            "stale wording 'allowed at baseline time' remains in repair_adapter.py"
+        )
+
+    def test_planning_doc_reflects_fail_closed(self) -> None:
+        """The planning document §15.2 must not say non-excluded untracked
+        files 'will trigger ADAPTER_UNDECLARED_CHANGE' — that contradicts
+        DEC-R1 fail-closed behavior which triggers ADAPTER_DIRTY_BASELINE."""
+        planning_path = (
+            Path(__file__).parents[3]
+            / "docs" / "planning" / "wp_al_1c5_repair_adapter.md"
+        )
+        source = planning_path.read_text()
+        # Stale wording said non-excluded untracked files are "treated as
+        # potential actor changes (will trigger ADAPTER_UNDECLARED_CHANGE)".
+        # Under DEC-R1, they trigger ADAPTER_DIRTY_BASELINE before invocation.
+        assert "will trigger `ADAPTER_UNDECLARED_CHANGE`" not in source, (
+            "stale wording in planning doc contradicts DEC-R1 fail-closed"
+        )
