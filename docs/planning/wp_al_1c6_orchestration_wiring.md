@@ -219,12 +219,24 @@ smallest compatible mechanism: a **verify-context file**.
 }
 ```
 
+**Authoritative fields:**
+- `verify_type` — `"initial"` or `"reverify"` (string enum)
+- `attempt` — integer (0 for initial, 1 for reverify)
+- `run_id` — must match current run identity
+- `story_id` — must match current story identity
+
+**Deterministic semantics for invalid/inconsistent verify-context:**
+- Invalid `verify_type` value → `INFRASTRUCTURE_ERROR`, no success path
+- Invalid `attempt` value (e.g., reverify with attempt=0, initial with attempt≠0) → `INFRASTRUCTURE_ERROR`
+- Identity mismatch (`run_id` or `story_id` does not match current run) → `INFRASTRUCTURE_ERROR`
+- Malformed JSON or missing required fields → `INFRASTRUCTURE_ERROR`
+
 Before each verify-story.sh invocation, the orchestrator writes this file.
-`verify-story.sh` reads it and includes `verify_type` in the verify-result.json
+`verify-story.sh` reads it and includes `verify_context` in the verify-result.json
 output under a new optional field `verify_context`.
 
 Existing verify-result schema is extended with one optional field:
-- `verify_context` (optional object): `verify_type`, `attempt`
+- `verify_context` (optional object): `verify_type`, `attempt`, `run_id`, `story_id`
 
 This does NOT break existing scenarios because the field is optional and absent
 in existing harness tests.
@@ -634,35 +646,43 @@ All other states return exit 1.
 
 ## 13. Passport Phase Transitions
 
-The passport tracks phase progression. WP-AL-1C6 introduces new phases:
+The passport tracks phase progression. WP-AL-1C6 introduces one new orchestration phase:
 
-| Phase | Role | Workspace Type | When |
-|-------|------|----------------|------|
-| `allocate` | `implementer` | `control-plane` | Bootstrap |
-| `implement` | `implementer` | `source` | Before verify (existing) |
-| `verify` | `verifier` | `validation` | Initial verify (existing) |
-| `review` | `reviewer` | `validation` | After verify PASS or FAIL (new) |
-| `repair` | `repair` | `source` | After review FAIL+repair (new) |
-| `reverify` | `verifier` | `validation` | After repair REPAIRED (new) |
-| `report` | `reporter` | `control-plane` | Final reporting (existing) |
+| Phase | Role | Workspace Type | Status |
+|-------|------|----------------|--------|
+| `allocate` | `implementer` | `control-plane` | Existing |
+| `implement` | `implementer` | `source` | Existing |
+| `verify` | `verifier` | `validation` | Existing |
+| `review` | `reviewer` | `validation` | Existing (now wired into orchestration) |
+| `repair` | `repair` | `source` | Existing (now wired into orchestration) |
+| `reverify` | `verifier` | `validation` | **New** — introduced by WP-AL-1C6 |
+| `report` | `reporter` | `control-plane` | Existing |
 
 ### 13.1 Guard policy extensions (N5)
 
-The existing guard policy (`lib/guard.sh`) must be extended to accept the new
-phases AND reject incorrect role/workspace_type combinations:
+The existing guard policy (`lib/guard.sh`) must be extended to:
 
-- `review` phase: role=`reviewer`, workspace=`validation` ONLY
-- `repair` phase: role=`repair`, workspace=`source` ONLY
-- `reverify` phase: role=`verifier`, workspace=`validation` ONLY
+1. Accept the new `reverify` phase: role=`verifier`, workspace=`validation`
+2. Enforce strict role/workspace binding for all review/repair/reverify phases:
 
-Wrong role for a phase → guard rejects → `INFRASTRUCTURE_ERROR`.
-Wrong workspace_type for a phase → guard rejects → `INFRASTRUCTURE_ERROR`.
+| Phase | Required Role | Required Workspace | Guard Behavior |
+|-------|--------------|-------------------|----------------|
+| `review` | `reviewer` | `validation` | Accept correct; reject wrong role; reject wrong workspace |
+| `repair` | `repair` | `source` | Accept correct; reject wrong role; reject wrong workspace |
+| `reverify` | `verifier` | `validation` | Accept correct; reject wrong role; reject wrong workspace |
+
+**Guard semantics:**
+- Wrong role for a phase → guard rejects → `INFRASTRUCTURE_ERROR`
+- Wrong workspace_type for a phase → guard rejects → `INFRASTRUCTURE_ERROR`
+- Unknown phase (not in the table above) → guard rejects → `INFRASTRUCTURE_ERROR`
+
+The guard must NOT permissively accept unknown phases. It must explicitly enumerate allowed phase/role/workspace combinations and reject all others.
 
 These are already defined in `.agent-loop/project.json`:
 - `roles.allowed`: `["manager", "implementer", "verifier", "reviewer", "repair", "reporter"]`
 - `workspaces.allowed_types`: `["source", "validation", "control-plane"]`
 
-The guard policy must accept ONLY the specified phase/role/workspace combinations and reject all others.
+The guard policy must accept ONLY the specified combinations and reject all others.
 
 ---
 
@@ -862,50 +882,53 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 | OW-19 | Malformed repair-result → INFRASTRUCTURE_ERROR | Correct final_status |
 | OW-20 | verify-context.json written with verify_type=initial before initial verify | File exists, correct content |
 | OW-21 | verify-context.json written with verify_type=reverify after repair | File exists, correct content |
-| OW-22 | verify-story.sh includes verify_context in verify-result when file present | Field present |
-| OW-23 | report-story.sh distinguishes initial verify from reverify | Correct final_status |
-| OW-24 | report-story.sh handles repair adapter result | repair field present |
-| OW-25 | report-story.sh handles reverify result | reverify field present |
-| OW-26 | Passport phase transition: verify→review | Phase updated |
-| OW-27 | Passport phase transition: review→repair | Phase updated |
-| OW-28 | Passport phase transition: repair→reverify | Phase updated |
-| OW-29 | Guard accepts review phase with correct role+workspace | Guard passes |
-| OW-30 | Guard accepts repair phase with correct role+workspace | Guard passes |
-| OW-31 | Guard accepts reverify phase with correct role+workspace | Guard passes |
-| OW-32 | Guard rejects review phase with wrong role | Guard rejects |
-| OW-33 | Guard rejects review phase with wrong workspace_type | Guard rejects |
-| OW-34 | Guard rejects reverify phase with wrong role | Guard rejects |
-| OW-35 | End-to-end: verify FAIL → review(initial_verify_fail) → repair REPAIRED → reverify PASS → VERIFIED_AFTER_REPAIR | All adapters invoked in sequence, correct final_status |
-| OW-36 | End-to-end: verify FAIL → review FAIL with action≠repair → VERIFICATION_FAILED (no repair) | Orchestrator does not invoke repair |
-| OW-37 | Initial verify FAIL + review PASS → VERIFICATION_FAILED (not ACCEPTED) | Regression: verify FAIL stands |
-| OW-38 | Dry-run mode skips review/repair | No adapter invocation |
-| OW-39 | No Git mutating commands invoked by runtime | No commit/push/merge/rebase/reset/clean/stash/checkout/branch-delete/force-ops |
-| OW-40 | Existing scenarios A-AA unaffected | All pass |
-| OW-41 | Immutable initial snapshots created after verify | verify-result.initial.json, failure-context.initial.json exist |
-| OW-42 | Immutable snapshot SHA-256 remains valid after reverify | Hash unchanged |
-| OW-43 | Reverify creates separate snapshot | verify-result.reverify.json exists |
-| OW-44 | Reverify does not destroy initial evidence | Initial snapshots still present and valid |
-| OW-45 | Final report references both initial and reverify evidence | Both referenced |
-| OW-46 | Repair-request references immutable verify-result.initial.json | Path correct |
-| OW-47 | Review-request references immutable failure-context.initial.json | Path correct |
-| OW-48 | Snapshot publication failure → INFRASTRUCTURE_ERROR | Correct final_status |
-| OW-49 | Committed candidate + clean baseline → pre-flight passes | Orchestrator proceeds |
-| OW-50 | Dirty tracked worktree before repair → DIRTY_BASELINE | Correct final_status |
-| OW-51 | Missing failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
-| OW-52 | Malformed failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
-| OW-53 | Identity-mismatched failure-context → INFRASTRUCTURE_ERROR | Reviewer not invoked |
-| OW-54 | Initial verify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
-| OW-55 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
-| OW-56 | Missing verify-context → defaults to verify_type=initial | Backward compatible |
-| OW-57 | Malformed verify-context → defaults to verify_type=initial | Backward compatible |
-| OW-58 | repair_budget=0 → no repair invoked even if review recommends | Repair not invoked |
-| OW-59 | Exactly one initial verify + at most one reverify | Invocation count correct |
-| OW-60 | No second repair after reverify FAIL | Second repair not invoked |
-| OW-61 | Bare reverify PASS without valid adapter evidence → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
-| OW-62 | Reconciliation evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
-| OW-63 | Permission enforcement evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
+| OW-22 | verify-context with invalid verify_type value | INFRASTRUCTURE_ERROR, no success path |
+| OW-23 | verify-context with incorrect attempt value (e.g., reverify with attempt=0) | INFRASTRUCTURE_ERROR |
+| OW-24 | verify-context with identity mismatch (run_id or story_id) | INFRASTRUCTURE_ERROR |
+| OW-25 | verify-context with malformed JSON | INFRASTRUCTURE_ERROR |
+| OW-26 | verify-story.sh includes verify_context in verify-result when file present | Field present |
+| OW-27 | report-story.sh distinguishes initial verify from reverify | Correct final_status |
+| OW-28 | report-story.sh handles repair adapter result | repair field present |
+| OW-29 | report-story.sh handles reverify result | reverify field present |
+| OW-30 | Passport phase transition: verify→review | Phase updated |
+| OW-31 | Passport phase transition: review→repair | Phase updated |
+| OW-32 | Passport phase transition: repair→reverify | Phase updated |
+| OW-33 | Guard accepts review phase with correct role+workspace | Guard passes |
+| OW-34 | Guard accepts repair phase with correct role+workspace | Guard passes |
+| OW-35 | Guard accepts reverify phase with correct role+workspace | Guard passes |
+| OW-36 | Guard rejects review phase with wrong role | Guard rejects |
+| OW-37 | Guard rejects review phase with wrong workspace_type | Guard rejects |
+| OW-38 | Guard rejects reverify phase with wrong role | Guard rejects |
+| OW-39 | Guard rejects reverify phase with wrong workspace_type | Guard rejects |
+| OW-40 | End-to-end: verify FAIL → review(initial_verify_fail) → repair REPAIRED → reverify PASS → VERIFIED_AFTER_REPAIR | All adapters invoked in sequence, correct final_status |
+| OW-41 | End-to-end: verify FAIL → review FAIL with action≠repair → VERIFICATION_FAILED (no repair) | Orchestrator does not invoke repair |
+| OW-42 | Initial verify FAIL + review PASS → VERIFICATION_FAILED (not ACCEPTED) | Regression: verify FAIL stands |
+| OW-43 | Dry-run mode skips review/repair | No adapter invocation |
+| OW-44 | No Git mutating commands invoked by runtime | No commit/push/merge/rebase/reset/clean/stash/checkout/branch-delete/force-ops |
+| OW-45 | Existing scenarios A-AA unaffected | All pass |
+| OW-46 | Immutable initial snapshots created after verify | verify-result.initial.json, failure-context.initial.json exist |
+| OW-47 | Immutable snapshot SHA-256 remains valid after reverify | Hash unchanged |
+| OW-48 | Reverify creates separate snapshot | verify-result.reverify.json exists |
+| OW-49 | Reverify does not destroy initial evidence | Initial snapshots still present and valid |
+| OW-50 | Final report references both initial and reverify evidence | Both referenced |
+| OW-51 | Repair-request references immutable verify-result.initial.json | Path correct |
+| OW-52 | Review-request references immutable failure-context.initial.json | Path correct |
+| OW-53 | Snapshot publication failure → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-54 | Committed candidate + clean baseline → pre-flight passes | Orchestrator proceeds |
+| OW-55 | Dirty tracked worktree before repair → DIRTY_BASELINE | Correct final_status |
+| OW-56 | Missing failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-57 | Malformed failure-context before review → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-58 | Identity-mismatched failure-context → INFRASTRUCTURE_ERROR | Reviewer not invoked |
+| OW-59 | Initial verify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-60 | Reverify infrastructure ERROR → INFRASTRUCTURE_ERROR | Correct final_status |
+| OW-61 | Missing verify-context → defaults to verify_type=initial | Backward compatible |
+| OW-62 | Malformed verify-context → defaults to verify_type=initial | Backward compatible |
+| OW-63 | repair_budget=0 + review recommends repair → VERIFICATION_FAILED, exit 1, no actor/reverify invoked | final_status=VERIFICATION_FAILED, exit 1 |
+| OW-64 | Bare reverify PASS without valid adapter evidence → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
+| OW-65 | Reconciliation evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
+| OW-66 | Permission enforcement evidence invalid → INFRASTRUCTURE_ERROR | VERIFIED_AFTER_REPAIR not produced |
 
-**Total: 63 new orchestration test cases**
+**Total: 66 new orchestration test cases**
 
 ### 17.2 Extended test file: `test_review_contract.py`
 
@@ -922,7 +945,7 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 
 **Total: 8 new review-contract test cases**
 
-**Combined planned unit/integration test total: 63 + 8 = 71**
+**Combined planned unit/integration test total: 66 + 8 = 74**
 
 ---
 
@@ -965,9 +988,9 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 - All adapter evidence valid
 - final_status=VERIFIED_AFTER_REPAIR, exit 0
 
-### 18.3 Scenario AD — Verify FAIL + Review FAIL + Repair Adapter Failure
+### 18.3 Scenario AD — Verify FAIL + Review FAIL + Repair Actor ERROR
 
-**Purpose:** Repair adapter failure
+**Purpose:** Repair actor returns ERROR; adapter publishes valid result; orchestrator fails closed
 
 **Setup:**
 - Workspace with failing implementation (committed, clean baseline)
@@ -979,8 +1002,10 @@ The orchestration runtime MUST NOT invoke Git mutating/publishing/history-rewrit
 - Review adapter invoked with triggered_by=initial_verify_fail
 - Pre-repair baseline check passes
 - Repair adapter invoked
-- repair-adapter-result.json adapter_status != ADAPTER_SUCCESS
-- final_status=REPAIR_ADAPTER_FAILURE, exit 1
+- repair-adapter-result.json adapter_status == ADAPTER_SUCCESS
+- repair_result_summary.status == ERROR (actor returned ERROR; adapter published it)
+- final_status == INFRASTRUCTURE_ERROR, exit 1
+- No reverify invoked
 
 ### 18.4 Scenario AE — Verify PASS + Review ERROR + Human Review
 
@@ -1205,8 +1230,8 @@ cycle and approves the final result. No automatic commit/push/merge.
 - Branch created from `origin/main` @ `764ca3e5b1b38e7a97370c478113e28588d152f8`
 - Implementation confined to the expected file scope in §14 (3 new + 10 modified files)
 - All AC-01 through AC-55 pass with evidence
-- All 71 new unit/integration tests pass (63 orchestration + 8 review-contract extension)
-- All 14 new harness scenarios (AB-AN) pass
+- All 74 new unit/integration tests pass (66 orchestration + 8 review-contract extension)
+- All 13 new harness scenarios (AB-AN) pass
 - All 27 existing harness scenarios (A-AA) pass
 - Ruff clean for new/modified Python files
 - mypy --strict clean for new/modified Python files
@@ -1368,7 +1393,7 @@ Product Owner approved remediation addressing independent review findings:
 | Modifies report-story.sh | No | No | Yes |
 | Modifies verify-story.sh | No | No | Yes (verify-context) |
 | New harness scenarios | U, V | Y, Z, AA | AB through AN |
-| New unit/integration tests | 72 | 66 + 29 | 63 + 8 = 71 |
+| New unit/integration tests | 72 | 66 + 29 | 66 + 8 = 74 |
 | Integration | No | No | Yes |
 
 ---
