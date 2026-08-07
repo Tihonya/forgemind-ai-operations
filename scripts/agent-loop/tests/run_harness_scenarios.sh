@@ -1231,6 +1231,409 @@ fi
 rm -f "$MANIFEST_X" "$SUITE_TMP/x-verify.log" "$SUITE_TMP/x-report.log"
 
 # ============================================================================
+# Scenario Y: WP-AL-1C5 — Repair adapter SUCCESS with REPAIRED
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario Y: WP-AL-1C5 — Repair adapter SUCCESS (isolated repo)"
+echo "================================================================"
+create_isolated_repo "Y"
+
+# Create manifest and run verification to generate failure context
+MANIFEST_Y="$(mktemp "$SUITE_TMP/manifest-Y-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_Y" "HARNESS-Y" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+
+run_isolated_verify "$MANIFEST_Y" > "$SUITE_TMP/y-verify.log" 2>&1
+Y_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+Y_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+Y_FAILURE_CONTEXT="$Y_RUN_DIR/reports/failure-context.json"
+Y_VERIFY_RESULT="$Y_RUN_DIR/reports/verify-result.json"
+
+if [[ $Y_VERIFY_EXIT -eq 0 && -f "$Y_FAILURE_CONTEXT" && -f "$Y_VERIFY_RESULT" ]]; then
+  # Build repair-request.json using build_repair_request from repair_contract.py
+  Y_REPAIR_REQUEST="$Y_RUN_DIR/reports/repair-request.json"
+  "$PYTHON_BIN" <<PYEOF
+import sys
+import json
+from pathlib import Path
+sys.path.insert(0, "$REAL_REPO_ROOT/scripts/agent-loop/lib")
+from repair_contract import build_repair_request
+
+fc = json.load(open("$Y_FAILURE_CONTEXT"))
+try:
+    repair_request = build_repair_request(
+        run_dir=Path("$Y_RUN_DIR/reports"),
+        failure_context_path=Path("$Y_FAILURE_CONTEXT"),
+        verify_result_path=Path("$Y_VERIFY_RESULT"),
+        review_result_path=None,
+        run_id=fc["run_id"],
+        story_id=fc["story_id"],
+        attempt=1,
+        max_attempts=3,
+        source_revision=fc["candidate_identity"]["base_commit"],
+        failure_class="verification_fail",
+        failure_summary="Verification failed",
+        allowed_paths=["**/*.py"],
+        forbidden_paths=[],
+        requested_action="fix_verification",
+        generated_at="2026-01-01T00:00:00Z",
+    )
+    with open("$Y_REPAIR_REQUEST", "w") as f:
+        json.dump(repair_request, f, indent=2)
+    sys.exit(0)
+except Exception as e:
+    print(f"Failed to build repair request: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+  Y_BUILD_EXIT=$?
+
+  if [[ $Y_BUILD_EXIT -eq 0 && -f "$Y_REPAIR_REQUEST" ]]; then
+    # Copy mock repair actor into isolated repo
+    Y_MOCK_SCRIPT="$ISOLATED_REPO/mock_repair_actor.py"
+    cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_repair_actor.py" "$Y_MOCK_SCRIPT"
+
+    # Run repair adapter with REPAIRED mode
+    Y_REPAIR_EXIT=0
+    "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/repair_adapter.py" \
+      --repo-root "$ISOLATED_REPO" \
+      --run-dir "$Y_RUN_DIR" \
+      --repair-request "$Y_REPAIR_REQUEST" \
+      --actor-command python3 \
+      --actor-arg "$Y_MOCK_SCRIPT" \
+      --actor-arg=--mode \
+      --actor-arg REPAIRED \
+      --actor-arg=--modify \
+      --actor-arg "backend/src/synthetic/module_y.py" \
+      --timeout-seconds 30 \
+      --baseline-exclusion "backend/tests/synthetic/test_harness_a.py" \
+      --baseline-exclusion "mock_repair_actor.py" \
+      --completed-at "2026-01-01T00:00:00Z" > "$SUITE_TMP/y-repair.log" 2>&1 || Y_REPAIR_EXIT=$?
+
+    # Verify repair adapter result
+    Y_REPAIR_RESULT="$Y_RUN_DIR/repair/repair-adapter-result.json"
+    if [[ $Y_REPAIR_EXIT -eq 0 && -f "$Y_REPAIR_RESULT" ]]; then
+      if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        result = json.load(f)
+    if result['adapter_status'] != 'ADAPTER_SUCCESS':
+        print(f'FAIL - wrong adapter_status: {result[\"adapter_status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['repair_result_summary']['status'] != 'REPAIRED':
+        print(f'FAIL - wrong repair status: {result[\"repair_result_summary\"][\"status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if not result['reconciliation']['exact_match']:
+        print(f'FAIL - reconciliation not exact_match', file=sys.stderr)
+        sys.exit(1)
+    if not result['permission_enforcement']['all_actual_changes_permitted']:
+        print(f'FAIL - permission violations detected', file=sys.stderr)
+        sys.exit(1)
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$Y_REPAIR_RESULT" 2>&1; then
+        Y_EXIT=0
+        echo "Scenario Y: PASS"
+      else
+        Y_EXIT=1
+        echo "Scenario Y: FAIL (repair adapter result validation failed)"
+      fi
+    else
+      Y_EXIT=1
+      echo "Scenario Y: FAIL (repair adapter failed or result not created, exit=$Y_REPAIR_EXIT)"
+    fi
+  else
+    Y_EXIT=1
+    echo "Scenario Y: FAIL (repair-request.json build failed)"
+  fi
+else
+  Y_EXIT=1
+  echo "Scenario Y: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_Y" "$SUITE_TMP/y-verify.log" "$SUITE_TMP/y-repair.log"
+
+# ============================================================================
+# Scenario Z: WP-AL-1C5 — Repair adapter SUCCESS with NO_CHANGE
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario Z: WP-AL-1C5 — Repair adapter NO_CHANGE (isolated repo)"
+echo "================================================================"
+create_isolated_repo "Z"
+
+# Create manifest and run verification
+MANIFEST_Z="$(mktemp "$SUITE_TMP/manifest-Z-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_Z" "HARNESS-Z" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+
+run_isolated_verify "$MANIFEST_Z" > "$SUITE_TMP/z-verify.log" 2>&1
+Z_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+Z_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+Z_FAILURE_CONTEXT="$Z_RUN_DIR/reports/failure-context.json"
+Z_VERIFY_RESULT="$Z_RUN_DIR/reports/verify-result.json"
+
+if [[ $Z_VERIFY_EXIT -eq 0 && -f "$Z_FAILURE_CONTEXT" && -f "$Z_VERIFY_RESULT" ]]; then
+  # Build repair-request.json using build_repair_request from repair_contract.py
+  Z_REPAIR_REQUEST="$Z_RUN_DIR/reports/repair-request.json"
+  "$PYTHON_BIN" <<PYEOF
+import sys
+import json
+from pathlib import Path
+sys.path.insert(0, "$REAL_REPO_ROOT/scripts/agent-loop/lib")
+from repair_contract import build_repair_request
+
+fc = json.load(open("$Z_FAILURE_CONTEXT"))
+try:
+    repair_request = build_repair_request(
+        run_dir=Path("$Z_RUN_DIR/reports"),
+        failure_context_path=Path("$Z_FAILURE_CONTEXT"),
+        verify_result_path=Path("$Z_VERIFY_RESULT"),
+        review_result_path=None,
+        run_id=fc["run_id"],
+        story_id=fc["story_id"],
+        attempt=1,
+        max_attempts=3,
+        source_revision=fc["candidate_identity"]["base_commit"],
+        failure_class="verification_fail",
+        failure_summary="Verification failed",
+        allowed_paths=["**/*.py"],
+        forbidden_paths=[],
+        requested_action="fix_verification",
+        generated_at="2026-01-01T00:00:00Z",
+    )
+    with open("$Z_REPAIR_REQUEST", "w") as f:
+        json.dump(repair_request, f, indent=2)
+    sys.exit(0)
+except Exception as e:
+    print(f"Failed to build repair request: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+  Z_BUILD_EXIT=$?
+
+  if [[ $Z_BUILD_EXIT -eq 0 && -f "$Z_REPAIR_REQUEST" ]]; then
+    # Copy mock repair actor
+    Z_MOCK_SCRIPT="$ISOLATED_REPO/mock_repair_actor.py"
+    cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_repair_actor.py" "$Z_MOCK_SCRIPT"
+
+    # Run repair adapter
+    Z_REPAIR_EXIT=0
+    "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/repair_adapter.py" \
+      --repo-root "$ISOLATED_REPO" \
+      --run-dir "$Z_RUN_DIR" \
+      --repair-request "$Z_REPAIR_REQUEST" \
+      --actor-command python3 \
+      --actor-arg "$Z_MOCK_SCRIPT" \
+      --actor-arg=--mode \
+      --actor-arg NO_CHANGE \
+      --timeout-seconds 30 \
+      --baseline-exclusion "backend/tests/synthetic/test_harness_a.py" \
+      --baseline-exclusion "mock_repair_actor.py" \
+      --completed-at "2026-01-01T00:00:00Z" > "$SUITE_TMP/z-repair.log" 2>&1 || Z_REPAIR_EXIT=$?
+
+    # Verify repair adapter result
+    Z_REPAIR_RESULT="$Z_RUN_DIR/repair/repair-adapter-result.json"
+    if [[ $Z_REPAIR_EXIT -eq 0 && -f "$Z_REPAIR_RESULT" ]]; then
+      if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        result = json.load(f)
+    if result['adapter_status'] != 'ADAPTER_SUCCESS':
+        print(f'FAIL - wrong adapter_status: {result[\"adapter_status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['repair_result_summary']['status'] != 'NO_CHANGE':
+        print(f'FAIL - wrong repair status: {result[\"repair_result_summary\"][\"status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['workspace_changes']['modified'] != []:
+        print(f'FAIL - workspace_changes.modified not empty', file=sys.stderr)
+        sys.exit(1)
+    if result['workspace_changes']['added'] != []:
+        print(f'FAIL - workspace_changes.added not empty', file=sys.stderr)
+        sys.exit(1)
+    if not result['reconciliation']['exact_match']:
+        print(f'FAIL - reconciliation not exact_match', file=sys.stderr)
+        sys.exit(1)
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$Z_REPAIR_RESULT" 2>&1; then
+        Z_EXIT=0
+        echo "Scenario Z: PASS"
+      else
+        Z_EXIT=1
+        echo "Scenario Z: FAIL (repair adapter result validation failed)"
+      fi
+    else
+      Z_EXIT=1
+      echo "Scenario Z: FAIL (repair adapter failed or result not created, exit=$Z_REPAIR_EXIT)"
+    fi
+  else
+    Z_EXIT=1
+    echo "Scenario Z: FAIL (repair-request.json build failed)"
+  fi
+else
+  Z_EXIT=1
+  echo "Scenario Z: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_Z" "$SUITE_TMP/z-verify.log" "$SUITE_TMP/z-repair.log"
+
+# ============================================================================
+# Scenario AA: WP-AL-1C5 — Repair adapter UNDECLARED_CHANGE
+# ============================================================================
+echo ""
+echo "================================================================"
+echo "Scenario AA: WP-AL-1C5 — Repair adapter UNDECLARED_CHANGE (isolated repo)"
+echo "================================================================"
+create_isolated_repo "AA"
+
+# Create manifest and run verification
+MANIFEST_AA="$(mktemp "$SUITE_TMP/manifest-AA-XXXXXX" --suffix=".json")"
+write_scenario_manifest "$MANIFEST_AA" "HARNESS-AA" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+add_candidate_content "backend/src/synthetic/module_aa.py" <<'PYEOF'
+"""Module AA for undeclared change scenario."""
+
+
+def original_function():
+    """Original implementation."""
+    return 42
+PYEOF
+
+run_isolated_verify "$MANIFEST_AA" > "$SUITE_TMP/aa-verify.log" 2>&1
+AA_VERIFY_EXIT=$?
+
+# Find run directory and failure context
+AA_RUN_DIR="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+AA_FAILURE_CONTEXT="$AA_RUN_DIR/reports/failure-context.json"
+AA_VERIFY_RESULT="$AA_RUN_DIR/reports/verify-result.json"
+
+if [[ $AA_VERIFY_EXIT -eq 0 && -f "$AA_FAILURE_CONTEXT" && -f "$AA_VERIFY_RESULT" ]]; then
+  # Build repair-request.json using build_repair_request from repair_contract.py
+  AA_REPAIR_REQUEST="$AA_RUN_DIR/reports/repair-request.json"
+  "$PYTHON_BIN" <<PYEOF
+import sys
+import json
+from pathlib import Path
+sys.path.insert(0, "$REAL_REPO_ROOT/scripts/agent-loop/lib")
+from repair_contract import build_repair_request
+
+fc = json.load(open("$AA_FAILURE_CONTEXT"))
+try:
+    repair_request = build_repair_request(
+        run_dir=Path("$AA_RUN_DIR/reports"),
+        failure_context_path=Path("$AA_FAILURE_CONTEXT"),
+        verify_result_path=Path("$AA_VERIFY_RESULT"),
+        review_result_path=None,
+        run_id=fc["run_id"],
+        story_id=fc["story_id"],
+        attempt=1,
+        max_attempts=3,
+        source_revision=fc["candidate_identity"]["base_commit"],
+        failure_class="verification_fail",
+        failure_summary="Verification failed",
+        allowed_paths=["**/*.py", "undeclared_change.txt"],
+        forbidden_paths=[],
+        requested_action="fix_verification",
+        generated_at="2026-01-01T00:00:00Z",
+    )
+    with open("$AA_REPAIR_REQUEST", "w") as f:
+        json.dump(repair_request, f, indent=2)
+    sys.exit(0)
+except Exception as e:
+    print(f"Failed to build repair request: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+  AA_BUILD_EXIT=$?
+
+  if [[ $AA_BUILD_EXIT -eq 0 && -f "$AA_REPAIR_REQUEST" ]]; then
+    # Copy mock repair actor
+    AA_MOCK_SCRIPT="$ISOLATED_REPO/mock_repair_actor.py"
+    cp "$REAL_REPO_ROOT/scripts/agent-loop/lib/mock_repair_actor.py" "$AA_MOCK_SCRIPT"
+
+    # Run repair adapter with UNDECLARED_CHANGE mode
+    AA_REPAIR_EXIT=0
+    "$PYTHON_BIN" "$REAL_REPO_ROOT/scripts/agent-loop/lib/repair_adapter.py" \
+      --repo-root "$ISOLATED_REPO" \
+      --run-dir "$AA_RUN_DIR" \
+      --repair-request "$AA_REPAIR_REQUEST" \
+      --actor-command python3 \
+      --actor-arg "$AA_MOCK_SCRIPT" \
+      --actor-arg=--mode \
+      --actor-arg undeclared_change \
+      --actor-arg=--modify \
+      --actor-arg "backend/src/synthetic/module_aa.py" \
+      --timeout-seconds 30 \
+      --baseline-exclusion "backend/tests/synthetic/test_harness_a.py" \
+      --baseline-exclusion "mock_repair_actor.py" \
+      --baseline-exclusion "backend/src/synthetic/module_aa.py" \
+      --completed-at "2026-01-01T00:00:00Z" > "$SUITE_TMP/aa-repair.log" 2>&1 || AA_REPAIR_EXIT=$?
+
+    # Verify repair adapter result
+    AA_REPAIR_RESULT="$AA_RUN_DIR/repair/repair-adapter-result.json"
+    if [[ -f "$AA_REPAIR_RESULT" ]]; then
+      if "$PYTHON_BIN" -c "
+import json, sys
+try:
+    with open(sys.argv[1]) as f:
+        result = json.load(f)
+    if result['adapter_status'] != 'ADAPTER_UNDECLARED_CHANGE':
+        print(f'FAIL - wrong adapter_status: {result[\"adapter_status\"]}', file=sys.stderr)
+        sys.exit(1)
+    if result['reconciliation']['exact_match']:
+        print(f'FAIL - reconciliation should not be exact_match', file=sys.stderr)
+        sys.exit(1)
+    if len(result['reconciliation']['undeclared_changes']) == 0:
+        print(f'FAIL - undeclared_changes should not be empty', file=sys.stderr)
+        sys.exit(1)
+    print('PASS - all validations passed', file=sys.stderr)
+    sys.exit(0)
+except Exception as e:
+    print(f'FAIL - exception: {e}', file=sys.stderr)
+    sys.exit(1)
+" "$AA_REPAIR_RESULT" 2>&1; then
+        AA_EXIT=0
+        echo "Scenario AA: PASS"
+      else
+        AA_EXIT=1
+        echo "Scenario AA: FAIL (repair adapter result validation failed)"
+      fi
+    else
+      AA_EXIT=1
+      echo "Scenario AA: FAIL (repair adapter result not created, exit=$AA_REPAIR_EXIT)"
+    fi
+  else
+    AA_EXIT=1
+    echo "Scenario AA: FAIL (repair-request.json build failed)"
+  fi
+else
+  AA_EXIT=1
+  echo "Scenario AA: FAIL (verification failed or failure-context not created)"
+fi
+
+rm -f "$MANIFEST_AA" "$SUITE_TMP/aa-verify.log" "$SUITE_TMP/aa-repair.log"
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -1261,14 +1664,18 @@ echo "Scenario U exit code: $U_EXIT (expected: 0)"
 echo "Scenario V exit code: $V_EXIT (expected: 0)"
 echo "Scenario W exit code: $W_EXIT (expected: 0)"
 echo "Scenario X exit code: $X_EXIT (expected: 0)"
+echo "Scenario Y exit code: $Y_EXIT (expected: 0)"
+echo "Scenario Z exit code: $Z_EXIT (expected: 0)"
+echo "Scenario AA exit code: $AA_EXIT (expected: 0)"
 echo ""
 
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
       $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
       $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 && \
-      $U_EXIT -eq 0 && $V_EXIT -eq 0 && $W_EXIT -eq 0 && $X_EXIT -eq 0 ]]; then
-  echo "ALL 24 SCENARIOS PASSED (A-X)"
+      $U_EXIT -eq 0 && $V_EXIT -eq 0 && $W_EXIT -eq 0 && $X_EXIT -eq 0 && \
+      $Y_EXIT -eq 0 && $Z_EXIT -eq 0 && $AA_EXIT -eq 0 ]]; then
+  echo "ALL 27 SCENARIOS PASSED (A-AA)"
   exit 0
 else
   echo "SOME SCENARIOS FAILED"

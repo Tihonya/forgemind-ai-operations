@@ -535,7 +535,9 @@ Dirty-baseline manifests (allowing declared pre-existing tracked changes) are de
 
 Pre-existing untracked files:
 - In `baseline_exclusions`: excluded from baseline and post-run inspection.
-- Not in `baseline_exclusions`: treated as potential actor changes (will trigger `ADAPTER_UNDECLARED_CHANGE` if actor did not declare them).
+- Not in `baseline_exclusions`: cause `ADAPTER_DIRTY_BASELINE` before actor invocation (DEC-R1 fail-closed). The actor is not invoked in this case.
+
+> **DEC-R1 supersession note:** An earlier version of this section allowed non-excluded pre-existing untracked files at baseline time, treating them as potential actor changes that would trigger `ADAPTER_UNDECLARED_CHANGE` during post-run reconciliation. That allowance was superseded by DEC-R1 during PR #56 remediation. The fail-closed policy is now authoritative: exclusions are required for any permitted pre-existing untracked paths. Actor-created new untracked paths still participate in post-run reconciliation.
 
 ### 15.3 Ignored files
 
