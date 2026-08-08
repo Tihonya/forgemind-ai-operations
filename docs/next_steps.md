@@ -1,370 +1,196 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-07-17
-**Current Phase:** Phase 1 (COMPLETE) — Phase 2 (PLANNING)
+**Last Updated:** 2026-08-08
+**Current Status:** Development in progress — Release 1 NOT READY
+**Authoritative baseline:** `origin/main` @ `417c8688facad539508d435d8110970798d0cc30`
 
 ---
 
-## Current Status
+## What is ForgeMind?
 
-**Phase 1 — Running Skeleton: ✅ COMPLETE**
+ForgeMind is a web platform for AI-assisted supply chain risk assessment in engineering and manufacturing environments. **Release 1 is a public portfolio MVP** demonstrating one complete vertical scenario: **Production Plan Supply Risk Review**.
 
-- **Branch:** `feature/phase-1-running-skeleton`
-- **Final HEAD:** `58a2635cca179a38c5d885ae686af55551beca43`
-- **MVP-1 live smoke:** PASS (full diagnostic flow verified end-to-end)
-- **Completion Report:** [Phase 1 Completion Report](phase_1/phase_1_completion_report.md)
+**Release 1 deliverables:**
+- **Live Demo:** Public HTTPS deployment on Product Owner's VPS
+- **Source Code:** Public GitHub repository (this repo)
+- **Data policy:** Synthetic data only — no real corporate or military systems
 
-Phase 1 delivers the production-grade backend skeleton: FastAPI + PostgreSQL +
-Redis + ARQ worker, structured logging, correlation ID traces, health checks,
-and the diagnostic-job vertical slice. 239 backend tests passing, ruff + mypy
-clean, live smoke verified.
+**Target reviewer journey:**
+CV → Live Demo → complete working scenario (3–5 minutes) → inspect results and state transitions → open GitHub → understand architecture, implementation, tests, deployment, and limitations.
 
----
+**Canonical Source of Truth:** `forgemind_project_source_of_truth/` (9 documents, 00–08)
 
-## Immediate Actions (Phase 1 Closeout)
-
-### 1. Merge Phase 1 to Main
-
-**Action Required:** Product Owner approval
-**Branch:** `feature/phase-1-running-skeleton` → `main`
-**Recommended Strategy:** Merge commit (not squash — 14 commits evidence-bearing)
-
-**Rationale:**
-- All 14 Phase 1 commits are atomic and form a coherent implementation history
-- Preserves the WP structure (database, core, diagnostics, runtime fix)
-- Provides a clear audit trail for Phase 2 planning
-
-**Steps (after PO approval):**
-1. Open PR from `feature/phase-1-running-skeleton` → `main`
-2. Include link to [Phase 1 Completion Report](phase_1/phase_1_completion_report.md)
-3. Merge via GitHub merge commit (not squash, not rebase)
-4. Tag: `phase-1-complete` pointing to merge commit
-5. Release note: "Phase 1: Running Skeleton — MVP-1 verified, backend production-grade"
+**Assessment evidence:** `docs/reviews/sp1_recovery_mvp_separation_assessment.md` (SP-1 assessment, 2026-08-08)
 
 ---
 
-### 2. Track Technical Debt
+## Current Implementation Status
 
-**Location:** GitHub Issues (or project management tool)
-**Source:** [Completion Report §8](phase_1/phase_1_completion_report.md#8-technical-debt)
+### ✅ IMPLEMENTED
 
-Debt triage required before Phase 2 begins:
+| Capability | Status | Evidence |
+|-----------|--------|----------|
+| Phase 1: Running Skeleton | COMPLETE | FastAPI + PostgreSQL + Redis + ARQ, 239 backend tests |
+| Phase 2: Synthetic ERP Core | COMPLETE | 14 business tables, seed generator, deterministic risk engine |
+| Phase 3: Core UI | COMPLETE | Dashboard, supply risk list, supply risk detail |
+| Phase 4: Knowledge and RAG | COMPLETE | Document ingestion, pgvector index, retrieval with citations |
+| Authentication + RBAC | COMPLETE | JWT auth, 5 demo accounts (manager/procurement/engineer/admin/auditor) |
+| AT-003 (Golden Dataset) | PASS | Seed produces deterministic RISK-001/002/003 |
+| AT-004 (Deterministic risk) | PASS | Risk engine returns exact expected values |
+| AT-005 (No hidden mocks) | PASS | UI displays real backend data |
+| AT-006 (RAG retrieval) | PASS | Citations include document_id, version, chunk_id |
 
-**Blocking debt** (must resolve before public deployment):
-- Worker Compose healthcheck missing
-- Redis password visible in resolved Compose command
-- Existing volumes retain old `.env` credentials
+### ❌ NOT IMPLEMENTED (Release 1 blockers)
 
-**Non-blocking debt** (track, fix opportunistically):
-- `redis-py` `close()` deprecation warnings (22 occurrences)
-- No separate `/api/v1/system/status` endpoint (partial plan coverage)
-- No diagnostic history/list endpoint
-- No CI gating on compose health checks
+| Capability | Required For | Phase |
+|-----------|--------------|-------|
+| AI provider adapter | AT-008, AT-013 | Phase 5 |
+| Workflow engine | AT-007, AT-012 | Phase 5 |
+| Structured output validation | AT-008 | Phase 5 |
+| Model outage handling | AT-013 | Phase 5 |
+| Approval service | AT-009, AT-010, AT-011 | Phase 6 |
+| Audit event service | AT-012 | Phase 6 |
+| Procurement task service | AT-010 | Phase 6 |
+| Approval Center UI | AT-009, AT-010, AT-011 | Phase 6 |
+| Workflow run detail UI | AT-007, AT-012 | Phase 5 |
+| Audit log UI | AT-012 | Phase 6 |
+| Demo reset | AT-015 | Phase 7 |
+| Rate limiting | Gate D | Phase 7 |
+| Backup/restore | Gate E | Phase 7 |
+| Public HTTPS deployment | AT-014 | Phase 7 |
+| Operational runbooks | Gate E | Phase 7 |
 
-**Recommendation:** Create GitHub issues for each debt item, label with `debt`,
-prioritize blocking items for Phase 2 pre-flight, defer non-blocking to Phase 7.
+### Current MVP completion: ~40%
 
----
-
-## Agent-Loop Infrastructure
-
-**Status: ✅ COMPLETE (Phase 1A, 1B1, 1B2)**
-
-Agent-loop infrastructure establishes the canonical isolated execution harness
-for autonomous agent-driven development cycles with deterministic verification
-gates.
-
-### Completed Work Packages
-
-**WP-AL-1A: Cycle Passport and Workspace Identity Guard**
-- Formal identity validation before each agent-loop phase
-- Workspace isolation enforcement (forbidden main worktree)
-- Passport creation and validation (project_id, run_id, slot_id, story_id, role, phase)
-- Phase guard with role/workspace-type checks
-- Commits: `77674ff6cd40692cf63e52e373ec2b3a8f0e4cda`
-
-**WP-AL-1B1: Project Configuration Loader**
-- `.agent-loop/project.json` and `.agent-loop/gates.json` schema validation
-- Placeholder resolution (`${VAR}` from environment)
-- Path validation and distinctness checks
-- NUL-delimited emission for safe shell consumption
-- Commit: `3752dfd32421a9a8e831a5cb1a444a13e56d60e5`
-
-**WP-AL-1B2: Canonical Manifest Schema, Isolated Harness, and Gate Wiring**
-- Canonical story manifest schema v1.0 (strict field allowlist, no legacy fallback)
-- Isolated harness execution (temp_repo_fixture, scenarios A-O)
-- Seven canonical gates wired: scope, json_syntax, yaml_syntax, targeted_tests,
-  lint, secrets, git_diff_check
-- Manifest-driven scope gate (allowed_paths/forbidden_paths, gitwildmatch)
-- Assertion gate for targeted_tests (zero-collected/all-skipped handling)
-- Diff-scoped lint and secrets (scope_to_diff)
-- Commits: `80c7c8cc4bfceba13cd81a69018cc9e848e9d022`, `e85304220095740a75e24f4f0e24025002a01c3c`
-
-### Merge Information
-
-- **Pull Request:** #44
-- **Merge Commit:** `10b0e1bf8a0ba4ced62cec585cb291f3b4c9697b`
-- **Merged Into:** `main`
-- **Source Branch:** `chore/agent-loop-infrastructure`
-- **Documentation:** [WP-AL-1B3 Failure Context Contract](planning/wp_al_1b3_failure_context_contract.md)
-
-### Next Steps
-
-**WP-AL-1B3: Structured Failure Context Contract**
-- Status: MERGED — PR #45, merge commit d1561ac1f2e74b98a4a9d4bc25381cd417be3ad9, 2026-08-04
-- Objective: Define and implement a versioned failure-context schema v1.0 with
-  a deterministic collector that reads verify-story.sh artifacts and emits
-  `$RUN_DIR/reports/failure-context.json` for every run.
-- Provides structured input contract for reviewer and repair agents (WP-AL-1C).
-- Branch: `chore/agent-loop-failure-context`
-- Pull Request: #45
-- Planning document: [wp_al_1b3_failure_context_contract.md](planning/wp_al_1b3_failure_context_contract.md)
-
-**WP-AL-1C1: Review Contract**
-- Status: MERGED — PR #48, merge commit 691bb9c
-- Objective: Define review-request and review-result schemas v1.0 with
-  structural validators, two-root referential validator, and deterministic builder.
-- Branch: `feature/agent-loop-review-contract`
-- Planning document: [wp_al_1c1_review_contract.md](planning/wp_al_1c1_review_contract.md)
-- Implementation files:
-  - `.agent-loop/review/SCHEMA.md` — request + result schemas v1.0
-  - `scripts/agent-loop/lib/review_contract.py` — validator + builder
-  - `scripts/agent-loop/tests/test_review_contract.py` — 94 unit tests (all passing)
-- Test results: 94 passed, 0 failed, ruff clean, mypy --strict clean
-- Note: ERROR status defined in schema but not integrated into report-story.sh (deferred to adapter work)
-
-**WP-AL-1C2: Deterministic Reviewer Adapter with Mock Reviewer**
-- Status: ✅ MERGED — PR #49, merge commit 0b3453c
-- Objective: Define and implement a standalone deterministic reviewer adapter
-  with mock reviewer, named-argument subprocess protocol, validated identity
-  binding, bounded diagnostics, and direct CLI entry point.
-- Branch: `feature/agent-loop-reviewer-adapter`
-- Planning document: [wp_al_1c2_reviewer_adapter.md](planning/wp_al_1c2_reviewer_adapter.md)
-- Implementation files:
-  - `.agent-loop/review-adapter/SCHEMA.md` — adapter protocol specification
-  - `scripts/agent-loop/lib/review_adapter.py` — adapter module + CLI entry point
-  - `scripts/agent-loop/lib/mock_reviewer.py` — deterministic mock reviewer
-  - `scripts/agent-loop/tests/test_review_adapter.py` — 64 pytest items (R01-R59, H01-H02, R26 parameterized)
-  - `scripts/agent-loop/tests/test_mock_reviewer.py` — 8 pytest items (M01-M08)
-- Test results: 72 pytest items passed, 0 failed, ruff clean, mypy --strict clean
-- 70 meaningful planned case IDs covered (R01-R59, M01-M08, H01-H03)
-- H03 owned by bash harness (A-T regression), verified by run_harness_scenarios.sh
-- Harness scenarios: A-V = 22/22 PASS (U: mock PASS, V: mock FAIL)
-- Features: atomic request/result writes, command validation, filesystem safety,
-  lock management, timeout handling, result binding, diagnostic preservation
-
-**WP-AL-1C3: Review-Result Reporting Guard**
-- Status: MERGED — PR #52, merge commit d715b2c08eb0cfd0924d01c73efc2ff6f8f64262
-- Objective: Close the ERROR-to-VERIFIED fall-through. Define deterministic
-  classification of existing review results (absent, PASS, FAIL, ERROR with
-  human_review, other ERROR, malformed/unreadable/schema-invalid/unknown) into
-  report-story statuses (VERIFIED, ACCEPTED, REVIEW_REJECTED,
-  HUMAN_REVIEW_REQUIRED, INFRASTRUCTURE_ERROR). Fail-closed handling for
-  invalid artifacts. Preserves existing verification/repair/infrastructure
-  precedence. Optional-review behavior unchanged when no review was invoked.
-- Branch: `feature/agent-loop-review-result-reporting-guard`
-- Planning document: [wp_al_1c3_review_result_reporting_guard.md](planning/wp_al_1c3_review_result_reporting_guard.md)
-- Implementation: `scripts/agent-loop/lib/review_result_reporting.py` (helper + CLI), `scripts/agent-loop/tests/test_review_result_reporting.py` (27 pytest items covering U01-U20 plus edge cases)
-- Integration: `scripts/agent-loop/report-story.sh` uses helper for six-way final-status dispatch
-- Harness: scenarios W (ERROR+human_review → HUMAN_REVIEW_REQUIRED) and X (malformed → INFRASTRUCTURE_ERROR) added; A-X = 24/24 PASS
-- Key behaviors:
-  - absent review-result.json → VERIFIED (unchanged)
-  - invalid/malformed/schema-invalid/unreadable → INFRASTRUCTURE_ERROR (fails closed)
-  - ERROR + human_review → HUMAN_REVIEW_REQUIRED
-  - ERROR + other/missing action → INFRASTRUCTURE_ERROR
-  - validate_review_result() consumed, not modified
-  - review invocation/configuration bridge remains deferred (separate future WP)
-
-**WP-AL-1C6: Minimal Orchestration Wiring**
-- Status: IMPLEMENTATION COMPLETE — AWAITING INDEPENDENT REVIEW
-- Objective: Wire review adapter and repair adapter into run-story.sh for the
-  minimal supervised end-to-end cycle: implement → verify → review → optional
-  one repair → reverify → report. Supersedes the "review invocation bridge
-  deferred" wording above — the minimum bridge is now wired.
-- Branch: `feature/agent-loop-wp-al-1c6-orchestration-wiring`
-- Planning document: [wp_al_1c6_orchestration_wiring.md](planning/wp_al_1c6_orchestration_wiring.md)
-- Key decisions:
-  - DEC-C6-01: Review after verify FAIL (triggered_by=initial_verify_fail)
-  - DEC-C6-02: Verification remains authoritative (review PASS ≠ verify success)
-  - DEC-C6-03: Immutable per-phase snapshots (initial/reverify)
-  - DEC-C6-04: Clean committed candidate precondition (no auto-commit)
-- Key behaviors:
-  - Maximum one repair attempt enforced
-  - Immutable verify-result.{initial,reverify}.json snapshots with SHA-256
-  - verify-context.json written before each verify invocation
-  - Invocation counters persisted to invocation-counters.json
-  - All 40 harness scenarios (A-AN) pass with 0 SKIP
-  - 883 pytest tests pass (0 failed, 0 skipped)
-
-**WP-AL-1C4: Repair Contract**
-- Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW
-- Objective: Define repair-request and repair-result schemas with structural validators,
-  identity binding rules, path-safety constraints, and bounded diagnostics. No repair
-  execution, no adapter, no orchestrator wiring.
-- Branch: `feature/agent-loop-repair-contract`
-- Planning document: [wp_al_1c4_repair_contract.md](planning/wp_al_1c4_repair_contract.md)
-- Implementation files:
-  - `.agent-loop/repair/SCHEMA.md` — request + result schemas v1.0 (392 lines)
-  - `scripts/agent-loop/lib/repair_contract.py` — validator + builder (1261 lines)
-  - `scripts/agent-loop/tests/test_repair_contract.py` — 75 unit tests (75/75 PASS)
-- Test results: 75 passed, 0 failed, 0 skipped, ruff clean, mypy --strict clean
-- Full agent-loop suite: 481 passed, 2 pre-existing fixture skips, 0 WP-AL-1C4 skips
-- Harness scenarios: A-X = 24/24 PASS (no new scenarios)
-- Request contract: 16 top-level fields
-- Result contract: 13 top-level fields
-- Status semantics: REPAIRED (changed files, requires reverify), NO_CHANGE (no changes), ERROR (infrastructure failure)
-- Key invariants:
-  - REPAIRED does NOT mean verification passed (repair success ≠ verification success)
-  - Identity binding: run_id, story_id, attempt, source_revision must match request
-  - Path safety: gitwildmatch semantics, forbidden-path protection, allowed-path allowlist
-  - No PARTIAL status (DEC-C4-02)
-  - Confidence is optional, informational only, no authorization semantics (DEC-C4-03)
-  - Artifact validation ≠ workspace enforcement (DEC-C4-01)
-  - No repair execution, no adapter, no orchestrator changes
-  - No runtime script changes (run-story.sh, verify-story.sh, report-story.sh unchanged)
-- DEC-C4-01 through DEC-C4-03: RESOLVED
-- WP-AL-1C5 NOT STARTED
-
-**Future (separate work package): Review invocation/configuration bridge**
-- Status: SUPERSEDED by WP-AL-1C6 (minimum bridge wired)
-- Objective: The minimum review invocation bridge is now delivered by WP-AL-1C6.
-  General production reviewer configuration (provider selection, credential
-  management, multi-reviewer fan-out) remains a separate future work package.
+Steps 1–2 of the Golden Scenario work (deterministic risk calculation + RAG retrieval). Steps 3–5 (AI recommendation → approval → procurement → audit → deployment) are not implemented.
 
 ---
 
-## Phase 2 Planning (Next)
+## Product / Runtime Boundary
 
-**Phase 2 — Synthetic ERP Core**
-**Roadmap Reference:** [07_ROADMAP.md](../forgemind_project_source_of_truth/07_ROADMAP.md) Phase 2 section
+This repository contains two conceptually separate projects:
 
-### 2.1 Phase 2 Scope
+### A. ForgeMind Product (this repository)
 
-Phase 2 delivers the business-schema foundation + seed data + deterministic
-risk engine:
+**Objective:** Public portfolio MVP for CV.
 
-- **Business schema** — core tables (production plans, BOM items, suppliers,
-  orders, parts) with foreign keys and indexes
-- **Alembic migrations** — create schema from clean state, reversible
-- **Seed generator** — deterministic fixture data for the Golden Dataset
-- **Golden Dataset** — the "real-world" synthetic business dataset
-- **CRUD / read APIs** — business-entity endpoints with validation
-- **Deterministic risk engine** — pure Python/SQL arithmetic, no LLM dependencies
+**Success criteria:** Live Demo on VPS, public GitHub, synthetic data, real end-to-end workflows, persisted state, recruiter-friendly README, verified technology stack.
 
-Exit criteria: `AT-003`, `AT-004`, `AT-005` pass; **zero LLM dependencies**.
+**Release 1 must work independently.** The agent-loop Runtime is not an end-user feature and must not block the portfolio MVP.
 
-### 2.2 Additional Phase 2 Requirements (from DEC-029)
+### B. Agent Runtime (separate future repository: forgemind-agent-runtime)
 
-Phase 2 also includes authentication + login page (deferred from Phase 1):
+**Objective:** Reliable reusable agent-loop tool for the Product Owner's practical use across different repositories.
 
-- Authentication service (login, JWT sessions)
-- RBAC middleware (demo accounts for all 5 roles)
-- Login page (frontend, once frontend scope is finalized)
-- Rate limiting (Caddy + backend middleware)
+**Success criteria:** Reliable completion of long-running tasks, controlled retry/repair/reverify, recovery from failures, measurable completion rate, understandable logs, portability across models and repositories.
 
-### 2.3 Prerequisites for Phase 2
+**Runtime is currently embedded in this repository** under `scripts/agent-loop/` and `.agent-loop/`. It is a development-time tool only — no Product code imports or depends on it at runtime.
 
-Before Phase 2 implementation begins, the Product Owner must approve:
+**Separation decision:** SP-0A approved (Option C). SP-0B (migration manifest) is READY but NOT YET AUTHORIZED. See `docs/planning/sp0a_separation_decision.md`.
 
-1. ✅ Phase 1 merge to `main` (this step)
-2. ⏳ Phase 2 work-package plan (analogous to `docs/planning/phase_1_…`)
-3. ⏳ **DEC-009 resolution** — Engineer RBAC role (currently `Proposed`)
-4. ⏳ **DEC-028 resolution** — demo account ↔ role mapping
-
-Without DEC-009 and DEC-028, the authentication surface cannot be finalized.
-
-### 2.4 Recommended First Atomic Task for Phase 2
-
-Once Product Owner approves Phase 2 scope and decisions:
-
-**WP-2.1 — Business-Schema Foundation**
-
-- Define core business schema as SQLAlchemy async models
-- Create Alembic migration(s) creating tables from clean state
-- Follow the Phase 1 WP-1 pattern (`6c1b586`) for consistency
-- Scope: orders, BOM items, suppliers, parts (no risk engine yet)
-
-**Rationale for WP-2.1 first:**
-- Reuses the proven Phase 1 database pattern
-- No dependency on authentication (auth is a separate WP)
-- Unblocks CRUD APIs, seed generator, and risk engine in later WPs
-- Minimal scope, easy to verify with `make test + make dev`
+**Runtime separation does NOT block Release 1.** Zero coupling verified.
 
 ---
 
-## Phase 3+ (Future)
+## Currently Authorized Work
 
-**Phase 3 — Core UI**
-**Phase 4 — Knowledge and RAG**
-**Phase 5 — Controlled AI workflow**
-**Phase 6 — Approval and audit**
-**Phase 7 — Public deployment**
-**Phase 8 — Portfolio release**
+**NONE beyond this documentation recovery.**
 
-Detailed in [`07_ROADMAP.md`](../forgemind_project_source_of_truth/07_ROADMAP.md).
+Previous authorization (WP-REC-01 + WP-REC-02): COMPLETE — this documentation update.
 
-Each phase requires:
-- Approved work-package plan (analogous to Phase 1 plan)
-- Resolved blocking decisions from the Decision Log
-- Phase N-1 exit criteria satisfied (no phase skipping)
+**Next authorized work package requires separate Product Owner decision.**
+
+Recommended candidate: **WP-REC-03: MVP Phase 5 (AI Workflow)** — implement AI provider adapter, workflow engine, structured output validation, model outage handling. See SP-1 assessment §18 for full WP definitions.
+
+---
+
+## What Must NOT Be Started Automatically
+
+Without explicit Product Owner authorization, do not:
+- Implement any MVP phase (Phase 5, 6, or 7)
+- Start SP-0B or create forgemind-agent-runtime
+- Copy or move Runtime files
+- Access or modify the VPS
+- Install dependencies or run migrations
+- Create branches, commits, tags, releases, or PRs
+- Change Source of Truth or Decision Log
+
+---
+
+## Acceptance Test Status
+
+| AT | Description | Status |
+|----|-------------|--------|
+| AT-001 | Clean deployment | NOT TESTED (no VPS) |
+| AT-002 | Demo authentication | IMPLEMENTED (not tested on VPS) |
+| AT-003 | Golden Dataset integrity | ✅ PASS |
+| AT-004 | Deterministic risk calculation | ✅ PASS |
+| AT-005 | No hidden UI mocks | ✅ PASS |
+| AT-006 | RAG retrieval | ✅ PASS |
+| AT-007 | Document access control | NOT IMPLEMENTED |
+| AT-008 | Structured output validation | NOT IMPLEMENTED |
+| AT-009 | Human approval blocks write | NOT IMPLEMENTED |
+| AT-010 | Approval executes action | NOT IMPLEMENTED |
+| AT-011 | Reject path | NOT IMPLEMENTED |
+| AT-012 | Audit trace completeness | NOT IMPLEMENTED |
+| AT-013 | Model outage | NOT IMPLEMENTED |
+| AT-014 | Public HTTPS smoke | NOT TESTED |
+| AT-015 | Demo reset | NOT IMPLEMENTED |
+
+**8 of 15 ATs cannot pass.** All require Phases 5–7 implementation.
 
 ---
 
 ## Decision Log Status
 
-See [`08_DECISION_LOG.md`](../forgemind_project_source_of_truth/08_DECISION_LOG.md) for full history.
+See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 
-**Resolved (Accepted) — Phase 1 uses these:**
-- DEC-010: Python 3.12
-- DEC-011: ARQ + Redis
-- DEC-012: HTTP polling (Phase 1 only)
-- DEC-014: Caddy
-- DEC-017: shadcn/ui + Tailwind
-- DEC-024: Correlation ID = UUID v4
-- DEC-029: Authentication deferred to Phase 2
-- DEC-033: Phase 1 branch = `feature/phase-1-running-skeleton`
+**Accepted:**
+- DEC-001 through DEC-012, DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
+- SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
-**Proposed (pending PO decision) — Phase 2 needs these:**
-- DEC-009: Engineer RBAC role
-- DEC-013: Workflow orchestration
+**Proposed (pending PO decision):**
+- DEC-013: Workflow orchestration (custom state machine)
 - DEC-015: State management
-- DEC-022: Demo reset mechanism
-- DEC-027: Reset role
-- DEC-028: Demo account ↔ role mapping
+
+---
+
+## Agent-Loop Infrastructure (Historical)
+
+Agent-loop infrastructure is a development-time tool for autonomous agent-driven development cycles. It is NOT a ForgeMind end-user feature.
+
+**Status: IMPLEMENTED (WP-AL-1A through WP-AL-1C6)**
+
+All agent-loop work packages are merged to main. The implementation is tested (883 pytest tests, 40 harness scenarios A-AN all PASS). See individual WP docs under `docs/planning/wp_al_*`.
+
+Agent-loop code lives under:
+- `scripts/agent-loop/` — implementation, tests, templates
+- `.agent-loop/` — schemas, project configuration
+
+Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runtime` per SP-0A Option C.
 
 ---
 
 ## Documentation Index
 
-**Planning:**
-- [Phase 1 Running Skeleton Plan](planning/phase_1_running_skeleton_plan.md) ✅ COMPLETE
-- [Phase 1 Completion Report](phase_1/phase_1_completion_report.md) ✅ NEW
-- Phase 2 Plan (not yet created)
+**Current state:**
+- This document: `docs/next_steps.md` (you are here)
+- SP-1 Assessment: `docs/reviews/sp1_recovery_mvp_separation_assessment.md`
+- SP-0A Decision: `docs/planning/sp0a_separation_decision.md`
 
 **Source of Truth:**
-- [Project Charter](../forgemind_project_source_of_truth/00_PROJECT_CHARTER.md)
 - [Product and MVP Scope](../forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md)
 - [System Behavior and Data](../forgemind_project_source_of_truth/02_SYSTEM_BEHAVIOR_AND_DATA.md)
 - [Definition of Done](../forgemind_project_source_of_truth/03_DEFINITION_OF_DONE.md)
 - [Acceptance Tests](../forgemind_project_source_of_truth/04_ACCEPTANCE_TESTS.md)
 - [Deployment and Demo](../forgemind_project_source_of_truth/05_DEPLOYMENT_AND_DEMO.md)
-- [AI Agent Execution Rules](../forgemind_project_source_of_truth/06_AI_AGENT_EXECUTION_RULES.md)
-- [Delivery Roadmap](../forgemind_project_source_of_truth/07_ROADMAP.md)
 - [Decision Log](../forgemind_project_source_of_truth/08_DECISION_LOG.md)
-- [Master Task for Hermes](../forgemind_project_source_of_truth/09_MASTER_TASK_FOR_HERMES.md)
+- [Delivery Roadmap](../forgemind_project_source_of_truth/07_ROADMAP.md)
 
-**Open Questions:**
-- [Open Questions (Phase 2 decisions)](planning/open_questions.md)
-
----
-
-## Contact
-
-For questions about Phase 2 planning or Phase 1 review:
-- Product Owner: [name/contact]
-- Engineering Lead: [name/contact]
-- Hermes Agent: session `2026-07-17` (Phase 1 implementation + closeout)
+**Completed phase reports:**
+- [Phase 1 Completion Report](phase_1/phase_1_completion_report.md)
+- [Phase 3 Completion](planning/phase_3_completion.md)
 
 ---
 
-**Next Milestone:** Phase 2 planning approved, first WP started.
+**Next Milestone:** Product Owner decision on WP-REC-03 (MVP Phase 5: AI Workflow).

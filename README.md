@@ -2,26 +2,49 @@
 
 Supply Risk Intelligence — a portfolio-grade industrial AI demonstration.
 
-## Current Project Status
+## Live Demo
 
-**Phase 1 — Running Skeleton: ✅ COMPLETE (2026-07-17)**
+**Status:** IN DEVELOPMENT — Not yet deployed
 
-The production-grade backend skeleton is live and verified end-to-end:
-FastAPI + PostgreSQL + Redis + ARQ worker, with structured logging,
-correlation-ID traces, real health checks, and the diagnostic-job
-vertical slice. 239 backend tests passing, ruff + mypy clean.
+Release 1 will provide:
+- **Live Demo:** https://forgemind.example.com (domain TBD)
+- **Source Code:** https://github.com/Tihonya/forgemind-ai-operations
 
-- Branch: `feature/phase-1-running-skeleton`
-- Final commit: `58a2635`
-- Completion report: [`docs/phase_1/phase_1_completion_report.md`](docs/phase_1/phase_1_completion_report.md)
-- Next steps: [`docs/next_steps.md`](docs/next_steps.md)
+**Current Status:** Development in progress. See [docs/next_steps.md](docs/next_steps.md) for current implementation status and blockers.
 
-**Status:** Pending Product Owner approval for merge to `main` and Phase 2
-planning (see [next steps](docs/next_steps.md)).
+## Release 1 Deliverables
+
+Release 1 must provide:
+- **Live Demo:** Public HTTPS deployment on Product Owner's VPS
+- **Public GitHub repository:** This repository with complete documentation
+- **Synthetic data only:** No real corporate, military, or confidential systems
+- **Real end-to-end workflows:** No static mockups or fake data
+- **Persisted and observable state:** Database, audit logs, state transitions
+- **Recruiter-friendly README:** Clear value proposition, architecture, setup instructions
+- **Verified technology stack:** All listed technologies actually used in the released application
+
+**Success criteria:** A recruiter can view the Live Demo, understand the value proposition within 3-5 minutes, inspect the GitHub repository, and verify the technology stack matches the implementation.
+
+## What is ForgeMind?
+
+ForgeMind is a web platform for AI-assisted supply chain risk assessment in engineering and manufacturing environments. It combines:
+
+- **Deterministic business logic** (Python/SQL) for risk calculation
+- **RAG-powered document intelligence** for evidence retrieval
+- **Structured AI recommendations** with human-in-the-loop approval
+- **Complete audit traceability** for every workflow step
+
+Release 1 is a **public portfolio MVP** demonstrating one complete vertical scenario: **Production Plan Supply Risk Review**.
 
 ## Overview
 
-ForgeMind demonstrates a complete enterprise-grade AI workflow for supply chain risk assessment. It combines deterministic business logic, RAG-powered document intelligence, and structured AI recommendations with full audit traceability and human-in-the-loop approval.
+A Production Manager logs in, views an active production plan, runs supply risk analysis, receives AI-explained recommendations with document citations, approves a procurement action, and reviews the complete audit trail — all with synthetic data only.
+
+**Target audience:** Recruiters and technical reviewers evaluating AI-assisted industrial workflow capabilities.
+
+**Reviewer journey:** CV → Live Demo → complete working scenario (3–5 minutes) → inspect results and state transitions → open GitHub → understand architecture, implementation, tests, deployment, and limitations.
+
+**Data policy:** Synthetic data only. No real corporate, military, or confidential systems.
 
 ## Quick Start
 
@@ -86,11 +109,17 @@ make reset
 
 ## MVP Vertical: Supply Risk Intelligence
 
-1. Synthetic production plan → deterministic risk calculation
-2. RAG over synthetic engineering documents → cited retrieval
-3. Structured AI recommendation → human approval
-4. Controlled procurement task creation → complete audit trace
-5. Public HTTPS deployment → demo reset
+Release 1 implements one complete vertical scenario:
+
+**Production Plan Supply Risk Review**
+
+1. Synthetic production plan → deterministic risk calculation ✅ IMPLEMENTED
+2. RAG over synthetic engineering documents → cited retrieval ✅ IMPLEMENTED
+3. Structured AI recommendation → human approval ❌ NOT IMPLEMENTED
+4. Controlled procurement task creation → complete audit trace ❌ NOT IMPLEMENTED
+5. Public HTTPS deployment → demo reset ❌ NOT IMPLEMENTED
+
+**Current implementation status:** Steps 1–2 and partial step 8 (evidence display) are working. Steps 3–5 (AI recommendation, approval, procurement, audit, public deployment) are not yet implemented. See [docs/next_steps.md](docs/next_steps.md) for the full status and blockers.
 
 ## Documentation
 
