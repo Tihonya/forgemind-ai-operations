@@ -16,10 +16,11 @@
 - Implementation work: COMPLETE
 - Initial commit (`2a6db40`): pushed
 - Independent read-only review: COMPLETE (7 MAJOR findings identified, 0 BLOCKERS)
-- Corrective commit (`docs: correct PR 61 review findings`): pushed
+- First corrective commit (`docs: correct PR 61 review findings`): pushed (M1–M7 + minor corrections)
+- Second corrective commit (`docs: clarify PR 61 authorization and rollback gates`): pushed (NF1/NF2/NF3)
 - Draft PR #61 state: OPEN, awaiting re-review
 - Merge: NOT performed — requires explicit Product Owner authorization
-- Next work package: NONE AUTHORIZED (WP-REC-03 is a recommended candidate only)
+- Next work package: NONE AUTHORIZED (WP-REC-03 is a candidate only; requires a decomposition package before any implementation)
 
 **Scope delivered:**
 1. Preserve SP-1 assessment: `docs/reviews/sp1_recovery_mvp_separation_assessment.md`
@@ -89,10 +90,10 @@ Can a new Hermes session answer these questions from documentation alone?
 6. **What blocks Release 1?** → docs/next_steps.md § "NOT IMPLEMENTED (Release 1 blockers)" (Phases 5-7) ✓
 7. **Does ForgeMind require agent-loop at runtime?** → docs/next_steps.md § "Product / Runtime Boundary" (No, development-time tool only) ✓
 8. **What is forgemind-agent-runtime for?** → docs/next_steps.md § "Product / Runtime Boundary" (Reusable agent-loop tool for Product Owner) ✓
-9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (NONE beyond documentation recovery; WP-REC-03 is a recommended candidate only, NOT authorized) ✓
+9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (NONE beyond documentation recovery; WP-REC-03 is a candidate only — it requires a decomposition package before any implementation, and no subpackage is authorized) ✓
 10. **What must not be started automatically?** → docs/next_steps.md § "What Must NOT Be Started Automatically" (7 explicit prohibitions) ✓
 11. **Is WP-REC-01/02 still active, completed, awaiting review, or merged?** → This file (Status line): COMPLETE — draft PR #61 open, awaiting re-review; not merged ✓
-12. **What exact Product Owner decision is required next?** → docs/next_steps.md: "Approve or reject merge of PR #61; then separately decide whether to authorize WP-REC-03" ✓
+12. **What exact Product Owner decision is required next?** → docs/next_steps.md § "Next Milestone": (1) immediate decision — approve or reject merge of PR #61; (2) next planned work after merge — decide whether to authorize a planning/decomposition package for WP-REC-03; (3) implementation authorization — WP-REC-03 implementation and all subpackages remain unauthorized until separately approved ✓
 
 **Test status:** PASS (all 12 questions answerable from documentation)
 
@@ -113,26 +114,46 @@ The corrective pass in this PR did not modify the SP-1 assessment. It remains an
 
 ## Rollback Procedures
 
-### Before merge (current state):
+### Before merge (PR #61 open, not merged)
+
+Three distinct operations — do not conflate them:
+
+1. **Close the PR on GitHub:** This cancels the merge request on GitHub. It does **not** delete any branch (local or remote). The PR can be reopened later if the branch still exists.
+2. **Delete the remote feature branch (only if the PR is abandoned):** Run only after closing the PR. This removes the remote branch `docs/wp-rec-01-02-documentation-recovery` from GitHub.
+3. **Optionally delete the local branch:** Switch away first, then delete the local branch. This is a local cleanup; it does not close the PR or remove the remote branch.
 
 ```bash
+# 1. Close the PR on GitHub (via GitHub UI or: gh pr close 61)
+# 2. Delete the remote branch (only if abandoning the PR)
+git push origin --delete docs/wp-rec-01-02-documentation-recovery
+# 3. Optionally delete the local branch (switch to main first)
 git checkout main
 git branch -D docs/wp-rec-01-02-documentation-recovery
 ```
 
-### After merge (requires the actual merge commit SHA, to be recorded at merge time):
+### After merge (requires the actual resulting commit SHA)
 
-```bash
-git revert <merge-commit-sha>
-```
+The rollback command depends on the **actual merge strategy** used by GitHub. Before running any rollback, resolve and verify the resulting commit SHA with `git log --oneline -3` after pulling `origin/main`.
 
-The merge SHA is not yet known. When PR #61 is merged, record the merge commit SHA here for rollback reference.
+- **If the merge is a two-parent merge commit** (GitHub "Create a merge commit" strategy):
+  ```bash
+  git revert -m 1 <merge-commit-sha>
+  ```
+  The `-m 1` selects the mainline parent (the previous `main` tip). Without it, `git revert` fails with "commit is a merge but no -m option was given."
+
+- **If the merge is a squash or rebase result** (a single-parent normal commit on `main`):
+  ```bash
+  git revert <resulting-commit-sha>
+  ```
+
+Do not invent the merge SHA. When PR #61 is merged, resolve the actual resulting commit SHA and record it here with the merge strategy used.
 
 ---
 
 ## Next Steps (awaiting Product Owner decision)
 
-1. Independent re-review of corrective commit
+1. Independent re-review of the second corrective commit
 2. Product Owner decision: approve or reject merge of PR #61
-3. After merge decision: separate Product Owner decision on whether to authorize WP-REC-03 (MVP Phase 5: AI Workflow)
-4. Do not begin any implementation until authorized
+3. After merge: separate Product Owner decision on whether to authorize a **planning/decomposition package** that divides WP-REC-03 into smaller controlled implementation work packages
+4. WP-REC-03 implementation and any resulting subpackage: **NOT authorized** — each requires separate Product Owner authorization
+5. Do not begin any implementation until authorized
