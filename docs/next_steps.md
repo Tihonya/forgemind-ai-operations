@@ -20,7 +20,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 **Canonical Source of Truth:** `forgemind_project_source_of_truth/` (9 documents, 00–08)
 
-**Assessment evidence:** `docs/reviews/sp1_recovery_mvp_separation_assessment.md` (SP-1 assessment, 2026-08-08)
+**Assessment evidence:** `docs/reviews/sp1_recovery_mvp_separation_assessment.md` (SP-1 assessment, 2026-08-08). This assessment is a time-scoped historical snapshot. Earlier status classifications in the assessment (e.g., AT-006 "PARTIAL") reflect the state at assessment time and are not canonical current-state authorization. Current acceptance-test status is reported in the table below.
 
 ---
 
@@ -30,7 +30,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 | Capability | Status | Evidence |
 |-----------|--------|----------|
-| Phase 1: Running Skeleton | COMPLETE | FastAPI + PostgreSQL + Redis + ARQ, 239 backend tests |
+| Phase 1: Running Skeleton | COMPLETE | FastAPI + PostgreSQL + Redis + ARQ (Phase 1 baseline: 239 backend tests; additional tests added in later phases) |
 | Phase 2: Synthetic ERP Core | COMPLETE | 14 business tables, seed generator, deterministic risk engine |
 | Phase 3: Core UI | COMPLETE | Dashboard, supply risk list, supply risk detail |
 | Phase 4: Knowledge and RAG | COMPLETE | Document ingestion, pgvector index, retrieval with citations |
@@ -38,7 +38,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | AT-003 (Golden Dataset) | PASS | Seed produces deterministic RISK-001/002/003 |
 | AT-004 (Deterministic risk) | PASS | Risk engine returns exact expected values |
 | AT-005 (No hidden mocks) | PASS | UI displays real backend data |
-| AT-006 (RAG retrieval) | PASS | Citations include document_id, version, chunk_id |
+| AT-006 (RAG retrieval) | NOT VERIFIED IN THIS REVIEW | Integration test `test_at006_rag_retrieval.py` exists; requires live PostgreSQL database; was skipped in review environment due to DB unavailability |
 
 ### ❌ NOT IMPLEMENTED (Release 1 blockers)
 
@@ -60,9 +60,9 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Public HTTPS deployment | AT-014 | Phase 7 |
 | Operational runbooks | Gate E | Phase 7 |
 
-### Current MVP completion: ~40%
+### Current MVP completion
 
-Steps 1–2 of the Golden Scenario work (deterministic risk calculation + RAG retrieval). Steps 3–5 (AI recommendation → approval → procurement → audit → deployment) are not implemented.
+Two of five condensed MVP milestones have implementation evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but the integration test requires a live database and was not executed in this review). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 3–5 of the condensed milestones (AI recommendation → approval → procurement → audit → deployment) are not implemented.
 
 ---
 
@@ -96,11 +96,11 @@ This repository contains two conceptually separate projects:
 
 **NONE beyond this documentation recovery.**
 
-Previous authorization (WP-REC-01 + WP-REC-02): COMPLETE — this documentation update.
+Previous authorization (WP-REC-01 + WP-REC-02): COMPLETE — this documentation update. Corrective commit addressing independent review findings has been pushed. Draft PR #61 is open awaiting re-review and merge decision.
 
-**Next authorized work package requires separate Product Owner decision.**
+**No next work package is authorized.**
 
-Recommended candidate: **WP-REC-03: MVP Phase 5 (AI Workflow)** — implement AI provider adapter, workflow engine, structured output validation, model outage handling. See SP-1 assessment §18 for full WP definitions.
+Recommended candidate for future authorization: **WP-REC-03: MVP Phase 5 (AI Workflow)** — implement AI provider adapter, workflow engine, structured output validation, model outage handling. See SP-1 assessment §18 for full WP definitions. WP-REC-03 requires separate explicit Product Owner authorization before any implementation begins.
 
 ---
 
@@ -126,7 +126,7 @@ Without explicit Product Owner authorization, do not:
 | AT-003 | Golden Dataset integrity | ✅ PASS |
 | AT-004 | Deterministic risk calculation | ✅ PASS |
 | AT-005 | No hidden UI mocks | ✅ PASS |
-| AT-006 | RAG retrieval | ✅ PASS |
+| AT-006 | RAG retrieval | ⚠️ TEST EXISTS — NOT VERIFIED IN THIS REVIEW (requires live database) |
 | AT-007 | Document access control | NOT IMPLEMENTED |
 | AT-008 | Structured output validation | NOT IMPLEMENTED |
 | AT-009 | Human approval blocks write | NOT IMPLEMENTED |
@@ -138,6 +138,7 @@ Without explicit Product Owner authorization, do not:
 | AT-015 | Demo reset | NOT IMPLEMENTED |
 
 **8 of 15 ATs cannot pass.** All require Phases 5–7 implementation.
+**1 AT (AT-006) has a test file but was not executed** in this review environment due to integration database unavailability. The test is skipped when the database is unavailable.
 
 ---
 
@@ -175,7 +176,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 **Current state:**
 - This document: `docs/next_steps.md` (you are here)
-- SP-1 Assessment: `docs/reviews/sp1_recovery_mvp_separation_assessment.md`
+- SP-1 Assessment (historical snapshot): `docs/reviews/sp1_recovery_mvp_separation_assessment.md`
 - SP-0A Decision: `docs/planning/sp0a_separation_decision.md`
 
 **Source of Truth:**
@@ -193,4 +194,4 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 ---
 
-**Next Milestone:** Product Owner decision on WP-REC-03 (MVP Phase 5: AI Workflow).
+**Next Milestone:** Product Owner decision on: (1) merge of PR #61 (documentation recovery); (2) separately, whether to authorize WP-REC-03 (MVP Phase 5: AI Workflow).
