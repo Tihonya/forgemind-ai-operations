@@ -19,8 +19,11 @@ cd /path/to/forgemind-agent-loop
 ### Components
 
 1. **run-story.sh** - Main orchestrator
-   - Implementation (Ralph) → Verification → Review → Repair → Report
-   - Max iterations configurable (default: 3)
+   - Implementation → Verification → Review → optional one Repair → Reverify → Report
+   - WP-AL-1C6: max one repair attempt enforced (§5.3)
+   - DEC-C6-04: pre-verify baseline preflight when repair_budget > 0
+   - DEC-C6-03: immutable per-phase snapshots with SHA-256 evidence
+   - DEC-C6-02: verification remains authoritative (review PASS ≠ verify success)
    - Dry-run mode for testing verification gates without agents
 
 2. **verify-story.sh** - Deterministic verification (no agent)

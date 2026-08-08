@@ -1634,6 +1634,424 @@ fi
 rm -f "$MANIFEST_AA" "$SUITE_TMP/aa-verify.log" "$SUITE_TMP/aa-repair.log"
 
 # ============================================================================
+# Orchestration Scenarios AB-AN (WP-AL-1C6)
+# ============================================================================
+# All scenarios use python3 (simple name) for REVIEWER_BIN and
+# REPAIR_ACTOR_BIN to avoid the adapter's symlink rejection of absolute
+# venv paths. The mock scripts are passed via --reviewer-arg/--actor-arg
+# inside run-story.sh.
+
+# Helper: run one orchestration scenario end-to-end.
+# Args: name id verify_status review_status repair_status expected_final expected_exit [extra_env...]
+run_orchestration_scenario() {
+  local scenario_name="$1"
+  local scenario_id="$2"
+  local verify_status="$3"
+  local review_status="$4"
+  local repair_status="$5"
+  local expected_final_status="$6"
+  local expected_exit_code="$7"
+  shift 7
+  local extra_env=("$@")
+
+  echo ""
+  echo "================================================================"
+  echo "Scenario $scenario_id: Orchestration - $scenario_name"
+  echo "================================================================"
+
+  create_isolated_repo "$scenario_id"
+
+  # Manifest inside isolated repo under backend/ (adapter containment check)
+  local manifest="$ISOLATED_REPO/backend/story-manifest-${scenario_id}.json"
+  write_scenario_manifest "$manifest" "HARNESS-${scenario_id}" \
+    '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+
+  # Test file: failing test for verify FAIL, passing test for verify PASS
+  if [[ "$verify_status" == "FAIL" ]]; then
+    add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+  else
+    add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+  fi
+
+  # Commit candidate + manifest so baseline is clean (DEC-C6-04)
+  (cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario ${scenario_id} candidate" --quiet)
+
+  # Environment for mock reviewer/repair actor
+  # Use simple name python3 to avoid symlink rejection in review_adapter
+  export REVIEWER_BIN="python3"
+  export REVIEWER_MODE="$review_status"
+  export REPAIR_ACTOR_BIN="python3"
+  export REPAIR_ACTOR_MODE="$repair_status"
+  # Supply --modify path for REPAIRED mode (mock_repair_actor requires it)
+  if [[ "$repair_status" == "REPAIRED" || "$repair_status" == "undeclared_change" ]]; then
+    export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+  else
+    unset REPAIR_ACTOR_MODIFY
+  fi
+  # Apply extra environment variables (e.g. REPAIR_BUDGET overrides)
+  local ev
+  for ev in "${extra_env[@]+"${extra_env[@]}"}"; do
+    export "$ev"
+  done
+
+  # Run orchestration from isolated repo
+  cd "$ISOLATED_REPO"
+  local run_output
+  run_output="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$manifest" 2>&1)" && local run_exit=0 || run_exit=$?
+  cd - > /dev/null
+
+  # Clean up environment
+  unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_MODIFY
+  for ev in "${extra_env[@]+"${extra_env[@]}"}"; do
+    local var_name="${ev%%=*}"
+    unset "$var_name" 2>/dev/null || true
+  done
+
+  # Find run directory
+  local run_dir
+  run_dir="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+
+  # Check final status
+  local final_report="$run_dir/reports/final-report.json"
+  if [[ -f "$final_report" ]]; then
+    local final_status
+    final_status="$("$PYTHON_BIN" -c "import json; print(json.load(open('$final_report'))['final_status'])")"
+    if [[ "$final_status" == "$expected_final_status" && $run_exit -eq $expected_exit_code ]]; then
+      eval "${scenario_id}_EXIT=0"
+      echo "Scenario $scenario_id: PASS (final_status=$final_status, exit=$run_exit)"
+    else
+      eval "${scenario_id}_EXIT=1"
+      echo "Scenario $scenario_id: FAIL (expected $expected_final_status/$expected_exit_code, got $final_status/$run_exit)"
+      echo "--- RUN_OUTPUT (last 40 lines) ---"
+      echo "$run_output" | tail -40
+      echo "--- END RUN_OUTPUT ---"
+    fi
+  else
+    eval "${scenario_id}_EXIT=1"
+    echo "Scenario $scenario_id: FAIL (final-report.json not found)"
+    echo "--- RUN_OUTPUT (last 40 lines) ---"
+    echo "$run_output" | tail -40
+    echo "--- END RUN_OUTPUT ---"
+  fi
+
+  rm -f "$manifest"
+}
+
+# AB: verify PASS + review PASS → ACCEPTED, exit 0
+run_orchestration_scenario "Verify PASS Review PASS" "AB" "PASS" "PASS" "" "ACCEPTED" 0
+
+# AC: verify FAIL + review FAIL + repair REPAIRED + reverify PASS → VERIFIED_AFTER_REPAIR, exit 0
+# Uses the test-only passing repair actor (mock_repair_actor_passing.py)
+# which writes a passing test function to the --modify path, so reverify PASS.
+echo ""
+echo "================================================================"
+echo "Scenario AC: Full repair cycle success"
+echo "================================================================"
+create_isolated_repo "AC"
+# Copy the test-only repair actor into the isolated repo under backend/
+# (scope gate requires candidate changes within allowed_paths=["backend/**"])
+cp "$FIXTURES_DIR/mock_repair_actor_passing.py" "$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+MANIFEST_AC="$ISOLATED_REPO/backend/story-manifest-AC.json"
+write_scenario_manifest "$MANIFEST_AC" "HARNESS-AC" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AC candidate" --quiet)
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="FAIL"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+export REPAIR_ACTOR_SCRIPT="$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AC="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AC" 2>&1)" && AC_RUN_EXIT=0 || AC_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_SCRIPT REPAIR_ACTOR_MODIFY
+RUN_DIR_AC="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FINAL_REPORT_AC="$RUN_DIR_AC/reports/final-report.json"
+AC_EXIT=1
+if [[ -f "$FINAL_REPORT_AC" ]]; then
+  FINAL_STATUS_AC="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AC'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AC" == "VERIFIED_AFTER_REPAIR" && $AC_RUN_EXIT -eq 0 ]]; then
+    AC_EXIT=0
+    echo "Scenario AC: PASS (final_status=$FINAL_STATUS_AC, exit=$AC_RUN_EXIT)"
+  else
+    echo "Scenario AC: FAIL (expected VERIFIED_AFTER_REPAIR/0, got $FINAL_STATUS_AC/$AC_RUN_EXIT)"
+    echo "$RUN_OUTPUT_AC" | tail -40
+  fi
+else
+  echo "Scenario AC: FAIL (final-report.json not found)"
+  echo "$RUN_OUTPUT_AC" | tail -40
+fi
+rm -f "$MANIFEST_AC"
+
+# AD: verify FAIL + review FAIL + repair actor ERROR → ADAPTER_SUCCESS + summary ERROR → INFRASTRUCTURE_ERROR, exit 1, no reverify
+run_orchestration_scenario "Actor ERROR" "AD" "FAIL" "FAIL" "ERROR" "INFRASTRUCTURE_ERROR" 1
+
+# AE: verify PASS + review ERROR + human_review → HUMAN_REVIEW_REQUIRED, exit 1
+run_orchestration_scenario "Review ERROR human review" "AE" "PASS" "ERROR" "" "HUMAN_REVIEW_REQUIRED" 1
+
+# AF: verify FAIL + review FAIL + repair NO_CHANGE → REPAIR_NO_CHANGE, exit 1
+run_orchestration_scenario "Repair NO_CHANGE" "AF" "FAIL" "FAIL" "NO_CHANGE" "REPAIR_NO_CHANGE" 1
+
+# AG: verify FAIL + review FAIL + repair REPAIRED + reverify FAIL → REPAIR_FAILED_REVERIFY, exit 1
+# Reverify still fails because the repaired test file is still the failing fixture
+run_orchestration_scenario "Repair REPAIRED reverify FAIL" "AG" "FAIL" "FAIL" "REPAIRED" "REPAIR_FAILED_REVERIFY" 1
+
+# AH: malformed review artifact → INFRASTRUCTURE_ERROR, exit 1
+# Uses mock reviewer invalid_json mode to produce malformed review-result.json
+echo ""
+echo "================================================================"
+echo "Scenario AH: Malformed review artifact"
+echo "================================================================"
+create_isolated_repo "AH"
+MANIFEST_AH="$ISOLATED_REPO/backend/story-manifest-AH.json"
+write_scenario_manifest "$MANIFEST_AH" "HARNESS-AH" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_a.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AH candidate" --quiet)
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="invalid_json"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AH="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AH" 2>&1)" && AH_RUN_EXIT=0 || AH_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE
+RUN_DIR_AH="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FINAL_REPORT_AH="$RUN_DIR_AH/reports/final-report.json"
+if [[ -f "$FINAL_REPORT_AH" ]]; then
+  FINAL_STATUS_AH="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AH'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AH" == "INFRASTRUCTURE_ERROR" && $AH_RUN_EXIT -eq 1 ]]; then
+    AH_EXIT=0
+    echo "Scenario AH: PASS (final_status=$FINAL_STATUS_AH, exit=$AH_RUN_EXIT)"
+  else
+    AH_EXIT=1
+    echo "Scenario AH: FAIL (expected INFRASTRUCTURE_ERROR/1, got $FINAL_STATUS_AH/$AH_RUN_EXIT)"
+    echo "$RUN_OUTPUT_AH" | tail -40
+  fi
+else
+  AH_EXIT=1
+  echo "Scenario AH: FAIL (final-report.json not found)"
+  echo "$RUN_OUTPUT_AH" | tail -40
+fi
+rm -f "$MANIFEST_AH"
+
+# AI: repair actor creates undeclared change → REPAIR_ADAPTER_FAILURE, exit 1
+run_orchestration_scenario "Undeclared change" "AI" "FAIL" "FAIL" "undeclared_change" "REPAIR_ADAPTER_FAILURE" 1
+
+# AJ: one repair only → reverify FAIL → no second repair → REPAIR_FAILED_REVERIFY, exit 1
+# Proves: adapter calls == 1, actor calls == 1, reverify calls == 1, second repair == 0
+echo ""
+echo "================================================================"
+echo "Scenario AJ: Max one repair attempt enforcement"
+echo "================================================================"
+create_isolated_repo "AJ"
+MANIFEST_AJ="$ISOLATED_REPO/backend/story-manifest-AJ.json"
+write_scenario_manifest "$MANIFEST_AJ" "HARNESS-AJ" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AJ candidate" --quiet)
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="FAIL"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AJ="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AJ" 2>&1)" && AJ_RUN_EXIT=0 || AJ_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_MODIFY
+RUN_DIR_AJ="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FINAL_REPORT_AJ="$RUN_DIR_AJ/reports/final-report.json"
+COUNTERS_AJ="$RUN_DIR_AJ/reports/invocation-counters.json"
+AJ_EXIT=1
+if [[ -f "$FINAL_REPORT_AJ" ]]; then
+  FINAL_STATUS_AJ="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AJ'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AJ" == "REPAIR_FAILED_REVERIFY" && $AJ_RUN_EXIT -eq 1 ]]; then
+    # Verify invocation counters: adapter==1, actor==1, reverify==1
+    if [[ -f "$COUNTERS_AJ" ]]; then
+      ADAPTER_CNT="$("$PYTHON_BIN" -c "import json; print(json.load(open('$COUNTERS_AJ'))['repair_adapter_invocations'])")"
+      ACTOR_CNT="$("$PYTHON_BIN" -c "import json; print(json.load(open('$COUNTERS_AJ'))['repair_actor_invocations'])")"
+      REVERIFY_CNT="$("$PYTHON_BIN" -c "import json; print(json.load(open('$COUNTERS_AJ'))['reverify_invocations'])")"
+      REPAIR_ATTEMPT_CNT="$("$PYTHON_BIN" -c "import json; print(json.load(open('$COUNTERS_AJ'))['repair_attempt'])")"
+      if [[ "$ADAPTER_CNT" == "1" && "$ACTOR_CNT" == "1" && "$REVERIFY_CNT" == "1" && "$REPAIR_ATTEMPT_CNT" == "1" ]]; then
+        AJ_EXIT=0
+        echo "Scenario AJ: PASS (final_status=$FINAL_STATUS_AJ, exit=$AJ_RUN_EXIT, adapter=$ADAPTER_CNT, actor=$ACTOR_CNT, reverify=$REVERIFY_CNT)"
+      else
+        echo "Scenario AJ: FAIL (counter mismatch: adapter=$ADAPTER_CNT, actor=$ACTOR_CNT, reverify=$REVERIFY_CNT, attempt=$REPAIR_ATTEMPT_CNT)"
+        echo "$RUN_OUTPUT_AJ" | tail -20
+      fi
+    else
+      echo "Scenario AJ: FAIL (invocation-counters.json not found)"
+      echo "$RUN_OUTPUT_AJ" | tail -20
+    fi
+  else
+    echo "Scenario AJ: FAIL (expected REPAIR_FAILED_REVERIFY/1, got $FINAL_STATUS_AJ/$AJ_RUN_EXIT)"
+    echo "$RUN_OUTPUT_AJ" | tail -40
+  fi
+else
+  echo "Scenario AJ: FAIL (final-report.json not found)"
+  echo "$RUN_OUTPUT_AJ" | tail -40
+fi
+rm -f "$MANIFEST_AJ"
+
+# AK: verify FAIL + review PASS → VERIFICATION_FAILED, exit 1
+run_orchestration_scenario "Verify FAIL Review PASS" "AK" "FAIL" "PASS" "" "VERIFICATION_FAILED" 1
+
+# AL: dirty baseline → DIRTY_BASELINE, repair actor count = 0, exit 1
+echo ""
+echo "================================================================"
+echo "Scenario AL: Dirty baseline before repair"
+echo "================================================================"
+create_isolated_repo "AL"
+MANIFEST_AL="$ISOLATED_REPO/backend/story-manifest-AL.json"
+write_scenario_manifest "$MANIFEST_AL" "HARNESS-AL" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AL candidate" --quiet)
+# Make baseline dirty: modify a tracked file after commit
+echo "# extra modification" >> "$ISOLATED_REPO/backend/tests/synthetic/test_harness_a.py"
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="FAIL"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AL="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AL" 2>&1)" && AL_RUN_EXIT=0 || AL_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_MODIFY
+RUN_DIR_AL="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FINAL_REPORT_AL="$RUN_DIR_AL/reports/final-report.json"
+COUNTERS_AL="$RUN_DIR_AL/reports/invocation-counters.json"
+AL_EXIT=1
+if [[ -f "$FINAL_REPORT_AL" ]]; then
+  FINAL_STATUS_AL="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AL'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AL" == "DIRTY_BASELINE" && $AL_RUN_EXIT -eq 1 ]]; then
+    # Verify repair actor was NOT invoked
+    if [[ -f "$COUNTERS_AL" ]]; then
+      ACTOR_CNT_AL="$("$PYTHON_BIN" -c "import json; print(json.load(open('$COUNTERS_AL'))['repair_actor_invocations'])")"
+      if [[ "$ACTOR_CNT_AL" == "0" ]]; then
+        AL_EXIT=0
+        echo "Scenario AL: PASS (final_status=$FINAL_STATUS_AL, exit=$AL_RUN_EXIT, actor_invocations=$ACTOR_CNT_AL)"
+      else
+        echo "Scenario AL: FAIL (repair actor invoked: $ACTOR_CNT_AL)"
+      fi
+    else
+      # Counters may not exist if DIRTY_BASELINE happened at pre-verify preflight
+      AL_EXIT=0
+      echo "Scenario AL: PASS (final_status=$FINAL_STATUS_AL, exit=$AL_RUN_EXIT, no counters=pre-verify preflight)"
+    fi
+  else
+    echo "Scenario AL: FAIL (expected DIRTY_BASELINE/1, got $FINAL_STATUS_AL/$AL_RUN_EXIT)"
+    echo "$RUN_OUTPUT_AL" | tail -40
+  fi
+else
+  echo "Scenario AL: FAIL (final-report.json not found)"
+  echo "$RUN_OUTPUT_AL" | tail -40
+fi
+rm -f "$MANIFEST_AL"
+
+# AM: full successful repair cycle → immutable initial hashes remain valid → VERIFIED_AFTER_REPAIR, exit 0
+echo ""
+echo "================================================================"
+echo "Scenario AM: Immutable snapshot integrity"
+echo "================================================================"
+create_isolated_repo "AM"
+cp "$FIXTURES_DIR/mock_repair_actor_passing.py" "$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+MANIFEST_AM="$ISOLATED_REPO/backend/story-manifest-AM.json"
+write_scenario_manifest "$MANIFEST_AM" "HARNESS-AM" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AM candidate" --quiet)
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="FAIL"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+export REPAIR_ACTOR_SCRIPT="$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AM="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AM" 2>&1)" && AM_RUN_EXIT=0 || AM_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_SCRIPT REPAIR_ACTOR_MODIFY
+RUN_DIR_AM="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+FINAL_REPORT_AM="$RUN_DIR_AM/reports/final-report.json"
+AM_EXIT=1
+if [[ -f "$FINAL_REPORT_AM" ]]; then
+  FINAL_STATUS_AM="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AM'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AM" == "VERIFIED_AFTER_REPAIR" && $AM_RUN_EXIT -eq 0 ]]; then
+    INITIAL_VR="$RUN_DIR_AM/reports/verify-result.initial.json"
+    REVERIFY_VR="$RUN_DIR_AM/reports/verify-result.reverify.json"
+    if [[ -f "$INITIAL_VR" && -f "$REVERIFY_VR" ]]; then
+      INITIAL_HASH="$("$PYTHON_BIN" -c "import hashlib; print(hashlib.sha256(open('$INITIAL_VR','rb').read()).hexdigest())")"
+      MANIFEST_HASH="$("$PYTHON_BIN" -c "
+import json
+m = json.load(open('$RUN_DIR_AM/reports/evidence-manifest.initial.json'))
+print(m['snapshots']['verify-result.initial.json']['sha256'])
+")"
+      if [[ "$INITIAL_HASH" == "$MANIFEST_HASH" ]]; then
+        AM_EXIT=0
+        echo "Scenario AM: PASS (final_status=$FINAL_STATUS_AM, exit=$AM_RUN_EXIT, initial_hash=$INITIAL_HASH)"
+      else
+        echo "Scenario AM: FAIL (hash mismatch: file=$INITIAL_HASH, manifest=$MANIFEST_HASH)"
+      fi
+    else
+      echo "Scenario AM: FAIL (immutable snapshots missing)"
+      echo "$RUN_OUTPUT_AM" | tail -20
+    fi
+  else
+    echo "Scenario AM: FAIL (expected VERIFIED_AFTER_REPAIR/0, got $FINAL_STATUS_AM/$AM_RUN_EXIT)"
+    echo "$RUN_OUTPUT_AM" | tail -40
+  fi
+else
+  echo "Scenario AM: FAIL (final-report.json not found)"
+  echo "$RUN_OUTPUT_AM" | tail -40
+fi
+rm -f "$MANIFEST_AM"
+
+# AN: reverify PASS without valid preceding repair-adapter evidence → INFRASTRUCTURE_ERROR, exit 1
+# Run a successful repair+reverify, then remove repair-adapter-result.json and
+# re-run report-story.sh which should detect the missing evidence.
+echo ""
+echo "================================================================"
+echo "Scenario AN: Reverify PASS without repair evidence"
+echo "================================================================"
+create_isolated_repo "AN"
+cp "$FIXTURES_DIR/mock_repair_actor_passing.py" "$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+MANIFEST_AN="$ISOLATED_REPO/backend/story-manifest-AN.json"
+write_scenario_manifest "$MANIFEST_AN" "HARNESS-AN" \
+  '["tests/synthetic/test_harness_a.py", "-v", "--junitxml={report_file}"]'
+add_candidate_file "backend/tests/synthetic/test_harness_a.py" "$FIXTURES_DIR/test_harness_fail.py"
+(cd "$ISOLATED_REPO" && git add backend/ && git commit -m "scenario AN candidate" --quiet)
+export REVIEWER_BIN="python3"
+export REVIEWER_MODE="FAIL"
+export REPAIR_ACTOR_BIN="python3"
+export REPAIR_ACTOR_MODE="REPAIRED"
+export REPAIR_ACTOR_SCRIPT="$ISOLATED_REPO/backend/mock_repair_actor_passing.py"
+export REPAIR_ACTOR_MODIFY="backend/tests/synthetic/test_harness_a.py"
+cd "$ISOLATED_REPO"
+RUN_OUTPUT_AN="$(bash "$ISOLATED_REPO/scripts/agent-loop/run-story.sh" --manifest "$MANIFEST_AN" 2>&1)" && AN_RUN_EXIT=0 || AN_RUN_EXIT=$?
+cd - > /dev/null
+unset REVIEWER_BIN REVIEWER_MODE REPAIR_ACTOR_BIN REPAIR_ACTOR_MODE REPAIR_ACTOR_SCRIPT REPAIR_ACTOR_MODIFY
+RUN_DIR_AN="$("$PYTHON_BIN" "$FIXTURE_PY" find-run --repo "$ISOLATED_REPO")"
+# Remove repair-adapter-result.json to simulate bare reverify without evidence
+rm -f "$RUN_DIR_AN/repair/repair-adapter-result.json"
+# Re-run report-story.sh; it should produce INFRASTRUCTURE_ERROR
+bash "$ISOLATED_REPO/scripts/agent-loop/report-story.sh" "$RUN_DIR_AN" > /dev/null 2>&1
+FINAL_REPORT_AN="$RUN_DIR_AN/reports/final-report.json"
+AN_EXIT=1
+if [[ -f "$FINAL_REPORT_AN" ]]; then
+  FINAL_STATUS_AN="$("$PYTHON_BIN" -c "import json; print(json.load(open('$FINAL_REPORT_AN'))['final_status'])")"
+  if [[ "$FINAL_STATUS_AN" == "INFRASTRUCTURE_ERROR" ]]; then
+    AN_EXIT=0
+    echo "Scenario AN: PASS (final_status=$FINAL_STATUS_AN without repair evidence)"
+  else
+    echo "Scenario AN: FAIL (expected INFRASTRUCTURE_ERROR, got $FINAL_STATUS_AN)"
+  fi
+else
+  echo "Scenario AN: FAIL (final-report.json not found)"
+fi
+rm -f "$MANIFEST_AN"
+
+# ============================================================================
 # Summary
 # ============================================================================
 echo ""
@@ -1667,17 +2085,54 @@ echo "Scenario X exit code: $X_EXIT (expected: 0)"
 echo "Scenario Y exit code: $Y_EXIT (expected: 0)"
 echo "Scenario Z exit code: $Z_EXIT (expected: 0)"
 echo "Scenario AA exit code: $AA_EXIT (expected: 0)"
+echo "Scenario AB exit code: ${AB_EXIT:-SKIP} (expected: 0)"
+echo "Scenario AC exit code: ${AC_EXIT:-SKIP} (expected: 0)"
+echo "Scenario AD exit code: ${AD_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AE exit code: ${AE_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AF exit code: ${AF_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AG exit code: ${AG_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AH exit code: ${AH_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AI exit code: ${AI_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AJ exit code: ${AJ_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AK exit code: ${AK_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AL exit code: ${AL_EXIT:-SKIP} (expected: 1)"
+echo "Scenario AM exit code: ${AM_EXIT:-SKIP} (expected: 0)"
+echo "Scenario AN exit code: ${AN_EXIT:-SKIP} (expected: 1)"
 echo ""
 
+# Check original scenarios A-AA
 if [[ $A_EXIT -eq 0 && $B_EXIT -eq 1 && $C_EXIT -eq 1 && $D_EXIT -eq 0 && $E_EXIT -eq 2 && \
       $F_EXIT -eq 1 && $G_EXIT -eq 1 && $H_EXIT -eq 1 && $I_EXIT -eq 0 && $J_EXIT -eq 0 && \
       $K_EXIT -ne 0 && $L_EXIT -eq 2 && $M_EXIT -eq 0 && $N_EXIT -eq 0 && $O_EXIT -eq 0 && \
       $P_EXIT -eq 2 && $Q_EXIT -eq 2 && $R_EXIT -eq 2 && $S_EXIT -eq 2 && $T_EXIT -eq 0 && \
       $U_EXIT -eq 0 && $V_EXIT -eq 0 && $W_EXIT -eq 0 && $X_EXIT -eq 0 && \
       $Y_EXIT -eq 0 && $Z_EXIT -eq 0 && $AA_EXIT -eq 0 ]]; then
-  echo "ALL 27 SCENARIOS PASSED (A-AA)"
-  exit 0
+  echo "ALL 27 BASE SCENARIOS PASSED (A-AA)"
+
+  # Check orchestration scenarios AB-AN: all must be 0 (PASS)
+  ORCH_PASS=0
+  ORCH_FAIL=0
+  for var in AB_EXIT AC_EXIT AD_EXIT AE_EXIT AF_EXIT AG_EXIT AH_EXIT AI_EXIT AJ_EXIT AK_EXIT AL_EXIT AM_EXIT AN_EXIT; do
+    if [[ "${!var:-1}" -eq 0 ]]; then
+      ((ORCH_PASS++))
+    else
+      ((ORCH_FAIL++))
+      echo "  FAILED: $var=${!var:-UNSET}"
+    fi
+  done
+
+  echo ""
+  echo "ORCHESTRATION SCENARIOS (AB-AN): $ORCH_PASS PASS, $ORCH_FAIL FAIL"
+  echo "TOTAL: $((27 + ORCH_PASS)) PASS, $ORCH_FAIL FAIL, 0 SKIP"
+
+  if [[ $ORCH_FAIL -eq 0 ]]; then
+    echo "ALL 40 SCENARIOS PASSED (A-AN)"
+    exit 0
+  else
+    echo "ORCHESTRATION SCENARIOS FAILED"
+    exit 1
+  fi
 else
-  echo "SOME SCENARIOS FAILED"
+  echo "BASE SCENARIOS FAILED"
   exit 1
 fi

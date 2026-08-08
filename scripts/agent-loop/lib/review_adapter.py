@@ -1000,7 +1000,7 @@ def main() -> int:
     parser.add_argument("--story-id", required=True, help="Story identifier")
     parser.add_argument("--review-iteration", required=True, type=int, help="Review iteration (>=1)")
     parser.add_argument("--repair-iteration", required=True, type=int, help="Repair iteration (>=0)")
-    parser.add_argument("--triggered-by", required=True, choices=["initial_verify_pass", "post_repair_verify_pass"])
+    parser.add_argument("--triggered-by", required=True, choices=["initial_verify_pass", "initial_verify_fail", "post_repair_verify_pass"])
     parser.add_argument("--generated-at", required=True, help="ISO-8601 UTC timestamp")
     parser.add_argument("--reviewer-id", required=True, help="Reviewer identifier")
     parser.add_argument("--timeout-seconds", type=int, default=DEFAULT_TIMEOUT, help=f"Timeout seconds ({MIN_TIMEOUT}-{MAX_TIMEOUT})")

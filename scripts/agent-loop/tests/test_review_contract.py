@@ -2664,3 +2664,249 @@ class TestSanitization:
         )
 
         assert request["sanitization"]["redaction_count"] >= 2
+
+
+# ---------------------------------------------------------------------------
+# WP-AL-1C6 DEC-C6-01: Review after verify FAIL — contract extension tests
+# (RC-01..RC-08)
+# ---------------------------------------------------------------------------
+# These tests exercise the REAL production code in review_contract.py:
+#   - validate_review_request (structural: triggered_by enum + repair_iteration)
+#   - validate_review_request_references (referential: conditional
+#     overall_verification_status binding based on triggered_by)
+#   - build_review_request (builder: produces a valid request with
+#     triggered_by="initial_verify_fail" and overall_verification_status="FAIL")
+#
+# Helper to set up a minimal repo + run_dir with manifest and failure-context
+# artifacts on disk, so validate_review_request_references can do real
+# filesystem/hash/identity checks.
+def _setup_referential_fixtures(
+    tmp_path: Path,
+    triggered_by: str,
+    overall_verification_status: str,
+) -> tuple[Path, Path, dict[str, Any]]:
+    """Create repo_root, run_dir, manifest, and failure-context on disk.
+
+    Returns (repo_root, run_dir, valid_request) where valid_request has
+    correct paths/sha256 values for the on-disk artifacts.
+    """
+    repo_root = tmp_path / "repo"
+    run_dir = tmp_path / "run"
+    repo_root.mkdir()
+    run_dir.mkdir()
+
+    manifest_path = repo_root / "manifest.json"
+    manifest = {
+        "schema_version": "1.0",
+        "story_id": "US-002",
+        "title": "Test Story",
+        "description": "Test description",
+        "acceptance_criteria": ["AC1", "AC2"],
+        "repair_guidance": ["RG1"],
+        "allowed_paths": ["backend/**"],
+        "forbidden_paths": [".env"],
+    }
+    manifest_bytes = json.dumps(manifest).encode("utf-8")
+    manifest_path.write_bytes(manifest_bytes)
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
+
+    fc_path = run_dir / "reports" / "failure-context.json"
+    fc_path.parent.mkdir()
+    fc = {
+        "schema_version": "1.0",
+        "run_id": "test-run-123",
+        "story_id": "US-002",
+        "overall_verification_status": overall_verification_status,
+        "candidate_identity": {
+            "base_commit": "0" * 40,
+            "candidate_commit": None,
+            "candidate_state": "working_tree",
+            "candidate_diff_digest": "c" * 64,
+        },
+    }
+    fc_bytes = json.dumps(fc).encode("utf-8")
+    fc_path.write_bytes(fc_bytes)
+    fc_sha256 = hashlib.sha256(fc_bytes).hexdigest()
+
+    request = _valid_request()
+    request["triggered_by"] = triggered_by
+    request["manifest_ref"]["path"] = "manifest.json"
+    request["manifest_ref"]["sha256"] = manifest_sha256
+    request["failure_context_ref"]["path"] = "reports/failure-context.json"
+    request["failure_context_ref"]["sha256"] = fc_sha256
+
+    return repo_root, run_dir, request
+
+
+class TestWPAL1C6ReviewContractExtension:
+    """WP-AL-1C6 RC-01..RC-08: triggered_by=initial_verify_fail contract extension.
+
+    These tests call the real production validators and builder — they do NOT
+    reimplement the logic inline.
+    """
+
+    def test_RC01_initial_verify_fail_with_fail_status_valid(self, tmp_path: Path) -> None:
+        """RC-01: triggered_by=initial_verify_fail + overall_verification_status=FAIL → valid."""
+        repo_root, run_dir, request = _setup_referential_fixtures(
+            tmp_path, "initial_verify_fail", "FAIL"
+        )
+        # Structural validation must accept triggered_by=initial_verify_fail
+        validate_review_request(request)
+        # Referential validation must accept FAIL status with initial_verify_fail
+        validate_review_request_references(request, repo_root, run_dir)
+
+    def test_RC02_initial_verify_fail_with_pass_status_rejected(self, tmp_path: Path) -> None:
+        """RC-02: triggered_by=initial_verify_fail + overall_verification_status=PASS → reject."""
+        repo_root, run_dir, request = _setup_referential_fixtures(
+            tmp_path, "initial_verify_fail", "PASS"
+        )
+        validate_review_request(request)
+        with pytest.raises(ReviewContractError, match="overall_verification_status must be 'FAIL'"):
+            validate_review_request_references(request, repo_root, run_dir)
+
+    def test_RC03_initial_verify_pass_with_fail_status_rejected(self, tmp_path: Path) -> None:
+        """RC-03: triggered_by=initial_verify_pass + overall_verification_status=FAIL → reject."""
+        repo_root, run_dir, request = _setup_referential_fixtures(
+            tmp_path, "initial_verify_pass", "FAIL"
+        )
+        validate_review_request(request)
+        with pytest.raises(ReviewContractError, match="overall_verification_status must be 'PASS'"):
+            validate_review_request_references(request, repo_root, run_dir)
+
+    def test_RC04_initial_verify_pass_with_pass_status_valid(self, tmp_path: Path) -> None:
+        """RC-04: triggered_by=initial_verify_pass + overall_verification_status=PASS → valid."""
+        repo_root, run_dir, request = _setup_referential_fixtures(
+            tmp_path, "initial_verify_pass", "PASS"
+        )
+        validate_review_request(request)
+        validate_review_request_references(request, repo_root, run_dir)
+
+    def test_RC05_post_repair_verify_pass_with_pass_status_valid(self, tmp_path: Path) -> None:
+        """RC-05: triggered_by=post_repair_verify_pass + overall_verification_status=PASS → valid."""
+        repo_root, run_dir, request = _setup_referential_fixtures(
+            tmp_path, "post_repair_verify_pass", "PASS"
+        )
+        # post_repair_verify_pass requires repair_iteration >= 1
+        request["repair_iteration"] = 1
+        request["review_iteration"] = 2
+        validate_review_request(request)
+        validate_review_request_references(request, repo_root, run_dir)
+
+    def test_RC06_unknown_triggered_by_rejected(self, tmp_path: Path) -> None:
+        """RC-06: triggered_by=unknown_value → reject at structural level."""
+        request = _valid_request()
+        request["triggered_by"] = "unknown_value"
+        with pytest.raises(ReviewContractError, match="invalid triggered_by"):
+            validate_review_request(request)
+
+    def test_RC07_build_review_request_supports_initial_verify_fail(self, tmp_path: Path) -> None:
+        """RC-07: build_review_request produces a valid request with triggered_by=initial_verify_fail."""
+        repo_root = tmp_path / "repo"
+        run_dir = tmp_path / "run"
+        repo_root.mkdir()
+        run_dir.mkdir()
+
+        manifest_path = repo_root / "manifest.json"
+        manifest = {
+            "schema_version": "1.0",
+            "story_id": "US-002",
+            "title": "Test Story",
+            "description": "Test description",
+            "acceptance_criteria": ["AC1"],
+            "repair_guidance": ["RG1"],
+            "allowed_paths": ["backend/**"],
+            "forbidden_paths": [".env"],
+        }
+        manifest_path.write_text(json.dumps(manifest))
+
+        fc_path = run_dir / "reports" / "failure-context.json"
+        fc_path.parent.mkdir()
+        fc = {
+            "schema_version": "1.0",
+            "run_id": "test-run-123",
+            "story_id": "US-002",
+            "overall_verification_status": "FAIL",
+            "candidate_identity": {
+                "base_commit": "0" * 40,
+                "candidate_commit": None,
+                "candidate_state": "working_tree",
+                "candidate_diff_digest": "c" * 64,
+            },
+        }
+        fc_path.write_text(json.dumps(fc))
+
+        request = build_review_request(
+            repo_root=repo_root,
+            run_dir=run_dir,
+            manifest_path=manifest_path,
+            failure_context_path=fc_path,
+            run_id="test-run-123",
+            story_id="US-002",
+            review_iteration=1,
+            repair_iteration=0,
+            triggered_by="initial_verify_fail",
+            generated_at="2026-08-07T12:00:00Z",
+            reviewer_id="mock-reviewer",
+        )
+
+        assert request["triggered_by"] == "initial_verify_fail"
+        assert request["repair_iteration"] == 0
+        assert request["review_iteration"] == 1
+
+    def test_RC08_adapter_accepts_initial_verify_fail_request(self, tmp_path: Path) -> None:
+        """RC-08: build_review_request + validate_review_request_references accept initial_verify_fail.
+
+        Verifies that a request built with triggered_by=initial_verify_fail
+        and a matching failure-context (overall_verification_status=FAIL)
+        passes both structural and referential validation — the exact path
+        the review adapter uses before invoking the reviewer subprocess.
+        """
+        repo_root = tmp_path / "repo"
+        run_dir = tmp_path / "run"
+        repo_root.mkdir()
+        run_dir.mkdir()
+
+        manifest_path = repo_root / "manifest.json"
+        manifest = {
+            "schema_version": "1.0",
+            "story_id": "US-002",
+            "title": "Test Story",
+            "description": "Test description",
+            "acceptance_criteria": ["AC1"],
+            "allowed_paths": ["backend/**"],
+            "forbidden_paths": [".env"],
+        }
+        manifest_path.write_text(json.dumps(manifest))
+
+        fc_path = run_dir / "reports" / "failure-context.json"
+        fc_path.parent.mkdir()
+        fc = {
+            "schema_version": "1.0",
+            "run_id": "test-run-123",
+            "story_id": "US-002",
+            "overall_verification_status": "FAIL",
+            "candidate_identity": {
+                "base_commit": "0" * 40,
+                "candidate_commit": None,
+                "candidate_state": "working_tree",
+                "candidate_diff_digest": "c" * 64,
+            },
+        }
+        fc_path.write_text(json.dumps(fc))
+
+        request = build_review_request(
+            repo_root=repo_root,
+            run_dir=run_dir,
+            manifest_path=manifest_path,
+            failure_context_path=fc_path,
+            run_id="test-run-123",
+            story_id="US-002",
+            review_iteration=1,
+            repair_iteration=0,
+            triggered_by="initial_verify_fail",
+            generated_at="2026-08-07T12:00:00Z",
+            reviewer_id="mock-reviewer",
+        )
+
+        validate_review_request(request)
+        validate_review_request_references(request, repo_root, run_dir)

@@ -775,9 +775,10 @@ else
 fi
 
 # Generate verify-result.json using Python with proper data passing
-"$PYTHON_BIN" - "$GATES_JSON_TMP" "$STORY_ID" "$RUN_ID" "$START_TIME" "$END_TIME" "$OVERALL_STATUS" "$INTERNAL_ERROR" "$RUN_DIR/reports/verify-result.json" <<'PYEOF'
+"$PYTHON_BIN" - "$GATES_JSON_TMP" "$STORY_ID" "$RUN_ID" "$START_TIME" "$END_TIME" "$OVERALL_STATUS" "$INTERNAL_ERROR" "$RUN_DIR/reports/verify-result.json" "$RUN_DIR/reports/verify-context.json" <<'PYEOF'
 import json
 import sys
+import os
 
 gates_file = sys.argv[1]
 story_id = sys.argv[2]
@@ -787,6 +788,7 @@ finished_at = sys.argv[5]
 overall_status = sys.argv[6]
 internal_error = sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None
 output_file = sys.argv[8]
+verify_context_path = sys.argv[9] if len(sys.argv) > 9 else None
 
 with open(gates_file) as f:
     gates = json.load(f)
@@ -804,9 +806,96 @@ result = {
 if internal_error:
     result["error"] = internal_error
 
+# WP-AL-1C6 §5.4: verify-context handling
+# ABSENT (no file) → backward-compatible default: no verify_context in output
+# PRESENT but invalid/malformed → INFRASTRUCTURE_ERROR, exit 2
+# PRESENT and valid → include verify_context in output
+verify_context_file_exists = (
+    verify_context_path is not None
+    and os.path.exists(verify_context_path)
+)
+
+if verify_context_file_exists:
+    vc_error = None
+    try:
+        with open(verify_context_path, "r", encoding="utf-8") as f:
+            vc = json.load(f)
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        vc_error = f"malformed JSON: {e}"
+    except OSError as e:
+        vc_error = f"unreadable: {e}"
+
+    if vc_error is None:
+        if not isinstance(vc, dict):
+            vc_error = "not an object"
+        elif "verify_type" not in vc:
+            vc_error = "missing required field: verify_type"
+        elif "attempt" not in vc:
+            vc_error = "missing required field: attempt"
+        elif "run_id" not in vc:
+            vc_error = "missing required field: run_id"
+        elif "story_id" not in vc:
+            vc_error = "missing required field: story_id"
+        elif "schema_version" not in vc:
+            vc_error = "missing required field: schema_version"
+        elif vc.get("schema_version") != "1.0":
+            vc_error = f"invalid schema_version: {vc.get('schema_version')!r}"
+        else:
+            verify_type = vc.get("verify_type")
+            attempt = vc.get("attempt")
+            vc_run_id = vc.get("run_id", "")
+            vc_story_id = vc.get("story_id", "")
+
+            if verify_type not in ("initial", "reverify"):
+                vc_error = f"invalid verify_type: {verify_type!r}"
+            elif not isinstance(attempt, int) or isinstance(attempt, bool):
+                vc_error = f"invalid attempt: must be integer"
+            elif verify_type == "initial" and attempt != 0:
+                vc_error = f"invalid attempt binding: initial requires attempt=0, got {attempt}"
+            elif verify_type == "reverify" and attempt != 1:
+                vc_error = f"invalid attempt binding: reverify requires attempt=1, got {attempt}"
+            elif vc_run_id and vc_run_id != run_id:
+                vc_error = f"run_id mismatch: context has {vc_run_id!r}, expected {run_id!r}"
+            elif vc_story_id and vc_story_id != story_id:
+                vc_error = f"story_id mismatch: context has {vc_story_id!r}, expected {story_id!r}"
+            else:
+                result["verify_context"] = {
+                    "verify_type": verify_type,
+                    "attempt": attempt,
+                    "run_id": vc_run_id if vc_run_id else run_id,
+                    "story_id": vc_story_id if vc_story_id else story_id,
+                }
+
+    if vc_error is not None:
+        # Fail closed: emit INFRASTRUCTURE_ERROR verify-result and exit 2
+        error_result = {
+            "schema_version": "1.0",
+            "run_id": run_id if run_id else "unknown",
+            "story_id": story_id,
+            "started_at": started_at,
+            "finished_at": finished_at,
+            "overall_status": "ERROR",
+            "gates": [],
+            "error": {
+                "type": "VERIFY_CONTEXT_INVALID",
+                "message": f"verify-context.json present but invalid: {vc_error}",
+                "details": "WP-AL-1C6 §5.4: present-but-invalid verify-context fails closed",
+            },
+        }
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(error_result, f, indent=2)
+        print(f"INFRASTRUCTURE_ERROR: verify-context.json invalid: {vc_error}", file=sys.stderr)
+        sys.exit(2)
+
 with open(output_file, 'w') as f:
     json.dump(result, f, indent=2)
 PYEOF
+
+# Check if Python exited 2 (verify-context fail-closed)
+if [[ $? -ne 0 ]]; then
+  echo "OVERALL: ERROR (verify-context validation failed)"
+  exit 2
+fi
 
 echo ""
 echo "verify-result.json generated: $RUN_DIR/reports/verify-result.json"

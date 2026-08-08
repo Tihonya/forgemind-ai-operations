@@ -149,12 +149,14 @@ def validate_review_request(request: dict[str, Any]) -> None:
 
     # triggered_by
     triggered_by = request["triggered_by"]
-    if triggered_by not in ("initial_verify_pass", "post_repair_verify_pass"):
+    if triggered_by not in ("initial_verify_pass", "initial_verify_fail", "post_repair_verify_pass"):
         raise ReviewContractError(f"invalid triggered_by: {triggered_by}")
 
     # Cross-field: triggered_by + repair_iteration
     if triggered_by == "initial_verify_pass" and repair_iteration != 0:
         raise ReviewContractError("initial_verify_pass requires repair_iteration == 0")
+    if triggered_by == "initial_verify_fail" and repair_iteration != 0:
+        raise ReviewContractError("initial_verify_fail requires repair_iteration == 0")
     if triggered_by == "post_repair_verify_pass" and repair_iteration < 1:
         raise ReviewContractError("post_repair_verify_pass requires repair_iteration >= 1")
 
@@ -688,10 +690,27 @@ def validate_review_request_references(
     if fc_ci != request["candidate_identity"]:
         raise ReviewContractError("candidate_identity does not exactly match failure-context")
 
-    # overall_verification_status must be PASS
-    if fc.get("overall_verification_status") != "PASS":
+    # overall_verification_status must match triggered_by
+    # DEC-C6-01: conditional binding
+    triggered_by = request["triggered_by"]
+    actual_ovs = fc.get("overall_verification_status")
+    if triggered_by in ("initial_verify_pass", "post_repair_verify_pass"):
+        if actual_ovs != "PASS":
+            raise ReviewContractError(
+                f"failure-context overall_verification_status must be 'PASS' "
+                f"for triggered_by={triggered_by!r}, got {actual_ovs!r}"
+            )
+    elif triggered_by == "initial_verify_fail":
+        if actual_ovs != "FAIL":
+            raise ReviewContractError(
+                f"failure-context overall_verification_status must be 'FAIL' "
+                f"for triggered_by='initial_verify_fail', got {actual_ovs!r}"
+            )
+    else:
+        # Unknown triggered_by should have been caught by structural validator,
+        # but fail closed here too.
         raise ReviewContractError(
-            f"failure-context overall_verification_status must be 'PASS', got {fc.get('overall_verification_status')}"
+            f"unexpected triggered_by in referential validation: {triggered_by!r}"
         )
 
 

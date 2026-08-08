@@ -175,6 +175,27 @@ gates.
   - validate_review_result() consumed, not modified
   - review invocation/configuration bridge remains deferred (separate future WP)
 
+**WP-AL-1C6: Minimal Orchestration Wiring**
+- Status: IMPLEMENTATION COMPLETE — AWAITING INDEPENDENT REVIEW
+- Objective: Wire review adapter and repair adapter into run-story.sh for the
+  minimal supervised end-to-end cycle: implement → verify → review → optional
+  one repair → reverify → report. Supersedes the "review invocation bridge
+  deferred" wording above — the minimum bridge is now wired.
+- Branch: `feature/agent-loop-wp-al-1c6-orchestration-wiring`
+- Planning document: [wp_al_1c6_orchestration_wiring.md](planning/wp_al_1c6_orchestration_wiring.md)
+- Key decisions:
+  - DEC-C6-01: Review after verify FAIL (triggered_by=initial_verify_fail)
+  - DEC-C6-02: Verification remains authoritative (review PASS ≠ verify success)
+  - DEC-C6-03: Immutable per-phase snapshots (initial/reverify)
+  - DEC-C6-04: Clean committed candidate precondition (no auto-commit)
+- Key behaviors:
+  - Maximum one repair attempt enforced
+  - Immutable verify-result.{initial,reverify}.json snapshots with SHA-256
+  - verify-context.json written before each verify invocation
+  - Invocation counters persisted to invocation-counters.json
+  - All 40 harness scenarios (A-AN) pass with 0 SKIP
+  - 883 pytest tests pass (0 failed, 0 skipped)
+
 **WP-AL-1C4: Repair Contract**
 - Status: IMPLEMENTATION COMPLETE — AWAITING REVIEW
 - Objective: Define repair-request and repair-result schemas with structural validators,
@@ -205,10 +226,10 @@ gates.
 - WP-AL-1C5 NOT STARTED
 
 **Future (separate work package): Review invocation/configuration bridge**
-- Status: NOT PLANNED
-- Objective: Wire actual review invocation from run-story.sh and externalize
-  reviewer configuration (binary path, arguments, timeout). Remains a separate
-  future work package; not part of WP-AL-1C3 or WP-AL-1C4.
+- Status: SUPERSEDED by WP-AL-1C6 (minimum bridge wired)
+- Objective: The minimum review invocation bridge is now delivered by WP-AL-1C6.
+  General production reviewer configuration (provider selection, credential
+  management, multi-reviewer fan-out) remains a separate future work package.
 
 ---
 
