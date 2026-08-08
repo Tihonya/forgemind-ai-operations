@@ -16,7 +16,7 @@ repair, no orchestration.
   "story_id": "string",
   "review_iteration": 1,
   "repair_iteration": 0,
-  "triggered_by": "initial_verify_pass | post_repair_verify_pass",
+  "triggered_by": "initial_verify_pass | initial_verify_fail | post_repair_verify_pass",
   "generated_at": "2026-08-04T12:00:00Z",
   "reviewer_id": "mock-reviewer",
   "manifest_ref": {
@@ -149,8 +149,14 @@ declared digest. Any mismatch is a contract violation.
 No `run_id` derivation from manifest `story_id`. The binding for `run_id` is
 exclusively `request.run_id` ↔ `failure-context.run_id`.
 
-Failure-context `overall_verification_status` must be `"PASS"` (review only
-runs after successful verification).
+Failure-context `overall_verification_status` is conditionally bound to
+`triggered_by` (WP-AL-1C6, DEC-C6-01):
+
+| `triggered_by` | Required `overall_verification_status` |
+|---|---|
+| `"initial_verify_pass"` | `"PASS"` |
+| `"initial_verify_fail"` | `"FAIL"` |
+| `"post_repair_verify_pass"` | `"PASS"` |
 
 ## Iteration Invariants
 
@@ -158,6 +164,7 @@ runs after successful verification).
 - `repair_iteration` >= 0
 - `review_iteration` == `repair_iteration + 1`
 - If `triggered_by` == `"initial_verify_pass"` then `repair_iteration` == 0
+- If `triggered_by` == `"initial_verify_fail"` then `repair_iteration` == 0
 - If `triggered_by` == `"post_repair_verify_pass"` then `repair_iteration` >= 1
 
 ## Structural Validation Rules
@@ -170,8 +177,9 @@ runs after successful verification).
 - `review_iteration` integer >= 1
 - `repair_iteration` integer >= 0
 - `review_iteration` must equal `repair_iteration + 1`
-- `triggered_by` must be `"initial_verify_pass"` or `"post_repair_verify_pass"`
+- `triggered_by` must be `"initial_verify_pass"`, `"initial_verify_fail"`, or `"post_repair_verify_pass"`
 - If `triggered_by` == `"initial_verify_pass"` then `repair_iteration` == 0
+- If `triggered_by` == `"initial_verify_fail"` then `repair_iteration` == 0
 - If `triggered_by` == `"post_repair_verify_pass"` then `repair_iteration` >= 1
 - `generated_at` ISO-8601 UTC format
 - `reviewer_id` non-empty string, max 128 bytes, alphanumeric + hyphens + underscores only
@@ -248,7 +256,7 @@ Requires filesystem access and two root paths.
 - `run_id` must equal failure-context `run_id`
 - `story_id` must equal failure-context `story_id`
 - `candidate_identity` must exactly equal failure-context `candidate_identity`
-- Failure-context `overall_verification_status` must be `"PASS"`
+- Failure-context `overall_verification_status` must match `triggered_by` (see Field Binding Rules; WP-AL-1C6 DEC-C6-01)
 
 ## Sanitization Metadata
 

@@ -451,6 +451,7 @@ phase_role_map = {
     'verify': ['implementer', 'verifier'],
     'review': ['reviewer'],
     'repair': ['repair'],
+    'reverify': ['verifier'],
     'report': ['manager', 'reporter']
 }
 allowed = phase_role_map.get(phase, [])
