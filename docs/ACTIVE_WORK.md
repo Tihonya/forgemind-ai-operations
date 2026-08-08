@@ -17,7 +17,7 @@
 - PR #61: MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08)
 - WP-REC-03-DEC: ACTIVE — decomposition plan created, draft PR open for independent review
 - WP-REC-03 implementation: NOT AUTHORIZED — requires separate Product Owner authorization for each subpackage
-- Every resulting implementation package (03A–03F): NOT AUTHORIZED
+- Every resulting implementation package (03A–03G): NOT AUTHORIZED
 - DEC-013 (workflow orchestration): Proposed — may be resolved at any time, but must be Accepted before WP-REC-03B implementation
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
@@ -40,7 +40,7 @@
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `docs/planning/wp_rec_03_decomposition.md` | ADD | WP-REC-03 decomposition plan — 6 packages (03A–03F), 1 decision gate, 15-point spec each, AT mapping, quality gate checklist, Release 1 portfolio gate, runtime/automation distinction |
+| `docs/planning/wp_rec_03_decomposition.md` | ADD | WP-REC-03 decomposition plan — 7 packages (03A–03G), 1 decision gate, 15-point spec each, AT mapping, quality gate checklist, Release 1 portfolio gate, runtime/automation distinction |
 | `docs/ACTIVE_WORK.md` | UPDATE | Reconcile with PR #61 merge; record WP-REC-03-DEC as active; update lifecycle, Q11, Q12, next steps |
 | `docs/next_steps.md` | UPDATE | Reconcile with PR #61 merge; update authorized work, Next Milestone, baseline SHA |
 
@@ -90,7 +90,7 @@ Can a new Hermes session answer these questions from documentation alone?
 6. **What blocks Release 1?** → docs/next_steps.md § "NOT IMPLEMENTED (Release 1 blockers)" (Phases 5-7) ✓
 7. **Does ForgeMind require agent-loop at runtime?** → docs/next_steps.md § "Product / Runtime Boundary" (No, development-time tool only) ✓
 8. **What is forgemind-agent-runtime for?** → docs/next_steps.md § "Product / Runtime Boundary" (Reusable agent-loop tool for Product Owner) ✓
-9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (WP-REC-03-DEC planning/decomposition only; WP-REC-03 implementation and all subpackages 03A–03F are NOT AUTHORIZED) ✓
+9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (WP-REC-03-DEC planning/decomposition only; WP-REC-03 implementation and all subpackages 03A–03G are NOT AUTHORIZED) ✓
 10. **What must not be started automatically?** → docs/next_steps.md § "What Must NOT Be Started Automatically" (7 explicit prohibitions) ✓
 11. **Is WP-REC-01/02 still active, completed, awaiting review, or merged?** → This file (Lifecycle state): WP-REC-01/02 COMPLETE — PR #61 MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (2026-08-08) ✓
 12. **What exact Product Owner decision is required next?** → docs/next_steps.md § "Next Milestone": (1) approve or reject merge of the WP-REC-03-DEC planning PR; (2) if merged, decide whether to authorize WP-REC-03A (AI provider adapter) as the first implementation package; (3) decide whether to accept DEC-013 (workflow orchestration) before WP-REC-03B; all implementation remains unauthorized until separately approved ✓
@@ -153,11 +153,11 @@ PR #61 was merged as a two-parent merge commit: `a859c0d0fbee721ad0ea44a00682370
 
 ## Next Steps (awaiting Product Owner decision)
 
-1. Independent review of WP-REC-03-DEC decomposition plan (corrected: 6 packages 03A–03F)
+1. Independent review of WP-REC-03-DEC decomposition plan (corrected: 7 packages 03A–03G)
 2. Product Owner decision: approve or reject merge of the planning PR
 3. If merged: Product Owner decides whether to authorize WP-REC-03A (AI provider adapter) as the first implementation package
 4. Product Owner decides whether to accept DEC-013 (workflow orchestration: custom state machine) — may be resolved at any time, must be Accepted before WP-REC-03B
-5. WP-REC-03 implementation and all subpackages (03A–03F): **NOT AUTHORIZED** — each requires separate Product Owner authorization
+5. WP-REC-03 implementation and all subpackages (03A–03G): **NOT AUTHORIZED** — each requires separate Product Owner authorization
 6. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
 7. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker)
 8. Do not begin any implementation until authorized

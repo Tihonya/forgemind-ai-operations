@@ -59,7 +59,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 ### Validation findings
 
-1. **The provisional five-package structure is insufficient.** The provisional list covers backend infrastructure but does not explicitly provide a workflow-start API, wiring from deterministic risk results into workflow input, recommendation persistence and presentation, or user-initiated retry. An additional package (WP-REC-03F) is required to deliver the user-facing vertical slice.
+1. **The provisional five-package structure is insufficient.** The provisional list covers backend infrastructure but does not explicitly provide a workflow-start API, wiring from deterministic risk results into workflow input, recommendation persistence and presentation, or user-initiated retry. An additional package (WP-REC-03F) is required to deliver the user-facing vertical slice. The corrected decomposition produces **seven packages** (03A–03G) plus one decision gate.
 
 2. **The provisional order 03C before 03D is confirmed as correct.** The provisional list already places structured-output validation (03C) before model outage handling (03D). This order is preserved: 03C defines the `FAILED_VALIDATION` failure path, which 03D's outage handler must also handle as a non-retryable failure. No reordering was needed; the original order was already correct.
 
@@ -67,15 +67,17 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 4. **DEC-013 may be resolved at any time.** The gate has no dependency on WP-REC-03A completion. The Product Owner may accept DEC-013 before, during, or after 03A implementation. The only constraint is that DEC-013 must be Accepted before WP-REC-03B implementation begins.
 
-5. **DEC-015 (state management) does not block Phase 5.** DEC-015 is Proposed for the permanent frontend state-library choice, but the Phase 1 approach (React hooks + TanStack Query) was approved by the Product Owner. WP-REC-03E (recommendation UI) and 03F (retry UI) can proceed with the approved Phase 1 approach. The permanent DEC-015 decision can be deferred until application-state complexity demonstrates a need. No gate is required for 03E or 03F.
+5. **DEC-015 (state management) does not block Phase 5.** DEC-015 is Proposed for the permanent frontend state-library choice, but the Phase 1 approach (React hooks + TanStack Query) was approved by the Product Owner. WP-REC-03E (recommendation UI) and 03G (retry UI) can proceed with the approved Phase 1 approach. The permanent DEC-015 decision can be deferred until application-state complexity demonstrates a need. No gate is required for 03E or 03G.
 
 6. **Existing embedding provider pattern is reusable evidence.** `backend/app/services/embedding_provider.py` defines an ABC interface with `OpenAIEmbeddingProvider` and `FakeEmbeddingProvider` adapters, plus `embedding_provider_factory.py` with environment-aware validation. WP-REC-03A (AI provider adapter for chat/reasoning) can follow this proven pattern.
 
-7. **No workflow/approval/audit/procurement_task models exist.** `backend/app/models/` contains no workflow, approval, audit, or procurement task models. `backend/app/ai/workflow/` does not exist. All Phase 5 work is greenfield.
+7. **No workflow/approval/audit/procurement_task models exist.** `backend/app/models/` contains no workflow, approval, audit, or procurement task model. `backend/app/ai/workflow/` does not exist. All Phase 5 work is greenfield.
 
 8. **Config already has OpenAI settings.** `backend/app/config.py` defines `openai_api_key`, `openai_api_base`, `openai_chat_model`, `openai_embedding_model`, `llm_timeout_seconds`, `llm_max_retries`, `ai_rate_limit_per_minute`. The adapter will reuse these settings, not invent new ones.
 
 9. **RAG integration remains assigned to WP-REC-05.** Phase 5 does not complete document access control (AT-007) or grounded retrieval. The workflow may call the retrieval service for context, but document access control and full RAG integration with citations in the AI recommendation are WP-REC-05 scope. Phase 5 must not falsely claim AT-007 PASS.
+
+10. **DEC-011 (Background job library) is Accepted.** DEC-011 accepts ARQ + Redis for background jobs. WP-REC-03F uses ARQ + Redis for workflow execution. DEC-011 is **preserved, not modified**. No new orchestration technology is introduced.
 
 ---
 
@@ -89,11 +91,12 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 | 3 | WP-REC-03C | Structured-output validation | S | 03A + 03B | AT-008 (PASS after 03C, pending all clauses verified) | Internal architectural enablement |
 | 4 | WP-REC-03D | Automatic provider retry/outage (backend) | S | 03A + 03B + 03C | — (backend retry only; AT-013 NOT PASS) | Internal architectural enablement |
 | 5 | WP-REC-03E | Workflow-run detail + recommendation UI | S | 03A + 03B + 03C + 03D | FR-07, §3.6 (workflow trace); partial foundation for AT-012 | Externally observable demo progress |
-| 6 | WP-REC-03F | Workflow start/retry API + vertical wiring | M | 03A + 03B + 03C + 03D + 03E | AT-013 (PASS after 03F, pending all clauses verified) | Complete user-visible increment |
+| 6 | WP-REC-03F | Backend workflow start/retry API + ARQ worker | M | 03A + 03B + 03C + 03D + 03E | AT-013 backend clauses (PASS after 03F; 03G adds UI clauses) | Complete user-visible increment (backend half) |
+| 7 | WP-REC-03G | Frontend start/retry UI interaction | S | 03A + 03B + 03C + 03D + 03E + 03F | AT-013 UI clauses (non-freeze, user retry action) | Complete user-visible increment (frontend half) |
 
-**Phase 5 exit criteria:** AT-008 PASS (after 03C), AT-013 PASS (after 03F), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5).
+**Phase 5 exit criteria:** AT-008 PASS (after 03C), AT-013 PASS (after 03F + 03G), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5).
 
-**AT-013 PASS requires:** backend automatic retry (03D), user-initiated workflow retry API (03F), failed-step visibility in UI (03E+03F), non-freezing UI behavior (03E+03F), and user retry action (03F). AT-013 is NOT PASS after 03D alone.
+**AT-013 PASS requires:** backend automatic retry (03D), workflow start/retry ARQ worker (03F — enqueues jobs, owns long-running execution), failed-step visibility in UI (03E), start/retry UI action (03G), non-freezing UI behavior during long-running workflows (03E+03G), and user retry action (03G). AT-013 is NOT PASS after 03D alone, and NOT PASS after 03F alone (UI clauses require 03G).
 
 ---
 
@@ -268,14 +271,29 @@ Each package below specifies the 15 required attributes.
 **3. Outcome type:** Internal architectural enablement — no direct user-visible demo progress. The backend can create and persist workflow runs with steps and correlation IDs.
 
 **4. Exact included scope:**
-- `backend/app/models/workflow.py` — `WorkflowRun`, `WorkflowStep` SQLAlchemy models
-- `backend/alembic/versions/XXX_workflow_models.py` — Alembic migration
+- `backend/app/models/workflow.py` — `WorkflowRun`, `WorkflowStep`, and `Recommendation` SQLAlchemy models
+- `backend/alembic/versions/XXX_workflow_models.py` — Alembic migration creating `workflow_runs`, `workflow_steps`, and `recommendations` tables
 - `backend/app/ai/workflow/__init__.py`
 - `backend/app/ai/workflow/state_machine.py` — explicit state machine (states: PENDING, RUNNING, AWAITING_VALIDATION, COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER, FAILED_INTERNAL; transitions defined as a dict/frozenset)
 - `backend/app/ai/workflow/engine.py` — `WorkflowEngine` class: creates run, executes steps, calls `ChatProvider.complete()`, propagates correlation ID, records steps
 - `backend/app/schemas/workflow.py` — Pydantic schemas for workflow run/step
+- `backend/app/schemas/recommendation.py` — Pydantic model for the validated Recommendation schema (schema_version, run_id, plan_id, risks[], sources[]) — the wire format owned by 03C; 03B owns the **database representation** of the same concept
 - Unit tests: `backend/tests/unit/test_workflow_state_machine.py`, `backend/tests/unit/test_workflow_engine.py`
 - Integration tests: `backend/tests/integration/test_workflow_run_lifecycle.py`
+
+**Recommendation persistence ownership (resolved here):**
+
+| Concern | Owner |
+|---------|-------|
+| Database table `recommendations` and Alembic migration | **03B** (this package) |
+| SQLAlchemy `Recommendation` model | **03B** |
+| Relationship to `workflow_runs`, `workflow_steps`, `plan_id`, `risk_id` | **03B** |
+| Persistence path (worker writes validated recommendation) | **03F** (worker execution path uses 03B's model) |
+| Read/retrieval path (API serves recommendation) | **03E** (uses 03B's model) |
+| Validated-success behavior | Persisted with status `VALIDATED`, linked to workflow run and plan |
+| FAILED_VALIDATION behavior | No `Recommendation` row persisted; workflow run marked `FAILED_VALIDATION` with error details in `workflow_steps` |
+| Rollback / downgrade | Alembic downgrade drops `recommendations` table together with `workflow_runs` and `workflow_steps` (single migration, single downgrade) |
+| Unit + integration coverage | 03B: model/migration/relationship tests; 03F: persistence-path tests; 03E: retrieval tests |
 
 **5. Explicit exclusions:**
 - No structured-output schema validation (that is 03C)
@@ -349,14 +367,16 @@ Each package below specifies the 15 required attributes.
 
 **4. Exact included scope:**
 - `backend/app/ai/workflow/schema_validator.py` — validates model output against the structured recommendation schema (§6 of SoT 02)
-- `backend/app/schemas/recommendation.py` — Pydantic models matching the recommendation schema (schema_version, run_id, plan_id, risks[], sources[])
+- `backend/app/schemas/recommendation.py` — Pydantic models matching the recommendation schema (schema_version, run_id, plan_id, risks[], sources[]) — the **wire format** (input/output validation); 03B owns the database representation
 - `backend/app/ai/workflow/prompts.py` — versioned prompt template (system prompt instructing the model to return the schema)
 - Unit tests: `backend/tests/unit/test_recommendation_schema.py`, `backend/tests/unit/test_schema_validator.py`
 
 **5. Explicit exclusions:**
 - No automatic retry or outage handling (that is 03D)
 - No user-facing API endpoints (that is 03F)
-- No frontend changes (that is 03E)
+- No frontend changes (that is 03G)
+- No persistence logic — no Recommendation row is written here; persistence is 03F's worker execution path (uses 03B's Recommendation model)
+- No retrieval API (that is 03E)
 - No approval/audit/procurement logic
 
 **6. Permitted repository areas:**
@@ -494,14 +514,19 @@ Each package below specifies the 15 required attributes.
 - `frontend/src/hooks/use-workflow-run.ts` — TanStack Query hook for fetching run details
 - Frontend tests: `frontend/src/routes/__tests__/workflow-run-detail.test.tsx`
 
+**Recommendation retrieval ownership (resolved here):**
+
+03E owns the **read/retrieval path** for validated recommendations. The API endpoint queries the `Recommendation` model owned by 03B and returns it in the workflow-run response. 03E does not own the Recommendation model or its persistence — it only reads and displays.
+
 **5. Explicit exclusions:**
 - No workflow start API (that is 03F)
-- No user-initiated retry API or retry UI action (that is 03F)
+- No user-initiated retry API or retry UI action (that is 03F backend + 03G frontend)
 - No approval center UI (that is Phase 6 / WP-REC-04D)
 - No audit log UI (that is Phase 6 / WP-REC-04E)
 - No automatic retry or outage logic (that is 03D — this package only displays errors)
 - No new workflow engine logic (that is 03B — this package only reads and displays)
 - No document access control or RAG integration (that is WP-REC-05)
+- No Recommendation persistence logic (that is 03F's worker execution path using 03B's model)
 
 **6. Permitted repository areas:**
 - `backend/app/api/workflow.py` (new)
@@ -560,25 +585,39 @@ Each package below specifies the 15 required attributes.
 
 ---
 
-### WP-REC-03F — Workflow Start/Retry API + Vertical Wiring
+### WP-REC-03F — Backend Workflow Start/Retry API + ARQ Worker
 
-**1. Stable ID and title:** WP-REC-03F — Workflow Start/Retry API + Vertical Wiring
+**1. Stable ID and title:** WP-REC-03F — Backend Workflow Start/Retry API + ARQ Worker
 
-**2. Objective:** Implement the workflow-start API, user-initiated retry API, and vertical wiring that delivers the complete user-visible Phase 5 slice: Production Manager starts analysis → deterministic risks feed the workflow → AI runs → validated recommendation is persisted → progress and failures are visible → user may retry a failed AI run → no controlled write before Phase 6.
+**2. Objective:** Implement the workflow-start and user-initiated retry **HTTP endpoints** plus the **ARQ worker** that owns long-running workflow execution. Endpoints enqueue ARQ jobs (DEC-011) and return promptly with a `run_id` and an accepted response. The worker executes risk calculation → provider call → validation → recommendation persistence → state transition. No provider call, risk calculation, validation, or persistence blocks the HTTP request lifecycle.
 
-**3. Outcome type:** Complete user-visible increment — a reviewer can start a workflow, see it run, view the recommendation, and retry on failure. This is the package that makes Phase 5 produce visible AI-assisted value.
+**3. Outcome type:** Complete user-visible increment (backend half) — the HTTP contract exists, the worker runs the long-lived flow, deterministic risk results remain persisted and queryable, and the user can retry a failed AI run via the retry endpoint.
+
+**Async execution contract (DEC-011 — ARQ + Redis, Accepted):**
+
+| Concern | Behavior |
+|---------|----------|
+| `POST /api/v1/workflow-runs` | Enqueues an ARQ job (`workflow_start`) and returns `202 Accepted` with `{run_id, state: PENDING, location}`. **No provider call, no risk calculation, no validation, no persistence beyond the initial `PENDING` run row** inside the HTTP request. |
+| `POST /api/v1/workflow-runs/{run_id}/retry` | Enqueues an ARQ job (`workflow_retry`) and returns `202 Accepted`. Allowed only when the run is in a terminal failure state (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`). |
+| ARQ worker ownership | The worker executes the full vertical wiring: risk engine → provider call → schema validation → recommendation persistence (03B's `Recommendation` model) → state transitions (03B's state machine). The worker owns all long-running work. |
+| Polling | `GET /api/v1/workflow-runs/{run_id}` (03E) — the client polls persisted run state until a terminal state. DEC-012 approved approach (HTTP polling, 3s interval, stop at terminal). |
+| Deterministic risk result persistence | The risk engine result is persisted as part of the workflow run **independently of the provider call**. If the provider fails after the risk engine succeeds, the deterministic risk result remains persisted and available. |
+| Duplicate start/retry requests | Start and retry enqueue jobs keyed by `run_id`. A second enqueue request for the same idempotency key returns the existing `run_id` with `202 Accepted` and does **not** re-execute. ARQ job deduplication at the worker level prevents duplicate execution. |
+| Enqueue failure (Redis/ARQ unavailable) | If ARQ enqueue fails, the endpoint returns `503 Service Unavailable` and no run is created. The client may retry the start request. |
+| Concurrent retry | Concurrent retry requests for the same `run_id` are serialized by idempotency key — only one worker executes, the others observe the existing run. |
+| No blocking of HTTP lifecycle | The HTTP request returns within the API latency budget. No synchronous provider call, no synchronous risk calculation longer than the API timeout, no synchronous persistence beyond the `PENDING` row. |
+| DEC-011 preservation | No new orchestration technology is introduced. ARQ + Redis (already Accepted in DEC-011) is the sole background-job mechanism. DEC-011 is **not modified** by this package. |
 
 **4. Exact included scope:**
 - `backend/app/api/workflow.py` — extend with:
-  - `POST /api/v1/workflow-runs` — start a new workflow for a production plan (authenticated; accepts `plan_id`; resolves plan, calls risk engine for deterministic result, creates workflow run, calls provider, validates output, persists recommendation)
-  - `POST /api/v1/workflow-runs/{run_id}/retry` — retry a failed workflow run (authenticated; allowed only from terminal failure states: `FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`; idempotent per run; concurrency-safe)
-- `backend/app/ai/workflow/vertical.py` — vertical wiring: orchestrates risk engine → provider call → schema validation → recommendation persistence; distinguishes automatic retry (03D) from user-initiated retry (this package)
-- `backend/app/schemas/workflow.py` — update with start/retry request and response schemas
-- `frontend/src/routes/supply-risk-detail.tsx` — update with "Start AI Analysis" button and "Retry" button (retry visible only when run is in a terminal failure state)
-- `frontend/src/hooks/use-workflow-start.ts` — TanStack Query mutation hook for starting a workflow
-- `frontend/src/hooks/use-workflow-retry.ts` — TanStack Query mutation hook for retrying a failed run
-- Frontend tests: `frontend/src/routes/__tests__/supply-risk-detail-workflow.test.tsx`
-- Integration tests: `backend/tests/integration/test_workflow_start_retry.py`
+  - `POST /api/v1/workflow-runs` — enqueues ARQ job, returns `202 Accepted` with `run_id`
+  - `POST /api/v1/workflow-runs/{run_id}/retry` — enqueues ARQ retry job, returns `202 Accepted`
+- `backend/app/ai/workflow/vertical.py` — vertical wiring executed **inside the ARQ worker**: risk engine → provider call → schema validation → recommendation persistence; distinguishes automatic retry (03D) from user-initiated retry (this package)
+- `backend/app/ai/workflow/worker.py` — ARQ worker functions `workflow_start(ctx, plan_id, ...)` and `workflow_retry(ctx, run_id, ...)`; idempotency-key handling; enqueue-failure path; state transitions
+- `backend/app/schemas/workflow.py` — update with start/retry request schemas (`plan_id`) and accepted response schema (`run_id`, `state`, `location`)
+- Unit tests: `backend/tests/unit/test_workflow_api_start_retry.py` (HTTP-level: enqueue mocked, 202 response shape, idempotency, terminal-state check on retry, enqueue-failure 503)
+- Worker tests: `backend/tests/unit/test_workflow_worker.py` (worker logic: full lifecycle, risk-persistence-on-provider-failure, duplicate-key handling, retry-from-terminal-only)
+- Integration tests: `backend/tests/integration/test_workflow_start_retry.py` (enqueue → worker → state transitions → recommendation persistence; retry → terminal-state check; enqueue failure → 503)
 
 **5. Explicit exclusions:**
 - No approval/audit/procurement logic (Phase 6 / WP-REC-04)
@@ -586,43 +625,48 @@ Each package below specifies the 15 required attributes.
 - No new provider adapter or state machine logic (03A/03B)
 - No automatic retry policy (03D — this package provides user-initiated retry only)
 - No controlled write actions — no procurement task creation, no approval (Phase 6)
+- No frontend changes (that is 03G)
+- No modification to DEC-011 (ARQ + Redis) — DEC-011 is preserved as the accepted background-job mechanism
+- No synchronous execution of risk calculation, provider call, validation, or persistence inside the HTTP request lifecycle
 
 **6. Permitted repository areas:**
 - `backend/app/api/workflow.py` (extend 03E)
 - `backend/app/ai/workflow/vertical.py` (new)
+- `backend/app/ai/workflow/worker.py` (new)
 - `backend/app/schemas/workflow.py` (update)
-- `frontend/src/routes/supply-risk-detail.tsx` (update)
-- `frontend/src/hooks/use-workflow-start.ts` (new)
-- `frontend/src/hooks/use-workflow-retry.ts` (new)
-- `frontend/src/routes/__tests__/supply-risk-detail-workflow.test.tsx` (new test)
+- `backend/tests/unit/test_workflow_api_start_retry.py` (new test)
+- `backend/tests/unit/test_workflow_worker.py` (new test)
 - `backend/tests/integration/test_workflow_start_retry.py` (new test)
 
 **7. Dependencies and predecessor gates:**
 - WP-REC-03A complete (provider adapter)
-- WP-REC-03B complete (workflow engine and state machine)
+- WP-REC-03B complete (workflow engine, state machine, and Recommendation model)
 - WP-REC-03C complete (structured-output validation)
 - WP-REC-03D complete (automatic provider retry/outage)
-- WP-REC-03E complete (run detail + recommendation UI to extend with start/retry actions)
+- WP-REC-03E complete (run detail API + recommendation retrieval API)
 
 **8. Relevant Source-of-Truth requirements:**
 - `01_PRODUCT_AND_MVP_SCOPE.md` §2 Golden Scenario steps 3–7: start analysis, deterministic risk, AI workflow, structured recommendation, UI display
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LLM is not the source of truth for arithmetic" — deterministic risk result is authoritative input to the workflow
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §8: "recommendation → draft action → approval request → human decision → procurement task → audit event" — no write action before approval (Phase 6)
-- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry"
+- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry" — AT-013 **backend clauses** PASS after 03F; UI clauses require 03G.
 - `03_DEFINITION_OF_DONE.md` Gate C: "When model unavailable, system shows controlled failure state"
 - DEC-004: deterministic business logic; LLM explains
 - DEC-005: AI creates draft action only; write requires approval
+- DEC-011: ARQ + Redis for background jobs (Accepted — **preserved, not modified**)
+- DEC-012: HTTP polling (3s interval) for run progress
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 (PASS after 03F, pending all clauses verified): AI endpoint unavailable → risk engine result available, workflow shows failed AI step, UI does not freeze, user can retry. All clauses verifiable: risk engine result available (03D backend + 03F vertical wiring); workflow shows failed AI step (03E+03F UI); UI does not freeze (03E+03F loading/error states); user can retry (03F retry API + UI action).
-- Additional unit tests: start API creates run with correct plan_id, retry API rejects non-terminal states, retry API idempotency, concurrency safety
-- Additional integration tests: full start → run → complete lifecycle; start → provider outage → FAILED_PROVIDER → user retry → success; start → invalid output → FAILED_VALIDATION → user retry
-- Additional frontend tests: "Start AI Analysis" button creates workflow; "Retry" button visible only on failed runs; loading state during workflow; non-freezing UI during long-running workflow; recommendation displayed after completion
+- AT-013 backend clauses (PASS after 03F, pending all clauses verified): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). The UI clauses (non-freezing UI, user can retry in UI) require 03G.
+- Additional unit tests (HTTP): start returns 202 with `run_id`; retry returns 202 only on terminal failure states; retry on non-terminal returns 409; duplicate start with same idempotency key returns existing `run_id`; enqueue failure returns 503.
+- Additional worker tests: full lifecycle enqueue → run → complete; provider failure after risk engine → risk result persisted + run marked `FAILED_PROVIDER`; retry from `FAILED_PROVIDER` → success; retry from `FAILED_VALIDATION` → success; duplicate key at worker level skipped; enqueue failure → 503, no run row created.
+- Additional integration tests: full start → run → complete lifecycle with recommendation persisted; start → provider outage → `FAILED_PROVIDER` → user retry via endpoint → success; start → invalid output → `FAILED_VALIDATION` → user retry; deterministic risk result queryable independently of provider outcome.
 
 **10. Failure and rollback behavior:**
-- Start API failure: 400 if plan not found, 401 if unauthenticated, 500 on internal error
-- Retry API failure: 409 if run not in terminal failure state, 404 if run not found
-- Concurrency: retry is idempotent per run_id; concurrent retry requests for the same run are serialized
+- Start API failure: 400 if plan not found, 401 if unauthenticated, 503 if ARQ enqueue fails, 500 on other internal error
+- Retry API failure: 409 if run not in terminal failure state, 404 if run not found, 503 if ARQ enqueue fails
+- Worker failure: exception in worker → run marked `FAILED_INTERNAL`; risk result (already persisted) remains queryable
+- Concurrency: retry is idempotent per idempotency key; concurrent retry requests for the same run are serialized via key deduplication
 - No write actions created (by design — write actions are Phase 6)
 - Rollback: revert feature branch; no database changes beyond 03B
 
@@ -631,22 +675,107 @@ Each package below specifies the 15 required attributes.
 - Role-based access: only Production Manager can start workflow runs; only the run creator or authorized roles can retry
 - No secrets in vertical wiring or API code
 - Provider errors do not leak API keys or internal details to the client
+- ARQ job payloads contain no secrets (risk engine input is deterministic data, no LLM tokens)
 
 **12. Observability requirements:**
-- Start API logs: correlation ID, user ID, plan_id, run_id
-- Retry API logs: correlation ID, user ID, run_id, source state, attempt number
-- Vertical wiring logs: correlation ID, run_id, each step (risk engine, provider call, validation, persistence)
+- Start API logs: correlation ID, user ID, plan_id, run_id, enqueue result
+- Retry API logs: correlation ID, user ID, run_id, source state, enqueue result
+- Worker logs: correlation ID, run_id, each step (risk engine, provider call, validation, persistence), enqueue duration, worker duration, final state
+- Enqueue failure logged with correlation ID and cause
 
-**13. Estimated size:** M (5-7 new/updated files, ~400-500 lines implementation + ~300-400 lines tests)
+**13. Estimated size:** M (5-7 new/updated files, ~400-500 lines implementation + ~400-500 lines tests). Split from the prior monolithic 03F into backend execution (this package, M) and frontend interaction (03G, S) because the original 03F bundled HTTP/worker/persistence/UI concerns into one review unit.
 
 **14. Exit criteria:**
-- `POST /api/v1/workflow-runs` starts a workflow for a production plan
-- `POST /api/v1/workflow-runs/{run_id}/retry` retries a failed run (terminal failure states only, idempotent, concurrency-safe)
-- Vertical wiring: risk engine → provider → validation → recommendation persistence
-- Frontend "Start AI Analysis" and "Retry" buttons functional
+- `POST /api/v1/workflow-runs` enqueues an ARQ job and returns `202 Accepted` with `run_id` within API latency budget (no provider call, no risk calculation, no validation, no persistence beyond `PENDING` row inside the HTTP request)
+- `POST /api/v1/workflow-runs/{run_id}/retry` enqueues an ARQ retry job and returns `202 Accepted`; rejects non-terminal states with 409
+- ARQ worker executes vertical wiring: risk engine → provider → validation → recommendation persistence
+- Duplicate start/retry requests return the same `run_id` without re-executing (idempotency key)
+- Enqueue failure returns 503; no orphan run created
+- Concurrent retry requests for the same `run_id` are serialized (one worker executes, others observe)
+- Deterministic risk result persisted and queryable even when provider fails after the risk engine succeeds
+- AT-013 backend clauses verifiable (risk engine result available, failed step visible in API trace)
+- All backend unit, worker, and integration tests pass
+- Linter and type checks pass
+- DEC-011 (ARQ + Redis) explicitly preserved; no new orchestration technology introduced
+
+**15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. Requires explicit Product Owner authorization.
+
+---
+
+### WP-REC-03G — Frontend Start/Retry UI Interaction
+
+**1. Stable ID and title:** WP-REC-03G — Frontend Start/Retry UI Interaction
+
+**2. Objective:** Add the frontend start/retry UI actions that complete AT-013's user-visible clauses: a "Start AI Analysis" button on the supply-risk detail page, a "Retry" button visible only when a run is in a terminal failure state, a non-freezing UI during long-running workflow execution, and polling-driven status updates until a terminal state is reached.
+
+**3. Outcome type:** Complete user-visible increment (frontend half) — the reviewer can start a workflow, observe non-blocking progress, and retry a failed run. Together with 03F (backend), this package completes AT-013.
+
+**4. Exact included scope:**
+- `frontend/src/routes/supply-risk-detail.tsx` — update with "Start AI Analysis" button and "Retry" button (retry visible only when run is in a terminal failure state)
+- `frontend/src/hooks/use-workflow-start.ts` — TanStack Query mutation hook for starting a workflow (POST to 03F's start endpoint)
+- `frontend/src/hooks/use-workflow-retry.ts` — TanStack Query mutation hook for retrying a failed run (POST to 03F's retry endpoint)
+- `frontend/src/routes/__tests__/supply-risk-detail-workflow.test.tsx` — frontend tests
+- No backend changes; uses 03F's start/retry endpoints and 03E's polling endpoint
+
+**5. Explicit exclusions:**
+- No workflow start/retry API logic (that is 03F backend)
+- No ARQ worker logic (that is 03F)
+- No recommendation persistence (that is 03F's worker execution path using 03B's model)
+- No read-only workflow-run detail UI (that is 03E)
+- No approval center UI (that is Phase 6 / WP-REC-04D)
+- No audit log UI (that is Phase 6 / WP-REC-04E)
+- No automatic retry logic (that is 03D)
+- No document access control or RAG integration (that is WP-REC-05)
+
+**6. Permitted repository areas:**
+- `frontend/src/routes/supply-risk-detail.tsx` (update)
+- `frontend/src/hooks/use-workflow-start.ts` (new)
+- `frontend/src/hooks/use-workflow-retry.ts` (new)
+- `frontend/src/routes/__tests__/supply-risk-detail-workflow.test.tsx` (new test)
+
+**7. Dependencies and predecessor gates:**
+- WP-REC-03A complete (provider adapter — model metadata in UI)
+- WP-REC-03B complete (workflow models — state used to drive button visibility)
+- WP-REC-03C complete (validation results — failure display)
+- WP-REC-03D complete (error/retry information — failure display)
+- WP-REC-03E complete (run detail UI + polling endpoint extended by this package)
+- WP-REC-03F complete (start/retry API + ARQ worker — HTTP contract consumed by this package)
+
+**8. Relevant Source-of-Truth requirements:**
+- `04_ACCEPTANCE_TESTS.md` AT-013 UI clauses: "UI does not freeze, user can retry" — PASS after 03G (combined with 03F backend)
+- `01_PRODUCT_AND_MVP_SCOPE.md` §3.6: Workflow Run Details screen — start and retry actions
+- DEC-012: HTTP polling (3s interval) for run progress
+- FR-07: "Every workflow step must be traceable by correlation ID" (displayed via 03E's trace)
+
+**9. Acceptance tests and additional unit/integration tests:**
+- AT-013 UI clauses (PASS after 03G, pending all clauses verified): UI does not freeze during long-running workflow; user can click retry; retry button visible only when run is in terminal failure state; after retry, polling resumes and shows updated state.
+- Additional frontend tests: "Start AI Analysis" button POSTs to 03F's start endpoint; "Retry" button POSTs to 03F's retry endpoint; "Retry" button hidden when run is not in a terminal failure state; polling starts after successful start/retry and stops at terminal state; loading, error, and non-freezing states implemented.
+
+**10. Failure and rollback behavior:**
+- Start API error surfaced in UI: error state with retryable message
+- Retry API error surfaced in UI: error state with retryable message
+- Polling timeout: UI shows "workflow still running" state; user may manually refresh
+- No write actions created (by design — write actions are Phase 6)
+- Rollback: revert feature branch; no database changes
+
+**11. Security and secrets constraints:**
+- Frontend uses existing authenticated TanStack Query client (03F's endpoints require authentication)
+- Role-based access enforced on the backend (03F); frontend hides buttons the user cannot invoke
+- No secrets in frontend code
+
+**12. Observability requirements:**
+- Frontend logs start/retry actions with correlation ID (from backend response)
+- Polling activity logged via API correlation ID
+
+**13. Estimated size:** S (3-4 new/updated files, ~150-250 lines implementation + ~150-200 lines tests)
+
+**14. Exit criteria:**
+- "Start AI Analysis" button POSTs to 03F's start endpoint and transitions UI to polling
+- "Retry" button POSTs to 03F's retry endpoint and is visible only on terminal failure states
+- Polling updates run status (DEC-012 approved approach)
 - Loading, error, and non-freezing UI states implemented
-- AT-013 all clauses verifiable (risk engine result available, failed step visible, UI non-freeze, user retry)
-- All backend and frontend tests pass
+- AT-013 UI clauses verifiable (non-freezing UI, user retry action visible)
+- All frontend tests pass
 - Linter and type checks pass
 
 **15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. Requires explicit Product Owner authorization.
@@ -659,7 +788,7 @@ Each package below specifies the 15 required attributes.
 |----|-------------|---------------------|------------|------------------------|
 | AT-007 | Document access control | WP-REC-05 only (NOT Phase 5) | After WP-REC-05 | NOT covered by Phase 5 |
 | AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E | Backend clauses after 03C; fully verifiable after 03E renders trace | PASS (after 03E) |
-| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F | After 03F (all clauses: backend retry, failed-step UI, non-freeze, user retry) | PASS (after 03F) |
+| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | After 03F + 03G (backend clauses after 03F; UI clauses require 03G) | PASS (after 03F + 03G) |
 
 AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Phase 5. 03E provides a partial foundation for AT-012 (workflow trace visibility) but AT-012 is NOT PASS during Phase 5.
 
@@ -671,27 +800,30 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 
 | Criterion | Status |
 |-----------|--------|
-| No package is oversized | ✅ All packages are M or S; no L packages |
+| No package is oversized | ✅ All packages are M or S; no L packages; 03F split into backend (M) + frontend (S) |
 | Each package has independently reviewable scope | ✅ Each package has explicit included scope and exclusions |
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
-| Tests map to AT requirements | ✅ AT-008 (after 03C+03E), AT-013 (after 03F); unit/integration tests specified per package |
+| Tests map to AT requirements | ✅ AT-008 (after 03C+03E), AT-013 (after 03F+03G); unit/integration tests specified per package |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
 | No implementation is described as already authorized | ✅ Every package says "NOT AUTHORIZED" in §15 |
 | Exact first candidate identified but unauthorized | ✅ WP-REC-03A is the first candidate; NOT AUTHORIZED |
-| Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F vertical wiring |
+| Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
 | Complete audit traceability | ✅ Workflow steps and correlation IDs (03B); full audit events in Phase 6 |
-| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03E+03F (UI non-freeze, user retry); AT-013 PASS after 03F |
+| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03F (ARQ worker, persistence) + 03E (trace) + 03G (UI non-freeze, user retry); AT-013 PASS after 03F + 03G |
 | Synthetic-data-only policy | ✅ DEC-003 preserved; fake provider uses no real data |
 | No runtime dependency on scripts/agent-loop | ✅ No package imports or depends on agent-loop |
 | No coupling to forgemind-agent-runtime | ✅ Runtime separation (SP-0B) is NOT AUTHORIZED and not required |
 | AT-007 maps only to WP-REC-05 | ✅ AT-007 is NOT mapped to any Phase 5 package |
-| AT-013 not PASS before full retry+UI | ✅ AT-013 PASS only after 03F (03D is backend-only) |
-| Start/retry API has explicit package owner | ✅ 03F owns start/retry API + vertical wiring |
-| Recommendation UI has explicit package owner | ✅ 03E owns recommendation display; 03F adds start/retry actions |
+| AT-013 not PASS before full retry+UI | ✅ AT-013 PASS only after 03F + 03G (03D is backend-only; 03F is backend-only; 03G adds UI clauses) |
+| Start/retry API has explicit package owner | ✅ 03F owns start/retry API + ARQ worker (backend half) |
+| Recommendation UI has explicit package owner | ✅ 03E owns recommendation display; 03G adds start/retry UI actions |
+| Recommendation persistence has explicit package owner | ✅ 03B owns Recommendation model and migration; 03F's worker writes; 03E reads |
 | DEC-013 gate appears exactly once, no 03A dependency | ✅ Gate has no dependency on 03A |
-| Package sequence identical across all files | ✅ 03A → GATE → 03B → 03C → 03D → 03E → 03F in decomposition, ACTIVE_WORK, next_steps, PR description |
+| DEC-011 (ARQ + Redis) explicitly preserved | ✅ 03F uses DEC-011's ARQ + Redis; DEC-011 not modified |
+| Start/retry endpoints enqueue rather than execute inline | ✅ 03F start/retry enqueue ARQ jobs; worker owns long-running execution |
+| Package sequence identical across all files | ✅ 03A → GATE → 03B → 03C → 03D → 03E → 03F → 03G in decomposition, ACTIVE_WORK, next_steps, PR description |
 
 ---
 
@@ -699,15 +831,16 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 
 The decomposition preserves these invariants from the Source of Truth:
 
-1. **Deterministic risk calculation is authoritative input** (DEC-004, SoT §2): The risk engine output feeds the workflow via 03F vertical wiring; the LLM never recalculates risks.
+1. **Deterministic risk calculation is authoritative input** (DEC-004, SoT §2): The risk engine output feeds the workflow via 03F's ARQ worker; the LLM never recalculates risks.
 2. **Structured and schema-validated model output** (FR-06, SoT §6, AT-008): WP-REC-03C enforces the versioned recommendation schema.
 3. **Human approval before controlled writes** (DEC-005, FR-08, AT-009): No write actions in Phase 5; procurement requires Phase 6 approval.
 4. **Complete audit traceability** (FR-07, FR-09, AT-012): Workflow steps and correlation IDs (03B+03E); full audit events in Phase 6.
-5. **Graceful model/provider outage behavior** (AT-013, Gate C): 03D (automatic backend retry) + 03E+03F (UI non-freeze, user retry) ensure deterministic results remain available and users can retry.
+5. **Graceful model/provider outage behavior** (AT-013, Gate C): 03D (automatic backend retry) + 03F (ARQ worker, risk result persistence, retry endpoint) + 03E (trace display) + 03G (UI non-freeze, user retry) ensure deterministic results remain available and users can retry.
 6. **Synthetic-data-only policy** (DEC-003): Fake provider uses no real data; all test data is synthetic.
 7. **No runtime dependency on scripts/agent-loop**: No package imports or depends on agent-loop code.
 8. **No coupling to forgemind-agent-runtime**: SP-0B is NOT AUTHORIZED and not required for any Phase 5 package.
 9. **RAG integration assigned to WP-REC-05**: Document access control (AT-007) and grounded retrieval are NOT claimed by Phase 5.
+10. **Background job mechanism is ARQ + Redis** (DEC-011, Accepted): 03F uses ARQ + Redis for workflow execution; DEC-011 is preserved, not modified. No other orchestration technology introduced.
 
 ---
 
@@ -750,7 +883,8 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03C (structured-output validation) | NOT AUTHORIZED |
 | WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED |
 | WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED |
-| WP-REC-03F (workflow start/retry API + vertical wiring) | NOT AUTHORIZED |
+| WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED |
+| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
 | WP-REC-03 implementation (as a whole) | NOT AUTHORIZED |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |

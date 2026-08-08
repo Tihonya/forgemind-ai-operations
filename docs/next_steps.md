@@ -98,9 +98,9 @@ This repository contains two conceptually separate projects:
 
 PR #61 (WP-REC-01/02) is **MERGED** at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08). WP-REC-01/02 are COMPLETE.
 
-WP-REC-03-DEC is the active planning package. It decomposes WP-REC-03 (MVP Phase 5: AI Workflow) into six small, separately authorizable implementation packages (WP-REC-03A through 03F) plus one decision gate (DEC-013). See `docs/planning/wp_rec_03_decomposition.md` for the full plan.
+WP-REC-03-DEC is the active planning package. It decomposes WP-REC-03 (MVP Phase 5: AI Workflow) into seven small, separately authorizable implementation packages (WP-REC-03A through 03G) plus one decision gate (DEC-013). See `docs/planning/wp_rec_03_decomposition.md` for the full plan.
 
-**WP-REC-03 implementation is NOT AUTHORIZED.** Every resulting implementation package (03A–03F) is NOT AUTHORIZED. Each requires separate explicit Product Owner authorization before any implementation begins.
+**WP-REC-03 implementation is NOT AUTHORIZED.** Every resulting implementation package (03A–03G) is NOT AUTHORIZED. Each requires separate explicit Product Owner authorization before any implementation begins.
 
 **First candidate implementation package:** WP-REC-03A (AI Provider Adapter) — NOT AUTHORIZED.
 
@@ -201,7 +201,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. **Immediate decision:** approve or reject merge of the WP-REC-03-DEC planning PR (documentation-only, decomposes WP-REC-03 into 03A–03F + DEC-013 gate).
+1. **Immediate decision:** approve or reject merge of the WP-REC-03-DEC planning PR (documentation-only, decomposes WP-REC-03 into 03A–03G + DEC-013 gate).
 2. **If merged:** decide whether to authorize WP-REC-03A (AI Provider Adapter) as the first implementation package — remains NOT AUTHORIZED until separately approved.
 3. **Architecture decision:** decide whether to accept DEC-013 (workflow orchestration: custom state machine) — may be resolved at any time, must be Accepted before WP-REC-03B.
-4. **Implementation authorization:** WP-REC-03 implementation and all subpackages (03A–03F) remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+4. **Implementation authorization:** WP-REC-03 implementation and all subpackages (03A–03G) remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
