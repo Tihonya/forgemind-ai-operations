@@ -12,16 +12,19 @@
 
 ## Document status
 
-This document is a draft. It does not constitute an accepted Product Owner
-decision. It does not authorize:
+This document records the accepted Product Owner decision for Option C and
+the repository name `forgemind-agent-runtime`.
+
+Approval is strictly limited to those two decisions. This document does not
+authorize:
 
 - SP-0B,
-- the creation of any new repository,
-- any movement, copying, genericization, or removal of code or schemas,
+- the creation of the Runtime repository,
+- any implementation, genericization, or code movement,
 - any change to the ForgeMind Product Source of Truth,
 - any change to the Decision Log.
 
-Product Owner approval is required before any implementation work begins.
+Every implementation phase requires separate explicit authorization.
 
 ---
 
@@ -35,16 +38,17 @@ Product repository that consumes it?
 
 ---
 
-## 2. Proposed decision
+## 2. Approved decision
 
-Adopt Option C from the assessment:
+Option C from the assessment is approved. Under approved Option C, once the
+applicable phase is separately authorized:
 
-- A new Runtime repository is created.
-- The Runtime implementation and schemas are **copied** (not moved) into the
+- A new Runtime repository will be created.
+- Runtime implementation and schemas will be **copied** (not moved) into the
   new repository.
-- The existing ForgeMind copy is retained through the normalized parity gate
-  (SP-3) and the current-capability integration exercise (SP-4).
-- The ForgeMind copy is removed only at the explicit removal gate (SP-5).
+- The existing ForgeMind copy will be retained through the normalized parity
+  gate (SP-3) and the current-capability integration exercise (SP-4).
+- The ForgeMind copy will be removed only at the explicit removal gate (SP-5).
 
 This preserves provenance, keeps ForgeMind deployment independent of the
 separation track, and provides a fallback copy until parity and integration
@@ -52,12 +56,11 @@ are proven.
 
 ---
 
-## 3. Proposed provisional repository name
+## 3. Approved repository name
 
-**Proposed name:** `forgemind-agent-runtime`
+**Approved name:** `forgemind-agent-runtime`
 
-The name is provisional and subject to Product Owner approval. Final naming
-is not decided at this stage.
+Approval of the name does not authorize repository creation.
 
 **Repository-name availability observation (read-only):**
 As of 2026-08-08, the GitHub repository `Tihonya/forgemind-agent-runtime`
@@ -189,7 +192,7 @@ Option B.
 
 ## 8. Evidence and rationale
 
-The rationale for this draft rests on the merged assessment:
+The rationale for this decision rests on the merged assessment:
 
 - No direct Agent Loop references were found in inspected Product
   application paths (`backend/`, `frontend/`, `infra/`) at baseline
@@ -208,9 +211,9 @@ Readers should consult
 evidence.
 
 Verified evidence (assessment findings, coupling matrix, portability
-matrix, ownership classification) is distinguished from proposed decisions
-(phase sequence, Option C adoption, provisional naming) throughout this
-document.
+matrix, ownership classification) is distinguished from implementation
+phases (separately authorized) and approved decisions (Option C adoption
+and repository name) throughout this document.
 
 ---
 
@@ -253,7 +256,7 @@ APPROVED
 Option:
 Option C — APPROVED
 
-Provisional repository name:
+Approved repository name:
 forgemind-agent-runtime — APPROVED
 
 SP-0B authorization:
