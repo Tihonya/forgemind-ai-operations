@@ -429,3 +429,84 @@ class TestNoNetworkRequests:
             provider = create_chat_provider(config=config)
             assert isinstance(provider, OpenAIChatProvider)
             mock_httpx.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Remediation: official base URL normalization
+# ---------------------------------------------------------------------------
+
+
+class TestOfficialBaseUrlNormalization:
+    """Harmless equivalent forms of the official endpoint must not bypass API-key validation."""
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+            "https://api.openai.com/v1//",
+        ],
+    )
+    def test_trailing_slash_treated_as_official(self, base_url: str) -> None:
+        """Trailing slashes must not bypass the official-endpoint key check."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="",
+            openai_api_base=base_url,
+        )
+        with pytest.raises(
+            ChatProviderConfigurationError,
+            match="API key.*required.*official",
+        ):
+            create_chat_provider(config=config)
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+        ],
+    )
+    def test_official_with_key_succeeds_normalized(self, base_url: str) -> None:
+        """Official endpoint with a real key succeeds regardless of trailing slash."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-real-key",
+            openai_api_base=base_url,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ):
+            provider = create_chat_provider(config=config)
+        assert isinstance(provider, OpenAIChatProvider)
+
+    def test_trailing_slash_official_base_url_omitted(self) -> None:
+        """Official endpoint with trailing slash still gets None base_url (SDK default)."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+            openai_api_base="https://api.openai.com/v1/",
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ) as mock_async_openai:
+            create_chat_provider(config=config)
+        call_kwargs = mock_async_openai.call_args[1]
+        assert "base_url" not in call_kwargs or call_kwargs.get("base_url") is None
+
+    def test_custom_endpoint_with_trailing_slash_preserved(self) -> None:
+        """Custom endpoint trailing slash is preserved (not normalized away)."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+            openai_api_base="http://localhost:8080/v1/",
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ) as mock_async_openai:
+            create_chat_provider(config=config)
+        call_kwargs = mock_async_openai.call_args[1]
+        assert call_kwargs["base_url"] == "http://localhost:8080/v1/"

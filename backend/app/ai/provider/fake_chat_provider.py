@@ -55,8 +55,10 @@ class FakeChatProvider(ChatProvider):
             raise ChatProviderConfigurationError("prompt must not be empty")
 
         correlation_id = ""
+        run_id = ""
         if context is not None:
             correlation_id = str(context.get("correlation_id", ""))
+            run_id = str(context.get("run_id", ""))
 
         start = self._clock()
 
@@ -77,9 +79,12 @@ class FakeChatProvider(ChatProvider):
         }
         if correlation_id:
             safe_metadata["correlation_id"] = correlation_id
+        if run_id:
+            safe_metadata["run_id"] = run_id
 
         self._log_success(
             correlation_id=correlation_id,
+            run_id=run_id,
             model=self._model,
             latency_ms=latency_ms,
         )
@@ -96,6 +101,7 @@ class FakeChatProvider(ChatProvider):
         self,
         *,
         correlation_id: str,
+        run_id: str,
         model: str,
         latency_ms: float,
     ) -> None:
@@ -107,4 +113,6 @@ class FakeChatProvider(ChatProvider):
         }
         if correlation_id:
             log_kwargs["correlation_id"] = correlation_id
+        if run_id:
+            log_kwargs["run_id"] = run_id
         _logger.info("chat_provider.complete", **log_kwargs)

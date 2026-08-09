@@ -11,6 +11,8 @@ Follows the same pattern as embedding_provider_factory.py.
 
 from __future__ import annotations
 
+from urllib.parse import urlsplit, urlunsplit
+
 from app.config import Settings
 from app.config import settings as application_settings
 
@@ -26,6 +28,30 @@ _SENTINEL_API_KEY = "sentinel-not-a-real-key"
 
 # The canonical official OpenAI chat endpoint.
 _OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def _normalize_base_url(url: str) -> str:
+    """Normalize a base URL for comparison.
+
+    Strips trailing slashes so that ``https://api.openai.com/v1`` and
+    ``https://api.openai.com/v1/`` are treated as equivalent.
+    """
+    if not url:
+        return url
+    # Use urlsplit/urlunsplit to robustly strip trailing slashes from
+    # the path component without affecting query or fragment.
+    parts = urlsplit(url)
+    path = parts.path.rstrip("/")
+    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+
+
+def _is_official_endpoint(base_url: str) -> bool:
+    """Check if the base URL points to the official OpenAI endpoint.
+
+    Comparison is normalized so trailing slashes and equivalent forms
+    cannot bypass fail-fast API-key validation.
+    """
+    return _normalize_base_url(base_url) == _normalize_base_url(_OFFICIAL_OPENAI_BASE_URL)
 
 
 def create_chat_provider(
@@ -74,13 +100,13 @@ def create_chat_provider(
 
 def _create_openai_provider(
     cfg: Settings,
-    client: object | None = None,
 ) -> OpenAIChatProvider:
     """Build and return an :class:`OpenAIChatProvider` from settings.
 
     Validation rules:
     - The official OpenAI endpoint (``api.openai.com/v1``) requires a real
-      API key.
+      API key. The comparison is normalized so trailing slashes and
+      equivalent forms cannot bypass this check.
     - Custom/local endpoints may omit the key; in that case a non-secret
       sentinel value is supplied to satisfy the SDK.
     - The configured base URL, model, and timeout are preserved exactly.
@@ -88,8 +114,8 @@ def _create_openai_provider(
     api_key = cfg.openai_api_key
     base_url = cfg.openai_api_base
 
-    # Official endpoint requires a real API key.
-    if base_url == _OFFICIAL_OPENAI_BASE_URL and not api_key:
+    # Official endpoint requires a real API key (normalized comparison).
+    if _is_official_endpoint(base_url) and not api_key:
         raise ChatProviderConfigurationError(
             "API key is required for the official OpenAI endpoint"
         )
@@ -100,7 +126,7 @@ def _create_openai_provider(
     # Preserve the base_url only when it differs from the official default.
     # The OpenAI SDK treats a None base_url as the official endpoint.
     effective_base_url: str | None
-    effective_base_url = None if base_url == _OFFICIAL_OPENAI_BASE_URL else base_url
+    effective_base_url = None if _is_official_endpoint(base_url) else base_url
 
     return OpenAIChatProvider(
         api_key=effective_api_key,

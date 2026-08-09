@@ -8,11 +8,19 @@ SDK retries are disabled (max_retries=0) so that transient errors surface
 as TransientChatProviderError for the caller to handle. Workflow-level
 outage retry is owned by WP-REC-03D; this adapter performs a single
 attempt and classifies failures deterministically.
+
+Rate limiting is process-local: a sliding-window limiter enforces
+``rate_limit_per_minute`` calls per minute within a single process.
+This is NOT a distributed limiter — multi-process deployments (e.g.,
+multiple Uvicorn workers) each get their own independent window.
+Distributed rate limiting is out of scope for WP-REC-03A.
 """
 
 from __future__ import annotations
 
+import asyncio
 import time
+from collections import deque
 from typing import Any, cast
 
 from openai import APIStatusError, AsyncOpenAI
@@ -53,6 +61,58 @@ _PERMANENT_TYPES: tuple[str, ...] = (
 )
 
 
+class _SlidingWindowRateLimiter:
+    """Process-local sliding-window rate limiter.
+
+    Allows at most ``max_calls`` calls within any 60-second window.
+    Uses a deque of monotonic timestamps pruned on each acquire.
+
+    Cancellation-safe: if the asyncio.sleep is cancelled, the timestamp
+    is NOT consumed — the caller's CancelledError propagates without
+    counting against the rate limit.
+
+    This is NOT a distributed limiter. Each process instance has its own
+    independent window. Multi-worker deployments (e.g. multiple Uvicorn
+    workers) do not share state.
+    """
+
+    def __init__(
+        self,
+        max_calls: int,
+        clock: Any = None,
+    ) -> None:
+        if max_calls <= 0:
+            raise ValueError(f"max_calls must be positive, got {max_calls}")
+        self._max_calls = max_calls
+        self._clock = clock if clock is not None else time.monotonic
+        self._timestamps: deque[float] = deque()
+        self._lock = asyncio.Lock()
+
+    async def acquire(self) -> None:
+        """Block until a call slot is available, then record it.
+
+        Raises:
+            asyncio.CancelledError: if the wait is cancelled. The
+                timestamp is NOT consumed on cancellation.
+        """
+        while True:
+            async with self._lock:
+                now = self._clock()
+                window_start = now - 60.0
+                # Prune expired timestamps.
+                while self._timestamps and self._timestamps[0] <= window_start:
+                    self._timestamps.popleft()
+                if len(self._timestamps) < self._max_calls:
+                    self._timestamps.append(now)
+                    return
+                # Calculate how long to wait until the oldest call expires.
+                wait_seconds = self._timestamps[0] - window_start
+
+            # Wait outside the lock so other coroutines are not blocked
+            # from checking. If cancelled here, no timestamp was consumed.
+            await asyncio.sleep(max(wait_seconds, 0.001))
+
+
 class OpenAIChatProvider(ChatProvider):
     """OpenAI-compatible chat/reasoning provider.
 
@@ -64,6 +124,8 @@ class OpenAIChatProvider(ChatProvider):
     ``llm_max_retries``. The ``llm_max_retries`` setting is owned by the
     workflow-level outage handler (WP-REC-03D) and is not used here to
     avoid double retry.
+
+    Rate limiting is process-local (see :class:`_SlidingWindowRateLimiter`).
     """
 
     def __init__(
@@ -75,6 +137,8 @@ class OpenAIChatProvider(ChatProvider):
         timeout_seconds: int = 30,
         rate_limit_per_minute: int = 10,
         client: AsyncOpenAI | None = None,
+        rate_limiter: _SlidingWindowRateLimiter | None = None,
+        clock: Any = None,
     ) -> None:
         if not api_key:
             raise ChatProviderConfigurationError("api_key must not be empty")
@@ -92,6 +156,14 @@ class OpenAIChatProvider(ChatProvider):
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._rate_limit_per_minute = rate_limit_per_minute
+
+        if rate_limiter is not None:
+            self._rate_limiter = rate_limiter
+        else:
+            self._rate_limiter = _SlidingWindowRateLimiter(
+                max_calls=rate_limit_per_minute,
+                clock=clock,
+            )
 
         if client is not None:
             self._client: AsyncOpenAI = client
@@ -115,8 +187,14 @@ class OpenAIChatProvider(ChatProvider):
             raise ChatProviderConfigurationError("prompt must not be empty")
 
         correlation_id = ""
+        run_id = ""
         if context is not None:
             correlation_id = str(context.get("correlation_id", ""))
+            run_id = str(context.get("run_id", ""))
+
+        # Rate-limit before any API call. Cancellation here propagates
+        # without consuming a slot.
+        await self._rate_limiter.acquire()
 
         response_format = self._build_response_format(schema)
         start = time.monotonic()
@@ -138,11 +216,18 @@ class OpenAIChatProvider(ChatProvider):
                 response_format=cast(Any, response_format),
             )
         except Exception as exc:
-            self._log_error(correlation_id, exc, time.monotonic() - start)
+            latency = time.monotonic() - start
+            self._log_error(correlation_id, run_id, exc, latency)
             raise self._classify_error(exc) from exc
 
         latency_ms = (time.monotonic() - start) * 1000.0
-        return self._build_result(response, latency_ms, correlation_id)
+
+        # Response-processing failures must also be classified and logged.
+        try:
+            return self._build_result(response, latency_ms, correlation_id, run_id)
+        except PermanentChatProviderError as exc:
+            self._log_error(correlation_id, run_id, exc, latency_ms)
+            raise
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -177,6 +262,10 @@ class OpenAIChatProvider(ChatProvider):
         - Known permanent SDK errors -> PermanentChatProviderError
         - APIStatusError: 5xx -> transient, 4xx -> permanent
         - Unrecognised errors -> permanent by default (safe)
+
+        Error messages never contain the original exception's message
+        (which may include response content), only the exception type
+        name and status code.
         """
         exc_name = type(exc).__name__
         if exc_name in _TRANSIENT_TYPES:
@@ -205,6 +294,7 @@ class OpenAIChatProvider(ChatProvider):
         response: Any,
         latency_ms: float,
         correlation_id: str,
+        run_id: str,
     ) -> ChatResult:
         """Build a ChatResult from an OpenAI ChatCompletion response.
 
@@ -244,9 +334,12 @@ class OpenAIChatProvider(ChatProvider):
         }
         if correlation_id:
             safe_metadata["correlation_id"] = correlation_id
+        if run_id:
+            safe_metadata["run_id"] = run_id
 
         self._log_success(
             correlation_id=correlation_id,
+            run_id=run_id,
             model=self._model,
             latency_ms=latency_ms,
             usage=usage_dict,
@@ -268,6 +361,7 @@ class OpenAIChatProvider(ChatProvider):
         self,
         *,
         correlation_id: str,
+        run_id: str,
         model: str,
         latency_ms: float,
         usage: dict[str, int],
@@ -281,14 +375,22 @@ class OpenAIChatProvider(ChatProvider):
             log_kwargs["usage"] = usage
         if correlation_id:
             log_kwargs["correlation_id"] = correlation_id
+        if run_id:
+            log_kwargs["run_id"] = run_id
         _logger.info("chat_provider.complete", **log_kwargs)
 
     def _log_error(
         self,
         correlation_id: str,
+        run_id: str,
         exc: Exception,
         latency_ms: float,
     ) -> None:
+        """Log a sanitized error record.
+
+        Never logs the exception message (which may contain response
+        content), only the exception type name and error classification.
+        """
         log_kwargs: dict[str, Any] = {
             "model": self._model,
             "latency_ms": round(latency_ms, 3),
@@ -297,4 +399,6 @@ class OpenAIChatProvider(ChatProvider):
         }
         if correlation_id:
             log_kwargs["correlation_id"] = correlation_id
+        if run_id:
+            log_kwargs["run_id"] = run_id
         _logger.warning("chat_provider.complete", **log_kwargs)

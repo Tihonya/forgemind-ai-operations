@@ -774,3 +774,253 @@ class TestNoRealNetworkCalls:
         with patch("httpx.Client") as mock_httpx:
             await provider.complete("p")
             mock_httpx.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Remediation: run_id propagation
+# ---------------------------------------------------------------------------
+
+
+class TestRunIdPropagation:
+    """run_id from context must appear in logs and ChatResult metadata."""
+
+    @pytest.mark.asyncio
+    async def test_openai_run_id_in_metadata(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response()
+        )
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        result = await provider.complete("p", context={"run_id": "run-xyz"})
+        assert result.metadata["run_id"] == "run-xyz"
+
+    @pytest.mark.asyncio
+    async def test_openai_run_id_in_success_log(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response()
+        )
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        with patch("app.ai.provider.openai_chat_provider._logger") as mock_logger:
+            await provider.complete("p", context={"run_id": "run-abc"})
+            log_str = str(mock_logger.info.call_args)
+            assert "run-abc" in log_str
+
+    @pytest.mark.asyncio
+    async def test_openai_run_id_absent_when_not_provided(self) -> None:
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response()
+        )
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        result = await provider.complete("p")
+        assert "run_id" not in result.metadata
+
+    @pytest.mark.asyncio
+    async def test_openai_run_id_in_error_log(self) -> None:
+        from openai import AuthenticationError
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.headers = {}
+        mock_response.request = MagicMock()
+        original = AuthenticationError(
+            message="Invalid key", response=mock_response, body=None
+        )
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(side_effect=original)
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        with patch("app.ai.provider.openai_chat_provider._logger") as mock_logger:
+            with pytest.raises(PermanentChatProviderError):
+                await provider.complete("p", context={"run_id": "run-err"})
+            log_str = str(mock_logger.warning.call_args)
+            assert "run-err" in log_str
+
+    @pytest.mark.asyncio
+    async def test_fake_run_id_in_metadata(self) -> None:
+        provider = FakeChatProvider()
+        result = await provider.complete("p", context={"run_id": "run-fake"})
+        assert result.metadata["run_id"] == "run-fake"
+
+    @pytest.mark.asyncio
+    async def test_fake_run_id_in_success_log(self) -> None:
+        provider = FakeChatProvider()
+        with patch("app.ai.provider.fake_chat_provider._logger") as mock_logger:
+            await provider.complete("p", context={"run_id": "run-fk2"})
+            log_str = str(mock_logger.info.call_args)
+            assert "run-fk2" in log_str
+
+
+# ---------------------------------------------------------------------------
+# Remediation: sanitized error log for response-processing failures
+# ---------------------------------------------------------------------------
+
+
+class TestResponseProcessingErrorLog:
+    """Failures while processing a returned response must produce a sanitized error log."""
+
+    @pytest.mark.asyncio
+    async def test_no_choices_produces_error_log(self) -> None:
+        mock_response = MagicMock()
+        mock_response.choices = []
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        with patch("app.ai.provider.openai_chat_provider._logger") as mock_logger:
+            with pytest.raises(PermanentChatProviderError, match="no choices"):
+                await provider.complete("p", context={"run_id": "run-r1"})
+            # Error log must be produced
+            assert mock_logger.warning.called
+            log_str = str(mock_logger.warning.call_args)
+            assert "error" in log_str
+            assert "run-r1" in log_str
+
+    @pytest.mark.asyncio
+    async def test_no_message_produces_error_log(self) -> None:
+        mock_choice = MagicMock()
+        mock_choice.message = None
+        mock_choice.finish_reason = "stop"
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_response.id = "resp-1"
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        with patch("app.ai.provider.openai_chat_provider._logger") as mock_logger:
+            with pytest.raises(PermanentChatProviderError, match="no message"):
+                await provider.complete("p", context={"run_id": "run-r2"})
+            assert mock_logger.warning.called
+            log_str = str(mock_logger.warning.call_args)
+            assert "run-r2" in log_str
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "response_content,should_not_appear",
+        [
+            ("sensitive-response-content", "sensitive-response-content"),
+            ("sk-secret-key-in-response", "sk-secret-key-in-response"),
+        ],
+    )
+    async def test_no_response_content_in_error_log(
+        self,
+        response_content: str,
+        should_not_appear: str,
+    ) -> None:
+        """Error log for response-processing failures must not contain response content."""
+        mock_choice = MagicMock()
+        mock_choice.message = None
+        mock_choice.finish_reason = "stop"
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_response.id = response_content  # inject sensitive content into response
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+        provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
+        with patch("app.ai.provider.openai_chat_provider._logger") as mock_logger:
+            with pytest.raises(PermanentChatProviderError):
+                await provider.complete("p")
+            log_str = str(mock_logger.warning.call_args)
+            assert should_not_appear not in log_str
+
+
+# ---------------------------------------------------------------------------
+# Remediation: rate limiter
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimiter:
+    """Process-local sliding-window rate limiter tests."""
+
+    def test_rate_limiter_stored_on_provider(self) -> None:
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ):
+            provider = OpenAIChatProvider(
+                api_key="test-key", rate_limit_per_minute=5
+            )
+        assert provider._rate_limiter._max_calls == 5
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_blocks_after_max(self) -> None:
+        """Calls beyond the limit block until the window slides."""
+        from app.ai.provider.openai_chat_provider import _SlidingWindowRateLimiter
+
+        # Use a manual clock to control time.
+        current_time = [100.0]
+        clock = lambda: current_time[0]  # noqa: E731
+
+        limiter = _SlidingWindowRateLimiter(max_calls=2, clock=clock)
+
+        # First two calls acquire immediately.
+        await limiter.acquire()
+        await limiter.acquire()
+
+        # Third call should block. Use asyncio.wait_for with a short timeout
+        # to verify it does NOT acquire immediately.
+        try:
+            await asyncio.wait_for(limiter.acquire(), timeout=0.1)
+            # If it acquired, the test fails — limit not enforced.
+            raise AssertionError("Rate limiter did not block third call")
+        except TimeoutError:
+            pass  # Expected: third call blocked.
+
+        # Advance time past the window; third call should now succeed.
+        current_time[0] = 161.0  # 61 seconds later
+        await asyncio.wait_for(limiter.acquire(), timeout=0.5)
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_cancellation_does_not_consume_slot(self) -> None:
+        """If the rate limiter wait is cancelled, no slot is consumed."""
+        from app.ai.provider.openai_chat_provider import _SlidingWindowRateLimiter
+
+        current_time = [100.0]
+        clock = lambda: current_time[0]  # noqa: E731
+
+        limiter = _SlidingWindowRateLimiter(max_calls=1, clock=clock)
+
+        # Consume the one available slot.
+        await limiter.acquire()
+
+        # Start a second acquire that will block, then cancel it.
+        task = asyncio.create_task(limiter.acquire())
+        await asyncio.sleep(0.05)  # Let it start waiting.
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Advance time — the cancelled acquire should NOT have consumed a slot.
+        # The next acquire should succeed immediately (the first slot expired).
+        current_time[0] = 161.0
+        await asyncio.wait_for(limiter.acquire(), timeout=0.5)
+
+    @pytest.mark.asyncio
+    async def test_rate_limiter_enforced_before_api_call(self) -> None:
+        """The provider calls the rate limiter before the API client."""
+        from app.ai.provider.openai_chat_provider import _SlidingWindowRateLimiter
+
+        current_time = [100.0]
+        clock = lambda: current_time[0]  # noqa: E731
+
+        limiter = _SlidingWindowRateLimiter(max_calls=1, clock=clock)
+        mock_client = AsyncMock()
+        mock_client.chat.completions.create = AsyncMock(
+            return_value=_make_mock_response()
+        )
+        provider = OpenAIChatProvider(
+            api_key="test-key", client=mock_client, rate_limiter=limiter
+        )
+
+        # First call succeeds.
+        await provider.complete("p")
+        assert mock_client.chat.completions.create.call_count == 1
+
+        # Second call should block because rate limit is exhausted.
+        try:
+            await asyncio.wait_for(provider.complete("p"), timeout=0.1)
+            raise AssertionError("Second call was not rate-limited")
+        except TimeoutError:
+            pass
+
+        # API client should not have been called a second time.
+        assert mock_client.chat.completions.create.call_count == 1
