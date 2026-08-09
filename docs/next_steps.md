@@ -58,8 +58,8 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Workflow-run detail API + recommendation UI | AT-008 trace, FR-07 | Phase 5 (WP-REC-03E) |
 | Backend workflow start/retry API + ARQ worker | AT-008 full PASS, AT-013 backend | Phase 5 (WP-REC-03F) |
 | Frontend start/retry UI interaction | AT-013 UI clauses | Phase 5 (WP-REC-03G) |
-| Formal AT-006/AT-007 verification | Achieve AT-006 PASS, AT-007 PASS | Bounded verification package (SD-2) — positioned after WP-REC-03C–03G |
-| RAG integration into AI workflow | Gate C citations | WP-REC-05 — positioned after WP-REC-03C–03G and before Phase 6 (SD-4) |
+| Formal AT-006/AT-007 verification | Achieve AT-006 PASS, AT-007 PASS | Bounded verification package (SD-2, DEC-035) — separate from WP-REC-05 |
+| RAG integration into AI workflow | Gate C citations | WP-REC-05 — RAG integration into the AI workflow; Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. Positioned after WP-REC-03C–03G and before Phase 6 (SD-4) |
 | Approval service | AT-009, AT-010, AT-011 | Phase 6 |
 | Audit event service | AT-012 | Phase 6 |
 | Procurement task service | AT-010 | Phase 6 |
@@ -105,15 +105,18 @@ This repository contains two conceptually separate projects:
 
 ## Delivery Sequence
 
-The authorized delivery sequence is:
+The accepted planning sequence is:
 
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
 2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — NOT AUTHORIZED. Follows WP-STRAT-01. Requires separate Product Owner authorization.
 3. **WP-REC-03C → 03D → 03E → 03F → 03G** (Phase 5 AI Workflow) — NOT AUTHORIZED. Sequence preserved per SD-3. Each requires separate authorization. Reassessment after WP-STRAT-01 and WP-ARCH-01.
-4. **WP-REC-05** (Phase 4 completion: AT-006/AT-007 verification + RAG workflow integration) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
-5. **Phase 6** (Approval and Audit) — NOT STARTED.
-6. **Phase 7** (Public Deployment) — NOT STARTED.
-7. **Phase 8** (Portfolio Release) — NOT STARTED.
+4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
+5. **Bounded AT-006/AT-007 verification package** — NOT AUTHORIZED. Formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). SD-4 does not establish its execution timing.
+6. **Phase 6** (Approval and Audit) — NOT STARTED.
+7. **Phase 7** (Public Deployment) — NOT STARTED.
+8. **Phase 8** (Portfolio Release) — NOT STARTED.
+
+This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
 **WP-REC-03C through 03G remain NOT AUTHORIZED.** Their content, priority, and authorization will be reassessed only after WP-STRAT-01 and WP-ARCH-01 are complete.
 
@@ -176,8 +179,7 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 
 **Accepted:**
 - DEC-001 through DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
-- SD-1 through SD-5 (WP-STRAT-01 strategic decisions)
-- TD-4 (two-phase risk engine ↔ AI contract), TD-5 (role-based document permissions)
+- DEC-034 through DEC-040 (WP-STRAT-01 strategic and technical decisions)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
@@ -229,4 +231,4 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 1. **Review and approve/reject** the WP-STRAT-01 documentation draft PR (`docs/wp-strat-01-product-strategy`).
 2. **If merged:** authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package.
 3. **After WP-ARCH-01:** reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
-4. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. WP-REC-05 and the bounded AT-006/AT-007 verification package remain NOT AUTHORIZED. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+4. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. WP-REC-05 (RAG integration into the AI workflow) and the bounded AT-006/AT-007 verification package remain NOT AUTHORIZED as separate packages — authorization of one must not authorize the other. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.

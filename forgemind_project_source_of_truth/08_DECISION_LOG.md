@@ -457,10 +457,10 @@ contract.
 
 **Date:** 2026-08-09
 **Status:** Accepted
-**Context:** WP-REC-05 (Phase 4 completion: AT-006/AT-007 verification + RAG integration into AI workflow) needs positioning relative to Phase 5 packages and Phase 6.
-**Decision:** Position WP-REC-05 after WP-REC-03C–03G completion and before Phase 6.
-**Reason:** RAG integration into the AI workflow requires the workflow pipeline (03F) to exist. Phase 6 (approval/audit) requires RAG citations in recommendations.
-**Consequences:** The delivery sequence is: 03C–03G → WP-REC-05 → Phase 6. WP-REC-05 is NOT AUTHORIZED by this decision.
+**Context:** WP-REC-05 (RAG integration into the AI workflow) needs positioning relative to Phase 5 packages and Phase 6. Formal AT-006/AT-007 execution and accepted PASS evidence are owned by a separate bounded verification package (DEC-035), not by WP-REC-05. Phase 4 closure depends on both packages.
+**Decision:** Position WP-REC-05 after WP-REC-03C–03G completion and before Phase 6. SD-4 positions only WP-REC-05; it does not establish the execution timing of the separate AT-006/AT-007 verification package.
+**Reason:** RAG integration into the AI workflow requires the workflow pipeline (03F) to exist. Phase 6 (approval/audit) requires RAG citations in recommendations. The verification package (DEC-035) is separately authorized and its timing is not governed by SD-4.
+**Consequences:** The planning sequence is: 03C–03G → WP-REC-05 → Phase 6. WP-REC-05 is NOT AUTHORIZED by this decision. The bounded AT-006/AT-007 verification package remains separately NOT AUTHORIZED. Authorization of one package must not authorize the other. Phase 4 cannot be classified COMPLETE until all unchanged exit criteria are satisfied, including accepted AT-006/AT-007 PASS evidence from the verification package.
 **Affected documents/tests:** `07_ROADMAP.md`, `docs/next_steps.md`, `docs/planning/wp_strat_01_product_strategy.md`
 **Approved by:** Product Owner (2026-08-09)
 

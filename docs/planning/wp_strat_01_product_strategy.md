@@ -201,15 +201,26 @@ This covers Golden Scenario steps 1–4 (deterministic core) plus partial step 8
 | Backend start/retry API + ARQ worker | WP-REC-03F | AT-008 full PASS (with 03E); AT-013 backend PASS |
 | Frontend start/retry UI | WP-REC-03G | AT-013 UI clauses PASS |
 
-### Phase 4 completion gaps (RAG Integration — WP-REC-05)
+### Phase 4 completion gaps
+
+Two separate packages contribute to Phase 4 closure:
+
+**WP-REC-05 — RAG integration into the AI workflow:**
 
 | Gap | AT impact |
 |-----|-----------|
-| Formal AT-006 PASS evidence | AT-006 PASS |
-| Formal AT-007 PASS evidence | AT-007 PASS |
 | RAG integration into AI workflow | Gate C citation requirement |
 
-Substantial RAG and role-filtering implementation already exists. The remaining gap is formal AT-006/AT-007 execution/evidence and workflow integration — not the absence of implementation.
+**Bounded AT-006/AT-007 verification package (SD-2, DEC-035):**
+
+| Gap | AT impact |
+|-----|-----------|
+| Formal AT-006 execution and accepted PASS evidence | AT-006 PASS |
+| Formal AT-007 execution and accepted PASS evidence | AT-007 PASS |
+
+These are distinct packages. WP-REC-05 owns RAG integration into the AI workflow; Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. SD-4 positions only WP-REC-05 after WP-REC-03C–03G and before Phase 6; it does not establish the execution timing of the separate verification package. Authorization of one package must not authorize the other.
+
+Substantial RAG and role-filtering implementation already exists. The remaining gap is formal AT-006/AT-007 execution/evidence (owned by the verification package) and workflow integration (owned by WP-REC-05) — not the absence of implementation.
 
 ### Phase 6 gaps (Approval and Audit)
 
@@ -227,15 +238,18 @@ Demo video, screenshots, architecture diagram, CV-ready description, external us
 
 ## 11. Delivery Sequence
 
-The authorized delivery sequence is:
+The accepted planning sequence is:
 
 1. **WP-STRAT-01** (this package) — product strategy and Release 1 alignment. COMPLETED.
-2. **WP-ARCH-01** — Architecture Hygiene and Agent Onboarding. NOT AUTHORIZED yet.
+2. **WP-ARCH-01** — Architecture Hygiene and Agent Onboarding. NOT AUTHORIZED.
 3. **WP-REC-03C** → **WP-REC-03D** → **WP-REC-03E** → **WP-REC-03F** → **WP-REC-03G** — Phase 5 AI Workflow packages. Sequence preserved per SD-3. Each requires separate authorization.
-4. **WP-REC-05** — Phase 4 completion (AT-006/AT-007 verification + RAG workflow integration). Positioned after 03C–03G and before Phase 6 per SD-4.
-5. **Phase 6** — Approval and Audit. Not started.
-6. **Phase 7** — Public Deployment. Not started.
-7. **Phase 8** — Portfolio Release. Not started.
+4. **WP-REC-05** — RAG integration into the AI workflow; Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. Positioned after 03C–03G and before Phase 6 per SD-4.
+5. **Bounded AT-006/AT-007 verification package** — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). SD-4 does not establish its execution timing. NOT AUTHORIZED.
+6. **Phase 6** — Approval and Audit. Not started.
+7. **Phase 7** — Public Deployment. Not started.
+8. **Phase 8** — Portfolio Release. Not started.
+
+This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
 **WP-REC-03C remains NOT AUTHORIZED** unless an already-authoritative document explicitly authorizes it. This document does not authorize it.
 
@@ -250,7 +264,7 @@ These decisions were accepted by the Product Owner on 2026-08-09 and are recorde
 | SD-1 | Phase 4 status | Reclassify Phase 4 as PARTIALLY COMPLETE until AT-006 and AT-007 have accepted PASS evidence. |
 | SD-2 | AT-006/AT-007 verification | Use a separate bounded verification package. Do not assign acceptance-test execution to WP-ARCH-01. |
 | SD-3 | 03C–03G sequence | Preserve the sequence: 03C → 03D → 03E → 03F → 03G. |
-| SD-4 | WP-REC-05 positioning | Position after 03C–03G and before Phase 6. |
+| SD-4 | WP-REC-05 positioning | Position WP-REC-05 (RAG integration into the AI workflow) after 03C–03G and before Phase 6. Does not establish execution timing of the separate AT-006/AT-007 verification package. |
 | SD-5 | Release 1 framing | "Controlled AI-assisted Supply Risk Intelligence portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow." |
 
 ---
@@ -271,7 +285,7 @@ Role-based document permissions match the current implementation direction:
 - `backend/app/api/retrieval.py` — server-side role-ID derivation from authenticated user.
 - `backend/app/models/document.py` — DocumentPermission model.
 
-Formal decision recording (DEC entry) and AT-007 verification remain required.
+Formal direction is recorded in DEC-040. AT-007 verification remains required through the separately authorized bounded verification package.
 
 ---
 
@@ -305,7 +319,7 @@ Formal decision recording (DEC entry) and AT-007 verification remain required.
 
 ## 16. Acceptance-Evidence Policy
 
-- No acceptance test is marked PASS without accepted evidence (test file or CI evidence).
+- No acceptance test is marked PASS without accepted evidence of successful execution, such as a recorded controlled test run or applicable CI evidence.
 - AT-006 and AT-007 must not be inferred as PASS from inspection alone. Formal execution and accepted evidence are required.
 - A passing subset of tests is not evidence that the full suite passes.
 - Acceptance-test execution belongs to a bounded verification package (SD-2), not to WP-ARCH-01 or WP-STRAT-01.

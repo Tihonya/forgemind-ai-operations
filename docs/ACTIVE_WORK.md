@@ -97,18 +97,18 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 
 ### Before Commit
 
-- [ ] `git diff --check` passes
-- [ ] Only authorized documentation files changed (9 files)
-- [ ] No secrets in changed files
-- [ ] No planned technology presented as released
-- [ ] ForgeMind and Runtime goals not conflated
-- [ ] AT-006 and AT-007 are not marked PASS
-- [ ] Phase 4 is consistently PARTIALLY COMPLETE
-- [ ] Phase 4 exit criteria not weakened
-- [ ] WP-REC-03C remains NOT AUTHORIZED
-- [ ] No new duplicate Release 1 or AT-status artifact created
-- [ ] Provider-adapter statement in README is current
-- [ ] Spatial Operations Twin remains post-Release 1, synthetic-only, deterministic-controlled, human-approved, unauthorized
+- [x] `git diff --check` passes
+- [x] Only authorized documentation files changed (9 files)
+- [x] No secrets in changed files
+- [x] No planned technology presented as released
+- [x] ForgeMind and Runtime goals not conflated
+- [x] AT-006 and AT-007 are not marked PASS
+- [x] Phase 4 is consistently PARTIALLY COMPLETE
+- [x] Phase 4 exit criteria not weakened
+- [x] WP-REC-03C remains NOT AUTHORIZED
+- [x] No new duplicate Release 1 or AT-status artifact created
+- [x] Provider-adapter statement in README is current
+- [x] Spatial Operations Twin remains post-Release 1, synthetic-only, deterministic-controlled, human-approved, unauthorized
 
 ---
 
