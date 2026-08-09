@@ -190,7 +190,7 @@ async def plan_id(db_session: AsyncSession) -> Any:
 class TestWorkflowMigrationUpgrade:
     """Tests run after 'alembic upgrade head' (migration already applied)."""
 
-    async def test_workflow_runs_table_exists(self, db_session) -> None:
+    async def test_workflow_runs_table_exists(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT EXISTS (SELECT FROM information_schema.tables "
@@ -199,7 +199,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.scalar() is True
 
-    async def test_workflow_steps_table_exists(self, db_session) -> None:
+    async def test_workflow_steps_table_exists(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT EXISTS (SELECT FROM information_schema.tables "
@@ -208,7 +208,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.scalar() is True
 
-    async def test_recommendations_table_exists(self, db_session) -> None:
+    async def test_recommendations_table_exists(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT EXISTS (SELECT FROM information_schema.tables "
@@ -217,7 +217,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.scalar() is True
 
-    async def test_workflow_runs_state_check_constraint(self, db_session) -> None:
+    async def test_workflow_runs_state_check_constraint(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT conname FROM pg_constraint "
@@ -227,7 +227,7 @@ class TestWorkflowMigrationUpgrade:
         assert result.fetchone() is not None
 
     async def test_workflow_steps_status_check_constraint(
-        self, db_session
+        self, db_session: AsyncSession
     ) -> None:
         result = await db_session.execute(
             text(
@@ -238,7 +238,7 @@ class TestWorkflowMigrationUpgrade:
         assert result.fetchone() is not None
 
     async def test_recommendations_status_check_constraint(
-        self, db_session
+        self, db_session: AsyncSession
     ) -> None:
         result = await db_session.execute(
             text(
@@ -249,7 +249,7 @@ class TestWorkflowMigrationUpgrade:
         assert result.fetchone() is not None
 
     async def test_recommendations_run_id_unique_constraint(
-        self, db_session
+        self, db_session: AsyncSession
     ) -> None:
         result = await db_session.execute(
             text(
@@ -259,7 +259,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.fetchone() is not None
 
-    async def test_workflow_runs_correlation_id_index(self, db_session) -> None:
+    async def test_workflow_runs_correlation_id_index(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT indexname FROM pg_indexes "
@@ -269,7 +269,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.fetchone() is not None
 
-    async def test_workflow_steps_run_id_seq_index(self, db_session) -> None:
+    async def test_workflow_steps_run_id_seq_index(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT indexname FROM pg_indexes "
@@ -279,7 +279,7 @@ class TestWorkflowMigrationUpgrade:
         )
         assert result.fetchone() is not None
 
-    async def test_workflow_runs_plan_id_fk(self, db_session) -> None:
+    async def test_workflow_runs_plan_id_fk(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT ccu.table_name FROM information_schema.table_constraints tc "
@@ -292,7 +292,7 @@ class TestWorkflowMigrationUpgrade:
         fk_tables = [r[0] for r in result]
         assert "production_plans" in fk_tables
 
-    async def test_workflow_steps_run_id_fk_cascade(self, db_session) -> None:
+    async def test_workflow_steps_run_id_fk_cascade(self, db_session: AsyncSession) -> None:
         result = await db_session.execute(
             text(
                 "SELECT confdeltype FROM pg_constraint "
@@ -357,7 +357,7 @@ class TestWorkflowRunLifecycle:
     """Full lifecycle: create → run → documented 03B terminal boundary."""
 
     async def test_successful_run_reaches_awaiting_validation(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -374,7 +374,7 @@ class TestWorkflowRunLifecycle:
         assert run.completed_at is None  # Not COMPLETED in 03B
 
     async def test_failed_provider_run_persisted(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(
             exc=TransientChatProviderError("connection refused")
@@ -391,7 +391,7 @@ class TestWorkflowRunLifecycle:
         assert run.error_code == "PROVIDER_TRANSIENT"
 
     async def test_failed_internal_run_persisted(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(
             exc=RuntimeError("unexpected internal error")
@@ -412,7 +412,7 @@ class TestRunAndStepReload:
     """Run and step reload from a new session."""
 
     async def test_run_reloaded_from_new_session(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -443,7 +443,7 @@ class TestRunAndStepReload:
         await engine2.dispose()
 
     async def test_step_reloaded_from_new_session(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -476,7 +476,7 @@ class TestCorrelationIdContinuity:
     """Correlation ID continuity across run and steps."""
 
     async def test_correlation_id_same_in_run_and_step(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _FakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -501,7 +501,7 @@ class TestRecommendationModelExistence:
     """Recommendation ORM model exists but no persistence path in 03B."""
 
     async def test_recommendation_table_exists_but_empty(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         """Recommendation table exists but 03B does not write to it."""
         result = await db_session.execute(select(Recommendation))
@@ -510,7 +510,7 @@ class TestRecommendationModelExistence:
         assert len(recommendations) == 0
 
     async def test_recommendation_can_be_manually_inserted(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         """The ORM model is functional — a row can be inserted manually.
 

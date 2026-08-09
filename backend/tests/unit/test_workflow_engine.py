@@ -23,6 +23,7 @@ Requires a live PostgreSQL database for persistence verification.
 from __future__ import annotations
 
 import os
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import uuid4
 
@@ -117,7 +118,7 @@ def _make_chat_result(
 
 
 @pytest.fixture
-async def db_session() -> AsyncSession:
+async def db_session() -> AsyncIterator[AsyncSession]:
     """Async session against the live integration database.
 
     Each test gets a fresh session. Workflow run data is cleaned up
@@ -156,7 +157,9 @@ async def plan_id(db_session: AsyncSession) -> Any:
 
 
 class TestRunCreation:
-    async def test_create_run_returns_pending_state(self, db_session, plan_id) -> None:
+    async def test_create_run_returns_pending_state(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         engine = WorkflowEngine(
             provider=_RecordingFakeProvider(),
             session=db_session,
@@ -167,7 +170,9 @@ class TestRunCreation:
         assert run.correlation_id is not None
         assert run.plan_id == plan_id
 
-    async def test_create_run_generates_uuid_correlation_id(self, db_session, plan_id) -> None:
+    async def test_create_run_generates_uuid_correlation_id(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         engine = WorkflowEngine(
             provider=_RecordingFakeProvider(),
             session=db_session,
@@ -176,7 +181,9 @@ class TestRunCreation:
         assert run.correlation_id is not None
         assert isinstance(run.correlation_id, type(uuid4()))
 
-    async def test_create_run_accepts_explicit_correlation_id(self, db_session, plan_id) -> None:
+    async def test_create_run_accepts_explicit_correlation_id(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         engine = WorkflowEngine(
             provider=_RecordingFakeProvider(),
             session=db_session,
@@ -188,7 +195,9 @@ class TestRunCreation:
         )
         assert run.correlation_id == corr
 
-    async def test_create_run_stores_triggered_by(self, db_session, plan_id) -> None:
+    async def test_create_run_stores_triggered_by(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         engine = WorkflowEngine(
             provider=_RecordingFakeProvider(),
             session=db_session,
@@ -207,7 +216,7 @@ class TestRunCreation:
 
 class TestStateTransitionPersistence:
     async def test_successful_provider_call_transitions_to_awaiting_validation(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -219,7 +228,9 @@ class TestStateTransitionPersistence:
         assert run.state == WorkflowState.AWAITING_VALIDATION.value
         assert run.started_at is not None
 
-    async def test_run_does_not_reach_completed(self, db_session, plan_id) -> None:
+    async def test_run_does_not_reach_completed(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """03B must not transition to COMPLETED — validation is 03C."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -238,7 +249,9 @@ class TestStateTransitionPersistence:
 
 
 class TestStepRecording:
-    async def test_step_recorded_on_success(self, db_session, plan_id) -> None:
+    async def test_step_recorded_on_success(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -259,7 +272,9 @@ class TestStepRecording:
         assert step.token_usage["total_tokens"] == 15
         assert step.completed_at is not None
 
-    async def test_step_recorded_on_failure(self, db_session, plan_id) -> None:
+    async def test_step_recorded_on_failure(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         provider = _RecordingFakeProvider(
             exc=TransientChatProviderError("timeout")
         )
@@ -279,7 +294,9 @@ class TestStepRecording:
         assert step.error_code is not None
         assert step.completed_at is not None
 
-    async def test_step_seq_starts_at_zero(self, db_session, plan_id) -> None:
+    async def test_step_seq_starts_at_zero(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """First step within a run has seq=0."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -302,7 +319,7 @@ class TestStepRecording:
 
 class TestCorrelationPropagation:
     async def test_correlation_id_propagated_to_provider_context(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -319,7 +336,9 @@ class TestCorrelationPropagation:
         assert ctx["correlation_id"] == str(corr)
         assert ctx["run_id"] == str(run.id)
 
-    async def test_run_id_propagated_to_provider_context(self, db_session, plan_id) -> None:
+    async def test_run_id_propagated_to_provider_context(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -330,7 +349,9 @@ class TestCorrelationPropagation:
         ctx = provider.received_contexts[0]
         assert ctx["run_id"] == str(run.id)
 
-    async def test_step_correlation_id_matches_run(self, db_session, plan_id) -> None:
+    async def test_step_correlation_id_matches_run(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         corr = uuid4()
@@ -354,7 +375,9 @@ class TestCorrelationPropagation:
 
 
 class TestModelMetadataRecording:
-    async def test_model_name_recorded(self, db_session, plan_id) -> None:
+    async def test_model_name_recorded(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         provider = _RecordingFakeProvider(
             result=_make_chat_result(model="gpt-4o-mini")
         )
@@ -370,7 +393,9 @@ class TestModelMetadataRecording:
         ).scalar_one()
         assert step.model_name == "gpt-4o-mini"
 
-    async def test_token_usage_recorded_when_available(self, db_session, plan_id) -> None:
+    async def test_token_usage_recorded_when_available(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         usage = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
         provider = _RecordingFakeProvider(
             result=_make_chat_result(usage=usage)
@@ -387,7 +412,9 @@ class TestModelMetadataRecording:
         ).scalar_one()
         assert step.token_usage == usage
 
-    async def test_metadata_recorded(self, db_session, plan_id) -> None:
+    async def test_metadata_recorded(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         metadata = {"latency_ms": 42.0, "provider": "fake", "response_id": "resp-1"}
         provider = _RecordingFakeProvider(
             result=_make_chat_result(metadata=metadata)
@@ -414,7 +441,7 @@ class TestModelMetadataRecording:
 
 class TestProviderFailureMapping:
     async def test_transient_failure_transitions_to_failed_provider(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(
             exc=TransientChatProviderError("timeout")
@@ -430,7 +457,7 @@ class TestProviderFailureMapping:
         assert run.error_code == "PROVIDER_TRANSIENT"
 
     async def test_permanent_failure_transitions_to_failed_provider(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(
             exc=PermanentChatProviderError("bad request")
@@ -445,7 +472,7 @@ class TestProviderFailureMapping:
         assert run.error_code == "PROVIDER_PERMANENT"
 
     async def test_config_error_transitions_to_failed_provider(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(
             exc=ChatProviderConfigurationError("missing key")
@@ -460,7 +487,7 @@ class TestProviderFailureMapping:
         assert run.error_code == "PROVIDER_CONFIG"
 
     async def test_internal_error_transitions_to_failed_internal(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         provider = _RecordingFakeProvider(
             exc=RuntimeError("unexpected internal error")
@@ -481,7 +508,9 @@ class TestProviderFailureMapping:
 
 
 class TestTransactionConsistency:
-    async def test_caller_can_rollback(self, db_session, plan_id) -> None:
+    async def test_caller_can_rollback(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """Caller rollback should undo engine changes."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -502,7 +531,9 @@ class TestTransactionConsistency:
 
 
 class TestConcurrentRunIsolation:
-    async def test_two_runs_do_not_interfere(self, db_session, plan_id) -> None:
+    async def test_two_runs_do_not_interfere(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """Two independent runs must not interfere with each other's state."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -520,7 +551,9 @@ class TestConcurrentRunIsolation:
         assert run1.state == WorkflowState.AWAITING_VALIDATION.value
         assert run2.state == WorkflowState.AWAITING_VALIDATION.value
 
-    async def test_failure_in_one_run_does_not_affect_other(self, db_session, plan_id) -> None:
+    async def test_failure_in_one_run_does_not_affect_other(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """A failing run must not corrupt another run's state."""
         # Provider that fails on first call, succeeds on second
         class _FailOnceProvider(ChatProvider):
@@ -558,7 +591,7 @@ class TestConcurrentRunIsolation:
 
 class TestNoRecommendationFromRawOutput:
     async def test_no_recommendation_row_created_on_success(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         """03B must NOT persist a Recommendation from raw provider output."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
@@ -579,7 +612,7 @@ class TestNoRecommendationFromRawOutput:
 
 class TestNoSecretLeakage:
     async def test_error_detail_does_not_contain_api_key_pattern(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         """Error details must not contain API key patterns."""
         provider = _RecordingFakeProvider(
@@ -603,7 +636,9 @@ class TestNoSecretLeakage:
         assert step.error_detail is not None
         assert len(step.error_detail) < 300
 
-    async def test_error_detail_is_bounded(self, db_session, plan_id) -> None:
+    async def test_error_detail_is_bounded(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """Error detail must be bounded in length."""
         long_message = "x" * 1000
         provider = _RecordingFakeProvider(
@@ -622,7 +657,9 @@ class TestNoSecretLeakage:
         assert step.error_detail is not None
         assert len(step.error_detail) < 200
 
-    async def test_prompt_not_stored_in_step(self, db_session, plan_id) -> None:
+    async def test_prompt_not_stored_in_step(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """The prompt text must not be stored in step metadata."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -649,7 +686,9 @@ class TestNoSecretLeakage:
 
 
 class TestFailInternal:
-    async def test_fail_internal_from_running(self, db_session, plan_id) -> None:
+    async def test_fail_internal_from_running(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
         """fail_internal transitions a RUNNING run to FAILED_INTERNAL."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
@@ -666,7 +705,7 @@ class TestFailInternal:
         assert run.completed_at is not None
 
     async def test_fail_internal_from_awaiting_validation(
-        self, db_session, plan_id
+        self, db_session: AsyncSession, plan_id: Any
     ) -> None:
         """fail_internal can mark an AWAITING_VALIDATION run as FAILED_INTERNAL."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
