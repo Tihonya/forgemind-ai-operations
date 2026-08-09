@@ -1,0 +1,111 @@
+"""Environment-aware chat provider factory.
+
+Creates the correct ChatProvider instance based on a provider name and
+configuration, applying environment-specific rules:
+- Fake provider is blocked in staging and production.
+- Official OpenAI endpoint requires a real API key.
+- Custom/local endpoints may omit the API key (sentinel is used).
+
+Follows the same pattern as embedding_provider_factory.py.
+"""
+
+from __future__ import annotations
+
+from app.config import Settings
+from app.config import settings as application_settings
+
+from .chat_provider import ChatProvider
+from .exceptions import ChatProviderConfigurationError
+from .fake_chat_provider import FakeChatProvider
+from .openai_chat_provider import OpenAIChatProvider
+
+# Sentinel value used only when the OpenAI SDK requires a non-empty
+# api_key but the user is pointing at a local/custom endpoint that does
+# not enforce authentication.  This string is never a real secret.
+_SENTINEL_API_KEY = "sentinel-not-a-real-key"
+
+# The canonical official OpenAI chat endpoint.
+_OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
+def create_chat_provider(
+    config: Settings | None = None,
+    *,
+    provider_name: str | None = None,
+) -> ChatProvider:
+    """Create a chat provider based on configuration.
+
+    Arguments:
+        config: Explicit settings object. When ``None``, falls back to the
+            global :data:`app.config.settings` singleton.
+        provider_name: Explicit provider name override (``"openai"`` or
+            ``"fake"``). When ``None``, the provider is selected from
+            ``config.embedding_provider`` — the existing config field —
+            since Settings does not yet have a dedicated ``chat_provider``
+            field. This avoids modifying config.py (out of scope for 03A).
+
+    Returns:
+        An instance implementing :class:`ChatProvider`.
+
+    Raises:
+        ChatProviderConfigurationError: When the provider name is unknown,
+            when the fake provider is requested outside development/test
+            environments, or when the official OpenAI endpoint is used
+            without an API key.
+    """
+    effective_config = config if config is not None else application_settings
+
+    name = provider_name if provider_name is not None else effective_config.embedding_provider
+
+    if name == "fake":
+        if effective_config.environment in ("production", "staging"):
+            raise ChatProviderConfigurationError(
+                "Fake chat provider is not allowed in production or staging"
+            )
+        return FakeChatProvider()
+
+    if name == "openai":
+        return _create_openai_provider(effective_config)
+
+    raise ChatProviderConfigurationError(
+        f"Unknown chat provider: {name!r}"
+    )
+
+
+def _create_openai_provider(
+    cfg: Settings,
+    client: object | None = None,
+) -> OpenAIChatProvider:
+    """Build and return an :class:`OpenAIChatProvider` from settings.
+
+    Validation rules:
+    - The official OpenAI endpoint (``api.openai.com/v1``) requires a real
+      API key.
+    - Custom/local endpoints may omit the key; in that case a non-secret
+      sentinel value is supplied to satisfy the SDK.
+    - The configured base URL, model, and timeout are preserved exactly.
+    """
+    api_key = cfg.openai_api_key
+    base_url = cfg.openai_api_base
+
+    # Official endpoint requires a real API key.
+    if base_url == _OFFICIAL_OPENAI_BASE_URL and not api_key:
+        raise ChatProviderConfigurationError(
+            "API key is required for the official OpenAI endpoint"
+        )
+
+    # For custom/local endpoints, use sentinel if no key provided.
+    effective_api_key = api_key if api_key else _SENTINEL_API_KEY
+
+    # Preserve the base_url only when it differs from the official default.
+    # The OpenAI SDK treats a None base_url as the official endpoint.
+    effective_base_url: str | None
+    effective_base_url = None if base_url == _OFFICIAL_OPENAI_BASE_URL else base_url
+
+    return OpenAIChatProvider(
+        api_key=effective_api_key,
+        model=cfg.openai_chat_model,
+        base_url=effective_base_url,
+        timeout_seconds=cfg.llm_timeout_seconds,
+        rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
+    )
