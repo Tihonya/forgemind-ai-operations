@@ -92,7 +92,7 @@ class TestChatResultContract:
     def test_default_usage_is_independent(self) -> None:
         r1 = ChatResult(content="a", model="m", finish_reason="stop")
         r2 = ChatResult(content="b", model="m", finish_reason="stop")
-        r1.usage["x"] = 1  # type: ignore[index]
+        r1.usage["x"] = 1
         assert "x" not in r2.usage
 
 
@@ -130,11 +130,11 @@ class TestChatProviderABC:
 class TestFakeChatProviderConfiguration:
     def test_default_model(self) -> None:
         provider = FakeChatProvider()
-        assert provider._model == "fake-chat-model"  # type: ignore[attr-defined]
+        assert provider._model == "fake-chat-model"
 
     def test_custom_model(self) -> None:
         provider = FakeChatProvider(model="my-fake")
-        assert provider._model == "my-fake"  # type: ignore[attr-defined]
+        assert provider._model == "my-fake"
 
     def test_empty_model_raises(self) -> None:
         with pytest.raises(ChatProviderConfigurationError, match="model"):
@@ -258,7 +258,7 @@ class TestOpenAIChatProviderInit:
             return_value=AsyncMock(),
         ):
             provider = OpenAIChatProvider(api_key="test-key")
-        assert provider._model == "gpt-4o-mini"  # type: ignore[attr-defined]
+        assert provider._model == "gpt-4o-mini"
 
     def test_custom_model(self) -> None:
         with patch(
@@ -266,7 +266,7 @@ class TestOpenAIChatProviderInit:
             return_value=AsyncMock(),
         ):
             provider = OpenAIChatProvider(api_key="test-key", model="custom-model")
-        assert provider._model == "custom-model"  # type: ignore[attr-defined]
+        assert provider._model == "custom-model"
 
     def test_empty_api_key_raises(self) -> None:
         with pytest.raises(ChatProviderConfigurationError, match="api_key"):
@@ -321,7 +321,7 @@ class TestOpenAIChatProviderInit:
     def test_client_injection_bypasses_asyncopenai(self) -> None:
         mock_client = AsyncMock()
         provider = OpenAIChatProvider(api_key="test-key", client=mock_client)
-        assert provider._client is mock_client  # type: ignore[attr-defined]
+        assert provider._client is mock_client
 
 
 # ---------------------------------------------------------------------------
