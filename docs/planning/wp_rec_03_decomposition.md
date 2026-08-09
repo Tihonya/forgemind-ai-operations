@@ -1,17 +1,19 @@
 # WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition
 
-**Status:** PLANNING PACKAGE — lifecycle/status corrections applied 2026-08-09
-**Date:** 2026-08-08 (corrected 2026-08-08; status-synced 2026-08-09)
-**Baseline:** `origin/main` @ `fc48aed557d20f516cf46fe94175ce2d22c61dba`
+**Status:** PLANNING PACKAGE — lifecycle/status corrections applied 2026-08-09; post-WP-ARCH-01 reconciliation applied 2026-08-09
+**Date:** 2026-08-08 (corrected 2026-08-08; status-synced 2026-08-09; reconciled 2026-08-09)
+**Baseline:** `origin/main` @ `fc48aed557d20f516cf46fe94175ce2d22c61dba` (lifecycle-correction baseline — repository state at which the 2026-08-09 status sync after WP-REC-03B was applied)
+**Post-WP-ARCH-01 reconciliation baseline:** `origin/main` @ `0e0afd151098d85fdd9eaf12ba98147ed41b6336` (PR #70 merge commit), 2026-08-09.
 **Authorizes:** This document authorizes planning and decomposition only.
 **Does NOT authorize:** Any implementation code, test changes, dependency installation, migrations, or merge.
 
-**Lifecycle summary (2026-08-09 status sync):**
+**Lifecycle summary (2026-08-09 status sync, reconciled 2026-08-09):**
 - WP-REC-03A: COMPLETE — merged via PR #63
 - WP-REC-03-DEC-GATE-1 (DEC-013): SATISFIED — DEC-013 Accepted (2026-08-09), merged via PR #64
 - WP-REC-03B: COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba`
-- WP-REC-03C through 03G: NOT AUTHORIZED — implementation sequence paused before 03C pending WP-STRAT-01 and WP-ARCH-01
-- Feature development is temporarily paused after WP-REC-03B. The content, priority, and authorization of WP-REC-03C will be reassessed only after WP-STRAT-01 (Product Strategy and Release Replanning) and WP-ARCH-01 (Architecture Hygiene and Agent Onboarding) are complete.
+- WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETE — merged via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (2026-08-09)
+- WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning accepted via DEC-041 (2026-08-09, PR #69 merge commit `3a2bc26028cac0352af2cdde8107df90f41f015c`, closure-synced via PR #70 merge commit `0e0afd151098d85fdd9eaf12ba98147ed41b6336`). Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) DEFERRED and not authorized.
+- WP-REC-03C through 03G: NOT AUTHORIZED — the former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended because both packages are complete. WP-REC-03C is positioned for separate Product Owner reassessment. This reconciliation does not perform that reassessment and does not imply authorization. No readiness or authorization conclusion is made for WP-REC-03D through 03G or any later phase.
 
 ---
 
@@ -832,7 +834,7 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
 | No implementation is described as already authorized | ✅ 03A and 03B are COMPLETE in §15 (merged); 03C–03G say \"NOT AUTHORIZED\" in §15 |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). Next technical candidate WP-REC-03C is NOT AUTHORIZED and implementation is paused pending WP-STRAT-01 and WP-ARCH-01 |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). Next technical candidate WP-REC-03C is NOT AUTHORIZED. The former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended; WP-REC-03C is positioned for separate Product Owner reassessment. This does not authorize or start that reassessment. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
@@ -902,7 +904,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 
 **WP-REC-03B (Workflow/State-Machine Foundation) is also COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).** The second candidate implementation package is complete.
 
-**Next technical candidate:** WP-REC-03C (Structured-Output Validation). However, implementation is **paused** — the Product Owner has directed that before WP-REC-03C, the project will proceed through WP-STRAT-01 (Product Strategy and Release Replanning) and WP-ARCH-01 (Architecture Hygiene and Agent Onboarding). The content, priority, and authorization of WP-REC-03C will be reassessed only after those packages are complete. WP-REC-03C remains **NOT AUTHORIZED**. The "next candidate" designation here reflects technical sequence only, not authorization.
+**Next technical candidate:** WP-REC-03C (Structured-Output Validation). WP-REC-03C remains **NOT AUTHORIZED**. The former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended — both packages are complete. WP-REC-03C is positioned for separate Product Owner reassessment. This reconciliation does not perform that reassessment and does not imply authorization. No readiness or authorization conclusion is made for WP-REC-03D through 03G or any later phase. The "next candidate" designation here reflects technical sequence only, not authorization.
 
 ---
 
@@ -913,12 +915,12 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03A (AI provider adapter) | COMPLETE — merged via PR #63 |
 | WP-REC-03-DEC-GATE-1 (DEC-013 decision) | SATISFIED — DEC-013 Accepted (2026-08-09); merged via PR #64 |
 | WP-REC-03B (workflow/state-machine) | COMPLETE — merged via PR #65 |
-| WP-REC-03C (structured-output validation) | NOT AUTHORIZED (implementation paused pending WP-STRAT-01 and WP-ARCH-01) |
-| WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED (implementation paused) |
-| WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED (implementation paused) |
-| WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED (implementation paused) |
-| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED (implementation paused) |
-| WP-REC-03 implementation (as a whole) | NOT AUTHORIZED — implementation sequence paused before 03C pending WP-STRAT-01 and WP-ARCH-01 |
+| WP-REC-03C (structured-output validation) | NOT AUTHORIZED — positioned for separate Product Owner reassessment (former prerequisite pause ended; WP-STRAT-01 and WP-ARCH-01 complete) |
+| WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED |
+| WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED |
+| WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED |
+| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
+| WP-REC-03 implementation (as a whole) | NOT AUTHORIZED — the former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended; WP-REC-03C is positioned for separate Product Owner reassessment. This does not authorize or start that reassessment. |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
