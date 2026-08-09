@@ -1,10 +1,17 @@
 # WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition
 
-**Status:** PLANNING PACKAGE — NOT AUTHORIZED FOR IMPLEMENTATION
-**Date:** 2026-08-08 (corrected 2026-08-08)
-**Baseline:** `origin/main` @ `a859c0d0fbee721ad0ea44a00682370d3da9355f`
+**Status:** PLANNING PACKAGE — lifecycle/status corrections applied 2026-08-09
+**Date:** 2026-08-08 (corrected 2026-08-08; status-synced 2026-08-09)
+**Baseline:** `origin/main` @ `fc48aed557d20f516cf46fe94175ce2d22c61dba`
 **Authorizes:** This document authorizes planning and decomposition only.
 **Does NOT authorize:** Any implementation code, test changes, dependency installation, migrations, or merge.
+
+**Lifecycle summary (2026-08-09 status sync):**
+- WP-REC-03A: COMPLETE — merged via PR #63
+- WP-REC-03-DEC-GATE-1 (DEC-013): SATISFIED — DEC-013 Accepted (2026-08-09), merged via PR #64
+- WP-REC-03B: COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba`
+- WP-REC-03C through 03G: NOT AUTHORIZED — implementation sequence paused before 03C pending WP-STRAT-01 and WP-ARCH-01
+- Feature development is temporarily paused after WP-REC-03B. The content, priority, and authorization of WP-REC-03C will be reassessed only after WP-STRAT-01 (Product Strategy and Release Replanning) and WP-ARCH-01 (Architecture Hygiene and Agent Onboarding) are complete.
 
 ---
 
@@ -63,7 +70,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 2. **The provisional order 03C before 03D is confirmed as correct.** The provisional list already places structured-output validation (03C) before model outage handling (03D). This order is preserved: 03C defines the `FAILED_VALIDATION` failure path, which 03D's outage handler must also handle as a non-retryable failure. No reordering was needed; the original order was already correct.
 
-3. **A decision gate must precede WP-REC-03B.** DEC-013 (workflow orchestration: custom state machine vs LangGraph) is **Accepted** (Product Owner accepted 2026-08-09; see `08_DECISION_LOG.md` DEC-013). The decision gate (WP-REC-03-DEC-GATE-1) is satisfied. WP-REC-03B now requires only implementation authorization.
+3. **A decision gate must precede WP-REC-03B.** DEC-013 (workflow orchestration: custom state machine vs LangGraph) is **Accepted** (Product Owner accepted 2026-08-09; merged via PR #64 at `5d5616c12cf96049ef345b3d689be78d5359b352`; see `08_DECISION_LOG.md` DEC-013). The decision gate (WP-REC-03-DEC-GATE-1) is **SATISFIED**. WP-REC-03B is now COMPLETE (merged via PR #65).
 
 4. **DEC-013 may be resolved at any time.** The gate has no dependency on WP-REC-03A completion. The Product Owner may accept DEC-013 before, during, or after 03A implementation. The only constraint is that DEC-013 must be Accepted before WP-REC-03B implementation begins.
 
@@ -114,7 +121,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 **Timing:** DEC-013 may be resolved at any time. It has no dependency on WP-REC-03A or any other implementation package. The Product Owner may accept it before, during, or after 03A. The only constraint: DEC-013 must be Accepted before WP-REC-03B implementation begins.
 
-**Gate requirement:** ~~The Product Owner must accept, reject, or modify DEC-013 before WP-REC-03B implementation begins.~~ **SATISFIED:** DEC-013 is Accepted (2026-08-09). The gate is resolved. WP-REC-03B now requires only explicit Product Owner implementation authorization.
+**Gate requirement:** ~~The Product Owner must accept, reject, or modify DEC-013 before WP-REC-03B implementation begins.~~ **SATISFIED:** DEC-013 is Accepted (2026-08-09, merged via PR #64 at `5d5616c12cf96049ef345b3d689be78d5359b352`). The gate is resolved. WP-REC-03B is COMPLETE (merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba`).
 
 **If accepted (custom state machine):** WP-REC-03B proceeds as specified below.
 
@@ -319,7 +326,7 @@ Each package below specifies the 15 required attributes.
 
 **7. Dependencies and predecessor gates:**
 - WP-REC-03A complete (provider adapter must exist) — COMPLETE (merged via PR #63)
-- WP-REC-03-DEC-GATE-1 complete (DEC-013 Accepted) — SATISFIED (Product Owner accepted 2026-08-09)
+- WP-REC-03-DEC-GATE-1 complete (DEC-013 Accepted) — SATISFIED (Product Owner accepted 2026-08-09; merged via PR #64)
 
 **8. Relevant Source-of-Truth requirements:**
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LangGraph or own explicit state machine"
@@ -360,7 +367,7 @@ Each package below specifies the 15 required attributes.
 - Linter and type checks pass
 - Migration applies cleanly to a fresh database
 
-**15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. Requires explicit Product Owner authorization.
+**15. Separate Product Owner authorization requirement:** COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).
 
 ---
 
@@ -824,8 +831,8 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
-| No implementation is described as already authorized | ✅ Every package says "NOT AUTHORIZED" in §15 |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); next candidate WP-REC-03B is NOT AUTHORIZED |
+| No implementation is described as already authorized | ✅ 03A and 03B are COMPLETE in §15 (merged); 03C–03G say \"NOT AUTHORIZED\" in §15 |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). Next technical candidate WP-REC-03C is NOT AUTHORIZED and implementation is paused pending WP-STRAT-01 and WP-ARCH-01 |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
@@ -891,7 +898,11 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 - Unblocks WP-REC-03B (after GATE-1) and 03C/03D/03E/03F
 - No database changes (lowest risk, easiest to revert)
 
-**Status: COMPLETE — merged via PR #63 (2026-08-09).** The first candidate implementation package is complete. The next candidate is WP-REC-03B (Workflow/State-Machine Foundation), which requires explicit Product Owner authorization.
+**Status: COMPLETE — merged via PR #63 (2026-08-09).** The first candidate implementation package is complete.
+
+**WP-REC-03B (Workflow/State-Machine Foundation) is also COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).** The second candidate implementation package is complete.
+
+**Next technical candidate:** WP-REC-03C (Structured-Output Validation). However, implementation is **paused** — the Product Owner has directed that before WP-REC-03C, the project will proceed through WP-STRAT-01 (Product Strategy and Release Replanning) and WP-ARCH-01 (Architecture Hygiene and Agent Onboarding). The content, priority, and authorization of WP-REC-03C will be reassessed only after those packages are complete. WP-REC-03C remains **NOT AUTHORIZED**. The "next candidate" designation here reflects technical sequence only, not authorization.
 
 ---
 
@@ -900,16 +911,16 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | Item | Status |
 |------|--------|
 | WP-REC-03A (AI provider adapter) | COMPLETE — merged via PR #63 |
-| WP-REC-03-DEC-GATE-1 (DEC-013 decision) | SATISFIED — DEC-013 Accepted (2026-08-09) |
-| WP-REC-03B (workflow/state-machine) | NOT AUTHORIZED |
-| WP-REC-03C (structured-output validation) | NOT AUTHORIZED |
-| WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED |
-| WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED |
-| WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED |
-| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
-| WP-REC-03 implementation (as a whole) | NOT AUTHORIZED |
+| WP-REC-03-DEC-GATE-1 (DEC-013 decision) | SATISFIED — DEC-013 Accepted (2026-08-09); merged via PR #64 |
+| WP-REC-03B (workflow/state-machine) | COMPLETE — merged via PR #65 |
+| WP-REC-03C (structured-output validation) | NOT AUTHORIZED (implementation paused pending WP-STRAT-01 and WP-ARCH-01) |
+| WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED (implementation paused) |
+| WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED (implementation paused) |
+| WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED (implementation paused) |
+| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED (implementation paused) |
+| WP-REC-03 implementation (as a whole) | NOT AUTHORIZED — implementation sequence paused before 03C pending WP-STRAT-01 and WP-ARCH-01 |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
-| DEC-013 acceptance | ACCEPTED (Product Owner accepted 2026-08-09) |
+| DEC-013 acceptance | ACCEPTED (Product Owner accepted 2026-08-09; merged via PR #64) |
 | DEC-015 permanent decision | NOT AUTHORIZED (Proposed, deferred) |
