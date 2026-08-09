@@ -23,6 +23,7 @@ from app.api.retrieval import router as retrieval_router
 from app.api.risks import router as risks_router
 from app.api.suppliers import router as suppliers_router
 from app.api.warehouses import router as warehouses_router
+from app.api.workflow import router as workflow_router
 from app.config import settings
 from app.core.build_info import get_build_info
 from app.core.context import get_correlation_id
@@ -100,6 +101,9 @@ app.include_router(ingestion_router, prefix=settings.api_v1_prefix)
 
 # Document retrieval endpoint (WP-4.4C)
 app.include_router(retrieval_router, prefix=settings.api_v1_prefix)
+
+# Workflow run detail API (WP-REC-03E)
+app.include_router(workflow_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
