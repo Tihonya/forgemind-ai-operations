@@ -12,7 +12,7 @@
 - WP-REC-03-DEC-GATE-1 (DEC-013): SATISFIED — DEC-013 Accepted (2026-08-09), merged via PR #64
 - WP-REC-03B: COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba`
 - WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETE — merged via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (2026-08-09)
-- WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning accepted via DEC-041 (2026-08-09, PR #69 merge commit `3a2bc26028cac0352af2cdde8107df90f41f015c`, closure-synced via PR #70 merge commit `0e0afd151098d85fdd9eaf12ba98147ed41b6336`). Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) DEFERRED and not authorized.
+- WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning artifact merged via PR #69 at `3a2bc26028cac0352af2cdde8107df90f41f015c`; Product Owner acceptance and closure recorded by DEC-041 and synchronized via PR #70 at `0e0afd151098d85fdd9eaf12ba98147ed41b6336` (2026-08-09). Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) DEFERRED and not authorized.
 - WP-REC-03C through 03G: NOT AUTHORIZED — the former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended because both packages are complete. WP-REC-03C is positioned for separate Product Owner reassessment. This reconciliation does not perform that reassessment and does not imply authorization. No readiness or authorization conclusion is made for WP-REC-03D through 03G or any later phase.
 
 ---
