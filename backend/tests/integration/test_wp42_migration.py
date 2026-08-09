@@ -7,7 +7,8 @@ instance with pgvector.
 Uses the downgrade -> upgrade -> re-upgrade cycle to verify reversibility.
 """
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -37,37 +38,79 @@ def _get_sync_url() -> str:
 
 
 def _run_downgrade(target: str = "a1b2c3d4e5f6") -> None:
-    """Run alembic downgrade to the given revision."""
+    """Run alembic downgrade to the given revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     sync_url = _get_sync_url()
     sync_engine = create_engine(sync_url, echo=False)
     alembic_cfg = Config(str(_ALEMBIC_INI))
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
 
-    with sync_engine.begin() as conn:
-        alembic_cfg.attributes["connection"] = conn
-        command.downgrade(alembic_cfg, target)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        with sync_engine.begin() as conn:
+            alembic_cfg.attributes["connection"] = conn
+            command.downgrade(alembic_cfg, target)
+    finally:
+        settings.database_url = original_db_url
     sync_engine.dispose()
 
 
 def _run_upgrade(target: str = "head") -> None:
-    """Run alembic upgrade to the given revision."""
+    """Run alembic upgrade to the given revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     sync_url = _get_sync_url()
     sync_engine = create_engine(sync_url, echo=False)
     alembic_cfg = Config(str(_ALEMBIC_INI))
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
 
-    with sync_engine.begin() as conn:
-        alembic_cfg.attributes["connection"] = conn
-        command.upgrade(alembic_cfg, target)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        with sync_engine.begin() as conn:
+            alembic_cfg.attributes["connection"] = conn
+            command.upgrade(alembic_cfg, target)
+    finally:
+        settings.database_url = original_db_url
     sync_engine.dispose()
+
+
+@contextmanager
+def _at_revision(target: str) -> Iterator[None]:
+    """Context manager that restores Alembic to ``head`` on exit.
+
+    Downgrades to ``target`` on entry, runs the test body, and
+    unconditionally upgrades back to ``head`` in the ``finally`` block.
+    This enforces the invariant that after every schema-mutating test,
+    including assertion/error paths, the database is at ``head``.
+    """
+    _run_downgrade(target)
+    try:
+        yield
+    finally:
+        _run_upgrade("head")
 
 
 @pytest.fixture
@@ -325,56 +368,49 @@ class TestKnowledgeChunksMigrationDowngrade:
         self, db_session: AsyncSession
     ) -> None:
         """knowledge_chunks table is removed after downgrade."""
-        _run_downgrade("a1b2c3d4e5f6")
-
-        result = await db_session.execute(
-            text(
-                "SELECT EXISTS ("
-                "SELECT FROM information_schema.tables "
-                "WHERE table_name = 'knowledge_chunks')"
+        with _at_revision("a1b2c3d4e5f6"):
+            result = await db_session.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "SELECT FROM information_schema.tables "
+                    "WHERE table_name = 'knowledge_chunks')"
+                )
             )
-        )
-        assert result.scalar() is False
-
-        # Re-upgrade for subsequent tests
-        _run_upgrade("head")
+            assert result.scalar() is False
 
     async def test_predecessor_wp41_tables_remain_after_downgrade(
         self, db_session: AsyncSession
     ) -> None:
         """WP-4.1 tables remain after downgrade."""
-        _run_downgrade("a1b2c3d4e5f6")
-
-        # Check documents table still exists
-        result = await db_session.execute(
-            text(
-                "SELECT EXISTS ("
-                "SELECT FROM information_schema.tables "
-                "WHERE table_name = 'documents')"
+        with _at_revision("a1b2c3d4e5f6"):
+            # Check documents table still exists
+            result = await db_session.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "SELECT FROM information_schema.tables "
+                    "WHERE table_name = 'documents')"
+                )
             )
-        )
-        assert result.scalar() is True
+            assert result.scalar() is True
 
-        # Check document_versions table still exists
-        result = await db_session.execute(
-            text(
-                "SELECT EXISTS ("
-                "SELECT FROM information_schema.tables "
-                "WHERE table_name = 'document_versions')"
+            # Check document_versions table still exists
+            result = await db_session.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "SELECT FROM information_schema.tables "
+                    "WHERE table_name = 'document_versions')"
+                )
             )
-        )
-        assert result.scalar() is True
-
-        # Re-upgrade for subsequent tests
-        _run_upgrade("head")
+            assert result.scalar() is True
 
     async def test_re_upgrade_restores_knowledge_chunks_table(
         self, db_session: AsyncSession
     ) -> None:
         """Re-upgrade from a1b2c3d4e5f6 restores knowledge_chunks table."""
-        _run_downgrade("a1b2c3d4e5f6")
-        _run_upgrade("head")
+        with _at_revision("a1b2c3d4e5f6"):
+            pass  # Just downgrade; the context manager re-upgrades on exit
 
+        # After the context manager, DB is at head — verify table exists
         result = await db_session.execute(
             text(
                 "SELECT EXISTS ("
@@ -388,15 +424,11 @@ class TestKnowledgeChunksMigrationDowngrade:
         self, db_session: AsyncSession
     ) -> None:
         """pgvector extension remains installed after downgrade."""
-        _run_downgrade("a1b2c3d4e5f6")
-
-        result = await db_session.execute(
-            text(
-                "SELECT EXISTS ("
-                "SELECT 1 FROM pg_extension WHERE extname = 'vector')"
+        with _at_revision("a1b2c3d4e5f6"):
+            result = await db_session.execute(
+                text(
+                    "SELECT EXISTS ("
+                    "SELECT 1 FROM pg_extension WHERE extname = 'vector')"
+                )
             )
-        )
-        assert result.scalar() is True
-
-        # Re-upgrade for subsequent tests
-        _run_upgrade("head")
+            assert result.scalar() is True
