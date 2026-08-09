@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-09
 **Current Status:** Development in progress — Release 1 NOT READY
-**Authoritative baseline:** `origin/main` @ `47acbd87acf78df9ad3867f0a7da70461312da23`
+**Reconciled against:** origin/main @ `77d359c58cba43d310d2a532fda0836464adda2b` (PR #67 merge commit)
 
 ---
 
@@ -231,7 +231,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. **Review and approve/reject** the WP-STRAT-01 documentation draft PR (`docs/wp-strat-01-product-strategy`).
-2. **If merged:** authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package.
-3. **After WP-ARCH-01:** reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
+1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`). The next Product Owner decision is whether to separately authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package.
+2. WP-ARCH-01 remains **NOT AUTHORIZED**. This synchronization does not authorize its planning or execution.
+3. **After WP-ARCH-01** (if separately authorized): reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
 4. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. WP-REC-05 (RAG integration into the AI workflow) and the bounded AT-006/AT-007 verification package remain NOT AUTHORIZED as separate packages — authorization of one must not authorize the other. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.

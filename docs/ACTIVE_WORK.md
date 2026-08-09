@@ -1,18 +1,28 @@
 # ForgeMind Active Work
 
 **Last Updated:** 2026-08-09
-**Baseline:** origin/main @ `47acbd87acf78df9ad3867f0a7da70461312da23`
-**Status:** WP-STRAT-01 (Product Strategy and Release 1 Alignment) — documentation-only package executed on branch `docs/wp-strat-01-product-strategy`
+**Reconciled against:** origin/main @ `77d359c58cba43d310d2a532fda0836464adda2b` (PR #67 merge commit)
+**Status:** WP-STRAT-01 (Product Strategy and Release 1 Alignment) — COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). No implementation work package is currently authorized.
 
 ---
 
-## Current Task
+## Current Governance State
+
+**Active work package:** None. No implementation or planning work package is currently authorized.
+
+**WP-STRAT-01** (Product Strategy and Release 1 Alignment) is COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). It is no longer the active task.
+
+**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is the next candidate package. It remains **NOT AUTHORIZED**. This post-merge synchronization does not authorize WP-ARCH-01 or any other future package.
+
+---
+
+## WP-STRAT-01 — Completed Package (Historical)
 
 **Work Package:** WP-STRAT-01 — Product Strategy and Release 1 Alignment.
 
 **Authorization:** Product Owner approved the remediated reconnaissance report (`docs/planning/wp_strat_01_reconnaissance.md`) and accepted strategic decisions SD-1 through SD-5 and technical directions TD-4 and TD-5 on 2026-08-09.
 
-**Branch:** `docs/wp-strat-01-product-strategy`
+**Branch:** `docs/wp-strat-01-product-strategy` — MERGED into `main` via PR #67.
 
 **Scope:** Documentation-only mutation package. No implementation, no tests, no dependencies, no infrastructure changes, no migrations.
 
@@ -25,7 +35,7 @@
 - Release 1 framing applied (SD-5)
 - Accepted decisions recorded in Decision Log
 
-**This is not implementation progress.** No application code, tests, dependencies, migrations, or infrastructure changed.
+**This was not implementation progress.** No application code, tests, dependencies, migrations, or infrastructure changed.
 
 ---
 
@@ -45,7 +55,7 @@ After WP-ARCH-01: reassess WP-REC-03C. Implementation remains paused and unautho
 - WP-REC-03A: COMPLETE — MERGED via PR #63 at `5c86000046ea265c799dab05d6e23601d0fe79c0` (merge commit, 2026-08-09). The OpenAI-compatible chat provider adapter (`backend/app/ai/provider/`) is live on main.
 - DEC-013 (workflow orchestration): ACCEPTED — Product Owner accepted on 2026-08-09. MERGED via PR #64 at `5d5616c12cf96049ef345b3d689be78d5359b352` (2026-08-09). Explicit application-owned state machine; LangGraph not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism.
 - WP-REC-03B (Workflow/State-Machine Foundation): COMPLETE — MERGED via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (two-parent merge commit, 2026-08-09). The workflow state machine, WorkflowEngine, ORM models (WorkflowRun, WorkflowStep, Recommendation), Alembic migration, and Pydantic schemas are live on main. Post-merge CI on main: Backend CI SUCCESS, End-to-End Tests SUCCESS, Playwright Golden Scenario SUCCESS.
-- WP-STRAT-01 (this package): COMPLETED — branch `docs/wp-strat-01-product-strategy`, draft PR pending Product Owner review.
+- WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETED — MERGED via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (regular two-parent merge, 2026-08-09). Three feature commits preserved: `8e5d032`, `f767aab`, `3fef078`.
 - WP-REC-03C through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization. Feature development is paused before WP-REC-03C pending WP-ARCH-01.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 - Bounded AT-006/AT-007 verification package: NOT AUTHORIZED — separate from WP-ARCH-01 (SD-2).
@@ -112,14 +122,14 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 
 ---
 
-## Next Steps (awaiting Product Owner decision)
+## Next Steps
 
-1. Independent review of the WP-STRAT-01 documentation on branch `docs/wp-strat-01-product-strategy`
-2. Product Owner decision: approve or reject merge of this draft PR
-3. If merged: Product Owner authorizes **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package
-4. After WP-ARCH-01: reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized
-5. WP-REC-03C through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization after reassessment
-6. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**
-7. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED
-8. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker)
-9. Do not begin any implementation until authorized
+1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
+2. The next Product Owner decision concerns whether to separately authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding).
+3. WP-ARCH-01 remains **NOT AUTHORIZED** until an explicit future authorization. This synchronization does not authorize it.
+4. After WP-ARCH-01 (if separately authorized): reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
+5. WP-REC-03C through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization after reassessment.
+6. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
+7. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
+8. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
+9. Do not begin any implementation until authorized.
