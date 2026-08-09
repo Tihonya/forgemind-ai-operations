@@ -63,6 +63,25 @@ class StateMachineError(Exception):
     """
 
 
+class TransitionConflictError(StateMachineError):
+    """Raised when a conditional UPDATE transition loses a race.
+
+    This indicates that the database row's ``state`` no longer matched
+    the expected source state when the conditional ``UPDATE ... WHERE
+    state = :expected RETURNING id`` was executed. Another contender
+    won the transition race, or the row was modified by a different
+    path.
+
+    The ORM instance has been refreshed to reflect the actual database
+    state. The caller should NOT retry the same transition without
+    re-reading the current state and re-validating.
+
+    This error has no partial persistence side effects: the conditional
+    UPDATE either updates exactly one row (success) or zero rows
+    (conflict). No partial state is written.
+    """
+
+
 # Terminal states — no outgoing transitions.
 TERMINAL_STATES: frozenset[WorkflowState] = frozenset({
     WorkflowState.COMPLETED,

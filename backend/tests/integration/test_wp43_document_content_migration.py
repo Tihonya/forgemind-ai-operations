@@ -74,12 +74,17 @@ def _get_async_engine() -> AsyncEngine:
 
 
 def _run_alembic_upgrade(revision: str = "head") -> None:
-    """Run alembic upgrade to specified revision."""
+    """Run alembic upgrade to specified revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from pathlib import Path
 
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     backend_dir = Path(__file__).resolve().parent.parent.parent
     alembic_cfg_path = backend_dir / "alembic.ini"
@@ -91,18 +96,31 @@ def _run_alembic_upgrade(revision: str = "head") -> None:
     sync_url = _INTEGRATION_DB_URL
     if "+asyncpg" in sync_url:
         sync_url = sync_url.replace("+asyncpg", "+psycopg")
-    config.set_main_option("sqlalchemy.url", sync_url)
 
-    command.upgrade(config, revision)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        config.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        command.upgrade(config, revision)
+    finally:
+        settings.database_url = original_db_url
 
 
 def _run_alembic_downgrade(revision: str) -> None:
-    """Run alembic downgrade to specified revision."""
+    """Run alembic downgrade to specified revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from pathlib import Path
 
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     backend_dir = Path(__file__).resolve().parent.parent.parent
     alembic_cfg_path = backend_dir / "alembic.ini"
@@ -114,9 +132,17 @@ def _run_alembic_downgrade(revision: str) -> None:
     sync_url = _INTEGRATION_DB_URL
     if "+asyncpg" in sync_url:
         sync_url = sync_url.replace("+asyncpg", "+psycopg")
-    config.set_main_option("sqlalchemy.url", sync_url)
 
-    command.downgrade(config, revision)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        config.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        command.downgrade(config, revision)
+    finally:
+        settings.database_url = original_db_url
 
 
 @pytest.fixture
@@ -167,6 +193,10 @@ class TestDocumentVersionContentMigration:
         assert is_nullable == "YES", "content column must be nullable"
         assert column_default is None, "content column must have no default"
 
+        # Restore DB to current Alembic head so downstream tests are not
+        # left at a historical revision (WP-REC-03B compatibility fix).
+        _run_alembic_upgrade("head")
+
     def test_migration_downgrade_removes_content_column(
         self, sync_connection: Connection
     ) -> None:
@@ -185,8 +215,9 @@ class TestDocumentVersionContentMigration:
 
         assert row is None, "content column must not exist after downgrade"
 
-        # Re-upgrade for subsequent tests
-        _run_alembic_upgrade("625c9f549f2b")
+        # Restore DB to current Alembic head so downstream tests are not
+        # left at a historical revision (WP-REC-03B compatibility fix).
+        _run_alembic_upgrade("head")
 
     async def test_existing_row_preserved_with_null_content(
         self, async_session: AsyncSession
@@ -401,8 +432,9 @@ Third paragraph with special chars: ñ é ü ß"""
         )
         assert result.fetchone() is None, "content must be removed after downgrade"
 
-        # Re-upgrade
-        _run_alembic_upgrade("625c9f549f2b")
+        # Re-upgrade to current Alembic head (not just 625c9f549f2b) so
+        # downstream tests are not left at a historical revision.
+        _run_alembic_upgrade("head")
 
         # Verify content is back
         result = sync_connection.execute(

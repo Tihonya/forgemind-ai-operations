@@ -37,36 +37,62 @@ def _get_sync_url() -> str:
 
 
 def _run_downgrade(target: str = "a1b2c3d4e5f6") -> None:
-    """Run alembic downgrade to the given revision."""
+    """Run alembic downgrade to the given revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     sync_url = _get_sync_url()
     sync_engine = create_engine(sync_url, echo=False)
     alembic_cfg = Config(str(_ALEMBIC_INI))
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
 
-    with sync_engine.begin() as conn:
-        alembic_cfg.attributes["connection"] = conn
-        command.downgrade(alembic_cfg, target)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        with sync_engine.begin() as conn:
+            alembic_cfg.attributes["connection"] = conn
+            command.downgrade(alembic_cfg, target)
+    finally:
+        settings.database_url = original_db_url
     sync_engine.dispose()
 
 
 def _run_upgrade(target: str = "head") -> None:
-    """Run alembic upgrade to the given revision."""
+    """Run alembic upgrade to the given revision.
+
+    Temporarily escapes ``%`` in ``settings.database_url`` for
+    configparser compatibility (same pattern as the lifecycle test).
+    """
     from alembic.config import Config
 
     from alembic import command
+    from app.config import settings  # noqa: I001
 
     sync_url = _get_sync_url()
     sync_engine = create_engine(sync_url, echo=False)
     alembic_cfg = Config(str(_ALEMBIC_INI))
-    alembic_cfg.set_main_option("sqlalchemy.url", sync_url)
 
-    with sync_engine.begin() as conn:
-        alembic_cfg.attributes["connection"] = conn
-        command.upgrade(alembic_cfg, target)
+    original_db_url = settings.database_url
+    settings.database_url = original_db_url.replace("%", "%%")
+    try:
+        # Escape % in sync_url for configparser (env.py will overwrite
+        # this with settings.database_url, but set_main_option must not
+        # raise before env.py runs).
+        alembic_cfg.set_main_option("sqlalchemy.url", sync_url.replace("%", "%%"))
+        with sync_engine.begin() as conn:
+            alembic_cfg.attributes["connection"] = conn
+            command.upgrade(alembic_cfg, target)
+    finally:
+        settings.database_url = original_db_url
     sync_engine.dispose()
 
 

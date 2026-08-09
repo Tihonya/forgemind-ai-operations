@@ -15,6 +15,7 @@ Tests cover:
 - Concurrent-run isolation (separate runs do not interfere)
 - No Recommendation row persisted from raw provider output
 - No secret leakage in stored errors
+- Conditional UPDATE concurrency safety (DEC-013 §5)
 
 Uses FakeChatProvider and custom test doubles — no real network calls.
 Requires a live PostgreSQL database for persistence verification.
@@ -42,7 +43,7 @@ from app.ai.provider.exceptions import (
     TransientChatProviderError,
 )
 from app.ai.workflow.engine import WorkflowEngine
-from app.ai.workflow.state_machine import WorkflowState
+from app.ai.workflow.state_machine import TransitionConflictError, WorkflowState
 from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
 
 _INTEGRATION_DB_URL = (
@@ -76,6 +77,7 @@ class _RecordingFakeProvider(ChatProvider):
         self._result = result
         self._exc = exc
         self.received_contexts: list[dict[str, Any]] = []
+        self.call_count: int = 0
 
     async def complete(
         self,
@@ -84,6 +86,7 @@ class _RecordingFakeProvider(ChatProvider):
         context: dict[str, Any] | None = None,
     ) -> ChatResult:
         self.received_contexts.append(context or {})
+        self.call_count += 1
         if self._exc is not None:
             raise self._exc
         if self._result is None:
@@ -136,6 +139,15 @@ async def db_session() -> AsyncIterator[AsyncSession]:
         await session.execute(text("DELETE FROM workflow_steps"))
         await session.execute(text("DELETE FROM workflow_runs"))
         await session.commit()
+    await engine.dispose()
+
+
+@pytest.fixture
+async def db_engine() -> AsyncIterator[Any]:
+    """Shared async engine for tests that need independent sessions."""
+    assert _INTEGRATION_DB_URL is not None
+    engine = create_async_engine(_INTEGRATION_DB_URL, echo=False)
+    yield engine
     await engine.dispose()
 
 
@@ -221,6 +233,7 @@ class TestStateTransitionPersistence:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -235,6 +248,7 @@ class TestStateTransitionPersistence:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -255,6 +269,7 @@ class TestStepRecording:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -280,6 +295,7 @@ class TestStepRecording:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -301,6 +317,7 @@ class TestStepRecording:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -328,6 +345,7 @@ class TestCorrelationPropagation:
             plan_id=plan_id,
             correlation_id=corr,
         )
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -342,6 +360,7 @@ class TestCorrelationPropagation:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -359,6 +378,7 @@ class TestCorrelationPropagation:
             plan_id=plan_id,
             correlation_id=corr,
         )
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -383,6 +403,7 @@ class TestModelMetadataRecording:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -402,6 +423,7 @@ class TestModelMetadataRecording:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -421,6 +443,7 @@ class TestModelMetadataRecording:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -448,6 +471,7 @@ class TestProviderFailureMapping:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -464,6 +488,7 @@ class TestProviderFailureMapping:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -479,6 +504,7 @@ class TestProviderFailureMapping:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -494,6 +520,7 @@ class TestProviderFailureMapping:
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         result = await engine.execute_provider_call(run, prompt="test")
 
@@ -511,18 +538,29 @@ class TestTransactionConsistency:
     async def test_caller_can_rollback(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """Caller rollback should undo engine changes."""
+        """Caller rollback should undo engine transition changes.
+
+        The run is committed (PENDING), then execute_provider_call
+        transitions it to AWAITING_VALIDATION. Rolling back should
+        revert the state to PENDING — the caller owns the transaction
+        boundary.
+        """
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
-        await engine.execute_provider_call(run, prompt="test")
+        await db_session.commit()
         run_id = run.id
+
+        await engine.execute_provider_call(run, prompt="test")
+        # At this point the run is at AWAITING_VALIDATION (uncommitted)
 
         await db_session.rollback()
 
-        # The specific run created by this test should not exist after rollback
+        # After rollback, the run should still exist (it was committed)
+        # but its state should be reverted to PENDING
         reloaded = await db_session.get(WorkflowRun, run_id)
-        assert reloaded is None
+        assert reloaded is not None
+        assert reloaded.state == WorkflowState.PENDING.value
 
 
 # ---------------------------------------------------------------------------
@@ -540,6 +578,7 @@ class TestConcurrentRunIsolation:
 
         run1 = await engine.create_run(plan_id=plan_id)
         run2 = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run1, prompt="prompt1")
 
@@ -576,6 +615,7 @@ class TestConcurrentRunIsolation:
 
         run1 = await engine.create_run(plan_id=plan_id)
         run2 = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run1, prompt="p1")
         await engine.execute_provider_call(run2, prompt="p2")
@@ -597,6 +637,7 @@ class TestNoRecommendationFromRawOutput:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -606,22 +647,26 @@ class TestNoRecommendationFromRawOutput:
 
 
 # ---------------------------------------------------------------------------
-# No secret leakage
+# No secret leakage — error detail safety
 # ---------------------------------------------------------------------------
 
 
 class TestNoSecretLeakage:
-    async def test_error_detail_does_not_contain_api_key_pattern(
+    """Verify that error_detail never contains secrets or credentials."""
+
+    async def test_error_detail_does_not_contain_api_key(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """Error details must not contain API key patterns."""
+        """Error details must not contain API keys."""
+        secret_key = "sk-proj-abc123XYZdef456GHIjkl"
         provider = _RecordingFakeProvider(
             exc=PermanentChatProviderError(
-                "Request failed with api_key=sk-secret-key-12345"
+                f"Request failed with api_key={secret_key}"
             )
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -630,22 +675,76 @@ class TestNoSecretLeakage:
                 select(WorkflowStep).where(WorkflowStep.run_id == run.id)
             )
         ).scalar_one()
-        # The error_detail includes the exception message, but we must
-        # verify it is bounded. The safe error summary uses the exception
-        # message, so we verify it is bounded.
         assert step.error_detail is not None
-        assert len(step.error_detail) < 300
+        # The safe summary is the exception TYPE NAME only — no message.
+        assert secret_key not in step.error_detail
+        assert "api_key" not in step.error_detail.lower()
+        # Verify it's just the type name
+        assert step.error_detail == "PermanentChatProviderError"
+
+    async def test_error_detail_does_not_contain_bearer_token(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """Error details must not contain bearer tokens."""
+        bearer = "Bearer dGhpcyBpcyBhIHNlY3JldCB0b2tlbg=="
+        provider = _RecordingFakeProvider(
+            exc=TransientChatProviderError(
+                f"Auth failed: {bearer} rejected"
+            )
+        )
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine.execute_provider_call(run, prompt="test")
+
+        step = (
+            await db_session.execute(
+                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+            )
+        ).scalar_one()
+        assert step.error_detail is not None
+        assert bearer not in step.error_detail
+        assert "Bearer" not in step.error_detail
+        assert step.error_detail == "TransientChatProviderError"
+
+    async def test_error_detail_does_not_contain_password(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """Error details must not contain passwords or credentials."""
+        password = "SuperSecret123!"
+        provider = _RecordingFakeProvider(
+            exc=ChatProviderConfigurationError(
+                f"Config error: password={password} is invalid"
+            )
+        )
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine.execute_provider_call(run, prompt="test")
+
+        step = (
+            await db_session.execute(
+                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+            )
+        ).scalar_one()
+        assert step.error_detail is not None
+        assert password not in step.error_detail
+        assert "password" not in step.error_detail.lower()
+        assert step.error_detail == "ChatProviderConfigurationError"
 
     async def test_error_detail_is_bounded(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """Error detail must be bounded in length."""
+        """Error detail must be bounded in length (type name only)."""
         long_message = "x" * 1000
         provider = _RecordingFakeProvider(
             exc=TransientChatProviderError(long_message)
         )
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         await engine.execute_provider_call(run, prompt="test")
 
@@ -656,6 +755,27 @@ class TestNoSecretLeakage:
         ).scalar_one()
         assert step.error_detail is not None
         assert len(step.error_detail) < 200
+        # The long message must not appear in the detail
+        assert long_message not in step.error_detail
+        assert step.error_detail == "TransientChatProviderError"
+
+    async def test_error_detail_on_run_also_safe(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """WorkflowRun.error_detail must also not contain secrets."""
+        secret = "sk-test-key-1234567890abcdef"
+        provider = _RecordingFakeProvider(
+            exc=PermanentChatProviderError(f"api_key={secret} invalid")
+        )
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine.execute_provider_call(run, prompt="test")
+
+        assert run.error_detail is not None
+        assert secret not in run.error_detail
+        assert "api_key" not in run.error_detail.lower()
 
     async def test_prompt_not_stored_in_step(
         self, db_session: AsyncSession, plan_id: Any
@@ -664,6 +784,7 @@ class TestNoSecretLeakage:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         secret_prompt = "Analyze plan with secret_token=abc123"
         await engine.execute_provider_call(run, prompt=secret_prompt)
@@ -693,9 +814,11 @@ class TestFailInternal:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         # Transition to RUNNING first (fail_internal is for errors during execution)
         await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
 
         await engine.fail_internal(run, error_detail="something went wrong")
 
@@ -711,12 +834,332 @@ class TestFailInternal:
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
 
         # Transition to RUNNING then AWAITING_VALIDATION
         await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
         await engine._transition_run(run, WorkflowState.AWAITING_VALIDATION)
+        await db_session.commit()
 
         await engine.fail_internal(run, error_detail="validation phase error")
 
         assert run.state == WorkflowState.FAILED_INTERNAL.value
         assert run.error_detail == "validation phase error"
+
+    async def test_fail_internal_redacts_secret_in_detail(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must redact secrets from caller-provided detail."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        secret_detail = "Internal error: api_key=sk-secret-12345 was exposed"
+        await engine.fail_internal(run, error_detail=secret_detail)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail is not None
+        assert "«redacted:sk-…»" not in run.error_detail
+        assert "api_key" not in (run.error_detail or "").lower()
+        assert run.error_detail == "UNSAFE_ERROR_DETAIL_REDACTED"
+
+
+# ---------------------------------------------------------------------------
+# Conditional UPDATE concurrency safety (DEC-013 §5)
+# ---------------------------------------------------------------------------
+
+
+class TestConditionalTransitionConcurrency:
+    """Real database tests proving concurrent transitions are serialized.
+
+    These tests use independent sessions to simulate concurrent workers
+    attempting to transition the same run from the same expected state.
+    Only one can win; the other gets TransitionConflictError.
+    """
+
+    async def test_two_contenders_cannot_both_transition(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Two contenders cannot both transition the same run from PENDING."""
+        # Create the run in session A, commit it
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+        # Now two independent sessions both try PENDING → RUNNING
+        async with factory() as session_winner, factory() as session_loser:
+            # Reload the run in each session
+            run_winner = await session_winner.get(WorkflowRun, run_id)
+            run_loser = await session_loser.get(WorkflowRun, run_id)
+            assert run_winner is not None
+            assert run_loser is not None
+            assert run_winner.state == WorkflowState.PENDING.value
+            assert run_loser.state == WorkflowState.PENDING.value
+
+            engine_winner = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_winner,
+            )
+            engine_loser = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_loser,
+            )
+
+            # Winner transitions first
+            await engine_winner._transition_run(
+                run_winner, WorkflowState.RUNNING
+            )
+            await session_winner.commit()
+
+            # Loser must get TransitionConflictError
+            with pytest.raises(TransitionConflictError):
+                await engine_loser._transition_run(
+                    run_loser, WorkflowState.RUNNING
+                )
+
+            # Verify the loser's ORM instance was refreshed
+            assert run_loser.state == WorkflowState.RUNNING.value
+
+    async def test_exactly_one_transition_succeeds(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Exactly one of two concurrent transitions succeeds."""
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+        successes = 0
+        conflicts = 0
+
+        async with factory() as session_1, factory() as session_2:
+            run_1 = await session_1.get(WorkflowRun, run_id)
+            run_2 = await session_2.get(WorkflowRun, run_id)
+            assert run_1 is not None
+            assert run_2 is not None
+
+            engine_1 = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_1,
+            )
+            engine_2 = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_2,
+            )
+
+            # First transition succeeds
+            await engine_1._transition_run(run_1, WorkflowState.RUNNING)
+            await session_1.commit()
+            successes += 1
+
+            # Second transition must fail
+            try:
+                await engine_2._transition_run(run_2, WorkflowState.RUNNING)
+                await session_2.commit()
+                successes += 1
+            except TransitionConflictError:
+                conflicts += 1
+
+        assert successes == 1
+        assert conflicts == 1
+
+    async def test_loser_does_not_overwrite_winner(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """The losing transition must not overwrite the winner's state."""
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+        async with factory() as session_winner, factory() as session_loser:
+            run_winner = await session_winner.get(WorkflowRun, run_id)
+            run_loser = await session_loser.get(WorkflowRun, run_id)
+            assert run_winner is not None
+            assert run_loser is not None
+
+            engine_winner = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_winner,
+            )
+            engine_loser = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_loser,
+            )
+
+            # Winner: PENDING → RUNNING
+            await engine_winner._transition_run(
+                run_winner, WorkflowState.RUNNING
+            )
+            await session_winner.commit()
+
+            # Loser: PENDING → RUNNING (must fail)
+            with pytest.raises(TransitionConflictError):
+                await engine_loser._transition_run(
+                    run_loser, WorkflowState.RUNNING
+                )
+
+        # Verify in a fresh session that the DB state is RUNNING (winner's)
+        async with factory() as verify_session:
+            db_run = await verify_session.get(WorkflowRun, run_id)
+            assert db_run is not None
+            assert db_run.state == WorkflowState.RUNNING.value
+            assert db_run.started_at is not None
+
+    async def test_losing_execute_does_not_invoke_provider(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """A losing execute_provider_call must NOT invoke the provider.
+
+        The loser may fail either via TransitionConflictError (if the
+        ORM still sees the old state) or via StateMachineError (if the
+        ORM sees the winner's new state and the transition is invalid).
+        In both cases the provider must NOT be called.
+        """
+        from app.ai.workflow.state_machine import StateMachineError
+
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+
+        # Create run
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+        # Winner transitions PENDING → RUNNING first
+        provider_winner = _RecordingFakeProvider(result=_make_chat_result())
+        async with factory() as session_winner:
+            run_winner = await session_winner.get(WorkflowRun, run_id)
+            assert run_winner is not None
+            engine_winner = WorkflowEngine(
+                provider=provider_winner,
+                session=session_winner,
+            )
+            await engine_winner._transition_run(
+                run_winner, WorkflowState.RUNNING
+            )
+            await session_winner.commit()
+
+        # Loser tries execute_provider_call — must raise and NOT call provider
+        provider_loser = _RecordingFakeProvider(result=_make_chat_result())
+        async with factory() as session_loser:
+            run_loser = await session_loser.get(WorkflowRun, run_id)
+            assert run_loser is not None
+            engine_loser = WorkflowEngine(
+                provider=provider_loser,
+                session=session_loser,
+            )
+
+            # The loser should get either TransitionConflictError (ORM
+            # still sees PENDING, conditional UPDATE returns 0 rows) or
+            # StateMachineError (ORM sees RUNNING, self-transition
+            # rejected). Both are valid — the key assertion is that the
+            # provider is NOT called.
+            with pytest.raises((TransitionConflictError, StateMachineError)):
+                await engine_loser.execute_provider_call(
+                    run_loser, prompt="test"
+                )
+
+            # Provider was NOT called
+            assert provider_loser.call_count == 0
+            assert len(provider_loser.received_contexts) == 0
+
+    async def test_different_runs_remain_independent(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Transitions on different runs do not interfere."""
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+
+        # Create two runs
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run1 = await engine_a.create_run(plan_id=plan_id)
+            run2 = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+
+        # Transition both in independent sessions — both should succeed
+        async with factory() as session_1, factory() as session_2:
+            r1 = await session_1.get(WorkflowRun, run1.id)
+            r2 = await session_2.get(WorkflowRun, run2.id)
+            assert r1 is not None
+            assert r2 is not None
+
+            engine_1 = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_1,
+            )
+            engine_2 = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_2,
+            )
+
+            await engine_1._transition_run(r1, WorkflowState.RUNNING)
+            await session_1.commit()
+
+            await engine_2._transition_run(r2, WorkflowState.RUNNING)
+            await session_2.commit()
+
+            assert r1.state == WorkflowState.RUNNING.value
+            assert r2.state == WorkflowState.RUNNING.value
+
+    async def test_invalid_transition_no_partial_persistence(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """Invalid transitions have no partial persistence side effects."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+        original_state = run.state
+
+        # Attempt an invalid transition: PENDING → COMPLETED (not allowed)
+        from app.ai.workflow.state_machine import StateMachineError
+
+        with pytest.raises(StateMachineError):
+            await engine._transition_run(run, WorkflowState.COMPLETED)
+
+        # State must be unchanged
+        assert run.state == original_state
+
+        # Verify the DB state is also unchanged
+        await db_session.commit()
+        await db_session.refresh(run, ["state"])
+        assert run.state == WorkflowState.PENDING.value

@@ -17,9 +17,13 @@ Package-boundary constraints (WP-REC-03B):
 - No ARQ or HTTP execution is added (03F).
 - No reconciler is added (03F).
 
-The engine uses dependency injection for ChatProvider and the async
-session, supporting deterministic tests with FakeChatProvider or test
-doubles.
+Concurrency safety (DEC-013 §5):
+
+State transitions are persisted using a database conditional UPDATE
+(``UPDATE ... WHERE id = :run_id AND state = :expected_state
+RETURNING id``). This serializes concurrent transitions for the same
+run: exactly one contender wins, the other gets zero rows and a
+:class:`~app.ai.workflow.state_machine.TransitionConflictError`.
 
 Transaction ownership:
 
@@ -38,6 +42,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.provider.chat_provider import ChatProvider, ChatResult
@@ -48,6 +53,7 @@ from app.ai.provider.exceptions import (
     TransientChatProviderError,
 )
 from app.ai.workflow.state_machine import (
+    TransitionConflictError,
     WorkflowState,
     validate_transition,
 )
@@ -149,6 +155,11 @@ class WorkflowEngine:
         On provider failure, transitions to FAILED_PROVIDER and records
         the error. On internal error, transitions to FAILED_INTERNAL.
 
+        If the PENDING → RUNNING transition loses a concurrency race
+        (another contender already moved the run out of PENDING),
+        :class:`TransitionConflictError` is raised and the provider is
+        NOT called.
+
         This method does NOT:
         - Validate the provider output (that is 03C).
         - Persist a Recommendation (that is 03F).
@@ -164,9 +175,12 @@ class WorkflowEngine:
             failed (the run is transitioned to a FAILED state).
 
         Raises:
+            TransitionConflictError: If the PENDING → RUNNING
+                transition loses a concurrency race.
             StateMachineError: If the run is not in PENDING state.
         """
-        # Transition PENDING → RUNNING
+        # Transition PENDING → RUNNING (conditional UPDATE).
+        # If this loses the race, the provider is never called.
         await self._transition_run(run, WorkflowState.RUNNING)
 
         # Record step start
@@ -256,7 +270,9 @@ class WorkflowEngine:
             else:
                 target_state = WorkflowState.FAILED_PROVIDER
 
-            # Store safe error info on the run as well
+            # Store safe error info on the run as well.
+            # error_detail is already a safe summary (type name only,
+            # no raw exception message — see _safe_error_summary).
             run.error_code = error_code
             run.error_detail = error_detail
 
@@ -287,13 +303,18 @@ class WorkflowEngine:
         step (e.g., an invalid transition attempt or an unexpected
         engine-level failure).
 
+        The ``error_detail`` must be a safe, pre-redacted string — this
+        method does not re-process it. Callers must ensure no secrets,
+        credentials, or raw exception messages are passed.
+
         Args:
             run: The WorkflowRun to fail.
-            error_detail: Safe error summary (no secrets).
+            error_detail: Safe error summary (no secrets). Must be
+                pre-redacted by the caller.
             error_code: Safe error classification code.
         """
         run.error_code = error_code
-        run.error_detail = error_detail
+        run.error_detail = _safe_error_summary_from_string(error_detail)
         await self._transition_run(run, WorkflowState.FAILED_INTERNAL)
         await self._session.flush()
 
@@ -302,21 +323,116 @@ class WorkflowEngine:
         run: WorkflowRun,
         to_state: WorkflowState,
     ) -> None:
-        """Validate and apply a state transition to a WorkflowRun.
+        """Validate and persist a state transition via conditional UPDATE.
 
-        Updates the run's state, started_at, and completed_at fields.
-        Raises StateMachineError if the transition is invalid — the
-        caller is responsible for handling this (typically by
-        transitioning to FAILED_INTERNAL).
+        Implements DEC-013 §5: concurrent transitions for the same run
+        are serialized by a database conditional-transition rule
+        (``UPDATE ... WHERE state = :expected RETURNING id``).
+
+        The transition is first validated by the pure state machine
+        (:func:`validate_transition`). Then a conditional UPDATE is
+        executed against the database, atomically setting the new
+        state, relevant timestamps, and error fields only if the
+        current database state matches the expected source state.
+
+        If zero rows are returned (another contender won the race or
+        the row was modified), the ORM instance is refreshed from the
+        database and :class:`TransitionConflictError` is raised.
 
         Does NOT commit the transaction — the caller owns the boundary.
+
+        Args:
+            run: The WorkflowRun to transition. Its ``state`` attribute
+                is used as the expected current state for the
+                conditional UPDATE.
+            to_state: The target state.
+
+        Raises:
+            StateMachineError: If the transition is invalid per the
+                pure state machine rules.
+            TransitionConflictError: If the conditional UPDATE returned
+                zero rows (the run's database state no longer matches
+                the expected source state).
         """
         from_state = WorkflowState(run.state)
         validate_transition(from_state, to_state)
 
         now = datetime.now(UTC)
-        run.state = to_state.value
 
+        # Build the conditional UPDATE with timestamp columns.
+        # The WHERE clause checks both run ID and expected current state.
+        if to_state == WorkflowState.RUNNING:
+            update_sql = text("""
+                UPDATE workflow_runs
+                SET state = :new_state,
+                    started_at = :now,
+                    updated_at = :now
+                WHERE id = :run_id AND state = :expected_state
+                RETURNING id
+            """)
+        elif to_state in (
+            WorkflowState.COMPLETED,
+            WorkflowState.FAILED_VALIDATION,
+            WorkflowState.FAILED_PROVIDER,
+            WorkflowState.FAILED_INTERNAL,
+        ):
+            # Terminal transitions also set completed_at.
+            # error_code and error_detail are set on the ORM instance
+            # before calling _transition_run; the UPDATE persists the
+            # current ORM values for those columns.
+            update_sql = text("""
+                UPDATE workflow_runs
+                SET state = :new_state,
+                    completed_at = :now,
+                    error_code = :error_code,
+                    error_detail = :error_detail,
+                    updated_at = :now
+                WHERE id = :run_id AND state = :expected_state
+                RETURNING id
+            """)
+        else:
+            # AWAITING_VALIDATION and other non-terminal, non-RUNNING
+            # transitions: only update state and updated_at.
+            update_sql = text("""
+                UPDATE workflow_runs
+                SET state = :new_state,
+                    updated_at = :now
+                WHERE id = :run_id AND state = :expected_state
+                RETURNING id
+            """)
+
+        params: dict[str, Any] = {
+            "new_state": to_state.value,
+            "run_id": str(run.id),
+            "expected_state": from_state.value,
+            "now": now,
+        }
+
+        if to_state in (
+            WorkflowState.COMPLETED,
+            WorkflowState.FAILED_VALIDATION,
+            WorkflowState.FAILED_PROVIDER,
+            WorkflowState.FAILED_INTERNAL,
+        ):
+            params["error_code"] = run.error_code
+            params["error_detail"] = run.error_detail
+
+        result = await self._session.execute(update_sql, params)
+        row = result.fetchone()
+
+        if row is None:
+            # The conditional UPDATE matched zero rows — another
+            # contender won the race or the row's state changed.
+            # Refresh the ORM instance to reflect the actual DB state.
+            await self._session.refresh(run, ["state", "started_at", "completed_at"])
+            raise TransitionConflictError(
+                f"Conditional transition failed: run {run.id} expected "
+                f"{from_state.value} but the row no longer matches. "
+                f"Current DB state: {run.state}."
+            )
+
+        # Sync the ORM instance with the persisted values.
+        run.state = to_state.value
         if to_state == WorkflowState.RUNNING:
             run.started_at = now
         if to_state in (
@@ -352,23 +468,64 @@ class WorkflowEngine:
 
 
 def _safe_error_summary(exc: Exception) -> str:
-    """Extract a safe, bounded error summary from an exception.
+    """Extract a safe error summary from an exception.
 
-    Returns the exception type name and a truncated message. Never
-    includes stack traces, API keys, or raw provider payloads. The
-    exception message may contain response content, so we use the type
-    name as the primary identifier and include a truncated message only
-    if it is safe (does not contain known secret patterns).
+    Returns ONLY the exception type name — never the raw exception
+    message. Exception messages may contain API keys, bearer tokens,
+    passwords, authorization headers, or raw provider responses that
+    must not be persisted.
+
+    This conservative strategy ensures that no secret-bearing content
+    from an exception message can leak into ``error_detail`` columns.
 
     Args:
         exc: The exception to summarize.
 
     Returns:
-        A safe, bounded error summary string (max ~200 chars).
+        The exception type name (e.g. ``"TransientChatProviderError"``).
+        This is a safe, deterministic, bounded string.
     """
-    exc_name = type(exc).__name__
-    message = str(exc)
+    return type(exc).__name__
+
+
+def _safe_error_summary_from_string(detail: str) -> str:
+    """Sanitize a caller-provided error detail string.
+
+    Removes known secret patterns (API keys, bearer tokens, passwords,
+    authorization headers) from the string. If the string is too long,
+    it is truncated. If no safe content remains, only the type-safe
+    classification is returned.
+
+    This is used by :meth:`WorkflowEngine.fail_internal` to sanitize
+    caller-provided error details before persistence.
+
+    Args:
+        detail: The raw error detail string from the caller.
+
+    Returns:
+        A sanitized, bounded error detail string (max 200 chars).
+    """
+    import re
+
+    # Patterns that indicate secret-bearing content.
+    # If any pattern is found, the entire string is considered unsafe
+    # and replaced with a generic marker.
+    secret_patterns = [
+        re.compile(r"api[_-]?key\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"bearer\s+[A-Za-z0-9\-._~+\/]+", re.IGNORECASE),
+        re.compile(r"authorization\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"password\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"secret\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"token\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"credential\s*[:=]\s*\S+", re.IGNORECASE),
+        re.compile(r"sk-[A-Za-z0-9]{20,}", re.IGNORECASE),
+    ]
+
+    for pattern in secret_patterns:
+        if pattern.search(detail):
+            return "UNSAFE_ERROR_DETAIL_REDACTED"
+
     # Truncate to prevent unbounded error detail.
-    if len(message) > 150:
-        message = message[:150] + "..."
-    return f"{exc_name}: {message}" if message else exc_name
+    if len(detail) > 200:
+        detail = detail[:200] + "..."
+    return detail
