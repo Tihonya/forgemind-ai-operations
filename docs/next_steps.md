@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-09
 **Current Status:** Development in progress — Release 1 NOT READY
-**Authoritative baseline:** `origin/main` @ `1bc79ca55e86311d2f042dd830163896ebc32275`
+**Authoritative baseline:** `origin/main` @ `5c86000046ea265c799dab05d6e23601d0fe79c0`
 
 ---
 
@@ -35,6 +35,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Phase 3: Core UI | COMPLETE | Dashboard, supply risk list, supply risk detail |
 | Phase 4: Knowledge and RAG | COMPLETE | Document ingestion, pgvector index, retrieval with citations |
 | Authentication + RBAC | COMPLETE | JWT auth, 5 demo accounts (manager/procurement/engineer/admin/auditor) |
+| AI provider adapter (chat/reasoning) | COMPLETE | OpenAI-compatible ChatProvider adapter, merged via PR #63 |
 | AT-003 (Golden Dataset) | PASS | Seed produces deterministic RISK-001/002/003 |
 | AT-004 (Deterministic risk) | PASS | Risk engine returns exact expected values |
 | AT-005 (No hidden mocks) | PASS | UI displays real backend data |
@@ -44,7 +45,6 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 | Capability | Required For | Phase |
 |-----------|--------------|-------|
-| AI provider adapter | AT-008, AT-013 | Phase 5 |
 | Workflow engine | AT-007, AT-012 | Phase 5 |
 | Structured output validation | AT-008 | Phase 5 |
 | Model outage handling | AT-013 | Phase 5 |
@@ -94,17 +94,17 @@ This repository contains two conceptually separate projects:
 
 ## Currently Authorized Work
 
-**WP-REC-03A — AI Provider Adapter (Chat/Reasoning).**
+**DEC-013 documentation finalization** (branch `docs/dec-013-explicit-state-machine`). Product Owner directed DEC-013 acceptance and project-state synchronization on 2026-08-09. This is documentation-only: no WP-REC-03B implementation code is started.
 
 PR #61 (WP-REC-01/02) is **MERGED** at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08). WP-REC-01/02 are COMPLETE.
 
 PR #62 (WP-REC-03-DEC) is **MERGED** at `1bc79ca55e86311d2f042dd830163896ebc32275`. WP-REC-03-DEC is COMPLETE. The decomposition plan decomposes WP-REC-03 (MVP Phase 5: AI Workflow) into seven small, separately authorizable implementation packages (WP-REC-03A through 03G) plus one decision gate (DEC-013). See `docs/planning/wp_rec_03_decomposition.md` for the full plan.
 
-**WP-REC-03A is explicitly authorized and active.** The Product Owner authorized implementation on 2026-08-09. WP-REC-03B through 03G remain **unauthorized** — each requires separate explicit Product Owner authorization before any implementation begins.
+PR #63 (WP-REC-03A) is **MERGED** at `5c86000046ea265c799dab05d6e23601d0fe79c0` (merge commit, 2026-08-09). WP-REC-03A is COMPLETE. The OpenAI-compatible chat provider adapter (`backend/app/ai/provider/`) is live on main.
 
-**First candidate implementation package:** WP-REC-03A (AI Provider Adapter) — AUTHORIZED and ACTIVE.
+**DEC-013 (workflow orchestration): ACCEPTED.** Product Owner accepted on 2026-08-09. ForgeMind will use its own explicit application-owned workflow state machine. LangGraph is not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism. Domain workflow state is not inferred from ARQ job state. See `forgemind_project_source_of_truth/08_DECISION_LOG.md` DEC-013 for the full decision.
 
-**DEC-013 (workflow orchestration):** Proposed — may be resolved at any time, but must be Accepted by the Product Owner before WP-REC-03B implementation begins.
+**Next implementation package:** WP-REC-03B (Workflow/State-Machine Foundation) — **NOT YET AUTHORIZED**. The DEC-013 decision gate (WP-REC-03-DEC-GATE-1) is now satisfied. The remaining blocker is explicit Product Owner authorization to implement WP-REC-03B. WP-REC-03C through 03G remain **unauthorized** — each requires separate explicit Product Owner authorization before any implementation begins.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED — not postponed merely because agent automation is unavailable. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -153,11 +153,10 @@ Without explicit Product Owner authorization, do not:
 See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 
 **Accepted:**
-- DEC-001 through DEC-012, DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
+- DEC-001 through DEC-012, DEC-013, DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
-- DEC-013: Workflow orchestration (custom state machine)
 - DEC-015: State management
 
 ---
@@ -201,7 +200,6 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. **Immediate decision:** review and approve/reject the WP-REC-03A draft PR (AI Provider Adapter — Chat/Reasoning).
-2. **If merged:** decide whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — requires DEC-013 Accepted first.
-3. **Architecture decision:** decide whether to accept DEC-013 (workflow orchestration: custom state machine) — may be resolved at any time, must be Accepted before WP-REC-03B.
-4. **Implementation authorization:** WP-REC-03B through 03G remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+1. **Immediate decision:** review and approve/reject the DEC-013 documentation draft PR (`docs/dec-013-explicit-state-machine`).
+2. **If merged:** decide whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — the DEC-013 decision gate (WP-REC-03-DEC-GATE-1) is now satisfied; the remaining blocker is implementation authorization.
+3. **Implementation authorization:** WP-REC-03B through 03G remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
