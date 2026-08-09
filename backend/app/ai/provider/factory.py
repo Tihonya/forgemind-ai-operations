@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit, urlunsplit
 
+from app.ai.workflow.outage_handler import RetryingChatProvider
+from app.ai.workflow.retry_policy import RetryPolicy
 from app.config import Settings
 from app.config import settings as application_settings
 
@@ -108,6 +110,12 @@ def create_chat_provider(
 ) -> ChatProvider:
     """Create a chat provider based on configuration.
 
+    Every provider returned by this function is wrapped in a
+    :class:`RetryingChatProvider` (WP-REC-03D) that performs bounded
+    exponential backoff retry for transient failures.  The wrapper is
+    the sole application-level retry owner — SDK retries remain
+    disabled (``max_retries=0``).
+
     Arguments:
         config: Explicit settings object. When ``None``, falls back to the
             global :data:`app.config.settings` singleton.
@@ -118,7 +126,8 @@ def create_chat_provider(
             field. This avoids modifying config.py (out of scope for 03A).
 
     Returns:
-        An instance implementing :class:`ChatProvider`.
+        An instance implementing :class:`ChatProvider` (wrapped in
+        :class:`RetryingChatProvider`).
 
     Raises:
         ChatProviderConfigurationError: When the provider name is unknown,
@@ -135,14 +144,39 @@ def create_chat_provider(
             raise ChatProviderConfigurationError(
                 "Fake chat provider is not allowed in production or staging"
             )
-        return FakeChatProvider()
+        delegate: ChatProvider = FakeChatProvider()
+        return _wrap_with_retry(delegate, effective_config)
 
     if name == "openai":
-        return _create_openai_provider(effective_config)
+        delegate = _create_openai_provider(effective_config)
+        return _wrap_with_retry(delegate, effective_config)
 
     raise ChatProviderConfigurationError(
         f"Unknown chat provider: {name!r}"
     )
+
+
+def _wrap_with_retry(
+    delegate: ChatProvider,
+    cfg: Settings,
+) -> RetryingChatProvider:
+    """Wrap a concrete ChatProvider in a RetryingChatProvider.
+
+    Every provider returned by :func:`create_chat_provider` is wrapped
+    exactly once.  The retry policy uses ``cfg.llm_max_retries``
+    (retries after the initial attempt; total calls =
+    ``1 + llm_max_retries``).
+
+    Args:
+        delegate: The concrete provider (FakeChatProvider or
+            OpenAIChatProvider).
+        cfg: Application settings supplying ``llm_max_retries``.
+
+    Returns:
+        A :class:`RetryingChatProvider` wrapping the delegate.
+    """
+    policy = RetryPolicy(max_retries=cfg.llm_max_retries)
+    return RetryingChatProvider(delegate=delegate, policy=policy)
 
 
 def _create_openai_provider(
