@@ -47,6 +47,7 @@
 | `forgemind_project_source_of_truth/08_DECISION_LOG.md` | UPDATE | DEC-013: status Proposed → Accepted; full decision documentation (context, decision, responsibility boundaries, consequences, rejected alternative, reconsideration triggers) |
 | `docs/ACTIVE_WORK.md` | UPDATE | Update baseline to PR #63 merge; record WP-REC-03A complete; record DEC-013 Accepted; update next steps |
 | `docs/next_steps.md` | UPDATE | Update baseline to PR #63 merge; record WP-REC-03A complete; record DEC-013 Accepted; update next milestone |
+| `docs/planning/wp_rec_03_decomposition.md` | UPDATE | Mark GATE-1 satisfied; mark 03A complete; correct stale "Proposed"/"NOT AUTHORIZED" references to reflect DEC-013 Accepted and 03A merged |
 
 No application code, tests, dependencies, lockfiles, or migrations changed. This is documentation-only.
 
@@ -75,7 +76,7 @@ No application code, tests, dependencies, lockfiles, or migrations changed. This
 ### Before Commit
 
 - [x] `git diff --check` passes
-- [x] Only authorized documentation files changed (08_DECISION_LOG.md, docs/next_steps.md, docs/ACTIVE_WORK.md)
+- [x] Only authorized documentation files changed (08_DECISION_LOG.md, docs/next_steps.md, docs/ACTIVE_WORK.md, docs/planning/wp_rec_03_decomposition.md)
 - [x] No secrets in changed files
 - [x] No planned technology presented as released
 - [x] ForgeMind and Runtime goals not conflated
@@ -117,19 +118,19 @@ The corrective pass in this PR did not modify the SP-1 assessment. It remains an
 
 ## Rollback Procedures
 
-### Before merge (WP-REC-03-DEC planning PR open, not merged)
+### Before merge (PR #64 — DEC-013 documentation, draft and unmerged)
 
 Three distinct operations — do not conflate them:
 
-1. **Close the PR on GitHub** (`gh pr close <PR#>` or GitHub UI) — does not delete any branch.
+1. **Close the PR on GitHub** (`gh pr close 64` or GitHub UI) — does not delete any branch.
 2. **Delete the remote feature branch** (only if abandoning the PR):
    ```bash
-   git push origin --delete docs/wp-rec-03-controlled-decomposition
+   git push origin --delete docs/dec-013-explicit-state-machine
    ```
 3. **Optionally delete the local branch** (switch to main first):
    ```bash
    git checkout main
-   git branch -D docs/wp-rec-03-controlled-decomposition
+   git branch -D docs/dec-013-explicit-state-machine
    ```
 
 ### After merge (resolve the actual resulting commit SHA first)
@@ -146,11 +147,13 @@ The rollback command depends on the **actual merge strategy** used by GitHub. Be
   git revert <resulting-commit-sha>
   ```
 
-Do not invent the merge SHA. When the planning PR is merged, resolve the actual resulting commit SHA and record it here with the merge strategy used.
+Do not invent the merge SHA. When PR #64 is merged, resolve the actual resulting commit SHA and record it here with the merge strategy used.
 
-### PR #61 merge reference (completed)
+### Historical merge references
 
-PR #61 was merged as a two-parent merge commit: `a859c0d0fbee721ad0ea44a00682370d3da9355f`. To revert PR #61: `git revert -m 1 a859c0d0fbee721ad0ea44a00682370d3da9355f`.
+- **PR #61** was merged as a two-parent merge commit: `a859c0d0fbee721ad0ea44a00682370d3da9355f`. To revert PR #61: `git revert -m 1 a859c0d0fbee721ad0ea44a00682370d3da9355f`.
+- **PR #62** was merged at `1bc79ca55e86311d2f042dd830163896ebc32275`.
+- **PR #63** was merged at `5c86000046ea265c799dab05d6e23601d0fe79c0` (WP-REC-03A).
 
 ---
 
