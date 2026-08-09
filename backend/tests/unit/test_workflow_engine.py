@@ -810,7 +810,12 @@ class TestFailInternal:
     async def test_fail_internal_from_running(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """fail_internal transitions a RUNNING run to FAILED_INTERNAL."""
+        """fail_internal transitions a RUNNING run to FAILED_INTERNAL.
+
+        The caller-provided error_detail is classified against the
+        safe allowlist. Unrecognized values are replaced with
+        INTERNAL_ERROR — arbitrary text is not persisted.
+        """
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -824,13 +829,18 @@ class TestFailInternal:
 
         assert run.state == WorkflowState.FAILED_INTERNAL.value
         assert run.error_code == "INTERNAL_ERROR"
-        assert run.error_detail == "something went wrong"
+        # Arbitrary text is NOT persisted — replaced with INTERNAL_ERROR
+        assert run.error_detail == "INTERNAL_ERROR"
         assert run.completed_at is not None
 
     async def test_fail_internal_from_awaiting_validation(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """fail_internal can mark an AWAITING_VALIDATION run as FAILED_INTERNAL."""
+        """fail_internal can mark an AWAITING_VALIDATION run as FAILED_INTERNAL.
+
+        Arbitrary caller text is not persisted — only allowlisted safe
+        reasons survive classification.
+        """
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -845,12 +855,13 @@ class TestFailInternal:
         await engine.fail_internal(run, error_detail="validation phase error")
 
         assert run.state == WorkflowState.FAILED_INTERNAL.value
-        assert run.error_detail == "validation phase error"
+        # Unrecognized text → INTERNAL_ERROR
+        assert run.error_detail == "INTERNAL_ERROR"
 
-    async def test_fail_internal_redacts_secret_in_detail(
+    async def test_fail_internal_persists_allowlisted_reason(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """fail_internal must redact secrets from caller-provided detail."""
+        """fail_internal persists allowlisted safe reasons verbatim."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -859,14 +870,163 @@ class TestFailInternal:
         await engine._transition_run(run, WorkflowState.RUNNING)
         await db_session.commit()
 
-        secret_detail = "Internal error: api_key=sk-secret-12345 was exposed"
+        # An allowlisted reason is persisted verbatim
+        await engine.fail_internal(run, error_detail="INVALID_TRANSITION")
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INVALID_TRANSITION"
+        assert run.error_code == "INTERNAL_ERROR"
+
+    async def test_fail_internal_does_not_persist_short_exception_message(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist a short exception message
+        without credential keywords.
+
+        The old regex-based approach returned short strings unchanged.
+        The allowlist contract must reject all unrecognized text.
+        """
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        short_msg = "connection refused"
+        await engine.fail_internal(run, error_detail=short_msg)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INTERNAL_ERROR"
+        assert short_msg not in (run.error_detail or "")
+
+    async def test_fail_internal_does_not_persist_json_provider_response(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist a JSON/provider response."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        json_response = '{"error": "rate_limit", "retry_after": 30}'
+        await engine.fail_internal(run, error_detail=json_response)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INTERNAL_ERROR"
+        assert json_response not in (run.error_detail or "")
+        assert "rate_limit" not in (run.error_detail or "")
+
+    async def test_fail_internal_does_not_persist_api_key_text(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist api_key text."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        secret_detail = "Internal error: api_key=sk-pro-1234567890 was exposed"
         await engine.fail_internal(run, error_detail=secret_detail)
 
         assert run.state == WorkflowState.FAILED_INTERNAL.value
-        assert run.error_detail is not None
-        assert "«redacted:sk-…»" not in run.error_detail
+        assert run.error_detail == "INTERNAL_ERROR"
         assert "api_key" not in (run.error_detail or "").lower()
-        assert run.error_detail == "UNSAFE_ERROR_DETAIL_REDACTED"
+        assert "sk-pro" not in (run.error_detail or "")
+
+    async def test_fail_internal_does_not_persist_bearer_token(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist Bearer token text."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        bearer_detail = "Auth error: Bearer dGhpcyBpcyBhIHNlY3JldCB0b2tlbg=="
+        await engine.fail_internal(run, error_detail=bearer_detail)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INTERNAL_ERROR"
+        assert "Bearer" not in (run.error_detail or "")
+        assert "dGhpcy" not in (run.error_detail or "")
+
+    async def test_fail_internal_does_not_persist_password_text(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist password/credential text."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        password_detail = "Config error: password=SuperSecret123! is invalid"
+        await engine.fail_internal(run, error_detail=password_detail)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INTERNAL_ERROR"
+        assert "password" not in (run.error_detail or "").lower()
+        assert "SuperSecret" not in (run.error_detail or "")
+
+    async def test_fail_internal_does_not_persist_long_message(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal must not persist a long message."""
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        long_detail = "x" * 1000
+        await engine.fail_internal(run, error_detail=long_detail)
+
+        assert run.state == WorkflowState.FAILED_INTERNAL.value
+        assert run.error_detail == "INTERNAL_ERROR"
+        assert len(run.error_detail or "") < 50
+        assert long_detail not in (run.error_detail or "")
+
+    async def test_fail_internal_deterministic_safe_output(
+        self, db_session: AsyncSession, plan_id: Any
+    ) -> None:
+        """fail_internal stored output is deterministic.
+
+        Calling fail_internal twice with different arbitrary text must
+        produce the same safe stored value (INTERNAL_ERROR).
+        """
+        provider = _RecordingFakeProvider(result=_make_chat_result())
+        engine = WorkflowEngine(provider=provider, session=db_session)
+        run1 = await engine.create_run(plan_id=plan_id)
+        run2 = await engine.create_run(plan_id=plan_id)
+        await db_session.commit()
+
+        await engine._transition_run(run1, WorkflowState.RUNNING)
+        await db_session.commit()
+        await engine._transition_run(run2, WorkflowState.RUNNING)
+        await db_session.commit()
+
+        await engine.fail_internal(run1, error_detail="some random error A")
+        await engine.fail_internal(run2, error_detail="totally different error B")
+
+        # Both produce the same deterministic safe classification
+        assert run1.error_detail == "INTERNAL_ERROR"
+        assert run2.error_detail == "INTERNAL_ERROR"
+        assert run1.error_detail == run2.error_detail
 
 
 # ---------------------------------------------------------------------------
@@ -1163,3 +1323,240 @@ class TestConditionalTransitionConcurrency:
         await db_session.commit()
         await db_session.refresh(run, ["state"])
         assert run.state == WorkflowState.PENDING.value
+
+
+# ---------------------------------------------------------------------------
+# Terminal transition conflict with competing error metadata (BLOCKER 3)
+# ---------------------------------------------------------------------------
+
+
+class TestTerminalTransitionConflict:
+    """Real PostgreSQL tests proving terminal transitions are atomic.
+
+    When two sessions compete to transition the same RUNNING run to a
+    terminal state with different error metadata, only the winner's
+    state, error_code, error_detail, completed_at, and updated_at are
+    persisted. The loser's dirty error fields must not overwrite the
+    winner on a subsequent flush/commit.
+    """
+
+    async def test_terminal_race_winner_metadata_preserved(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Winner's terminal metadata is preserved after loser commits.
+
+        1. Both sessions load the same RUNNING run.
+        2. Winner transitions to FAILED_PROVIDER with winner error metadata.
+        3. Loser attempts competing terminal transition with different metadata.
+        4. Loser receives TransitionConflictError.
+        5. Loser subsequently flushes/commits.
+        6. Fresh session sees only the winner's terminal state, error_code,
+           error_detail, and completed_at.
+        """
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+
+        # Create a run and transition it to RUNNING
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+            await engine_a._transition_run(run, WorkflowState.RUNNING)
+            await session_a.commit()
+
+        # Winner and loser both load the RUNNING run
+        async with factory() as session_winner, factory() as session_loser:
+            run_winner = await session_winner.get(WorkflowRun, run_id)
+            run_loser = await session_loser.get(WorkflowRun, run_id)
+            assert run_winner is not None
+            assert run_loser is not None
+            assert run_winner.state == WorkflowState.RUNNING.value
+            assert run_loser.state == WorkflowState.RUNNING.value
+
+            engine_winner = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_winner,
+            )
+            engine_loser = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_loser,
+            )
+
+            # Winner: RUNNING → FAILED_PROVIDER with winner metadata
+            await engine_winner._transition_run(
+                run_winner,
+                WorkflowState.FAILED_PROVIDER,
+                error_code="PROVIDER_PERMANENT",
+                error_detail="PermanentChatProviderError",
+            )
+            await session_winner.commit()
+
+            # Loser: RUNNING → FAILED_INTERNAL with different metadata
+            with pytest.raises(TransitionConflictError):
+                await engine_loser._transition_run(
+                    run_loser,
+                    WorkflowState.FAILED_INTERNAL,
+                    error_code="INTERNAL_ERROR",
+                    error_detail="LoserInternalError",
+                )
+
+            # Loser subsequently flushes and commits — must NOT overwrite
+            # the winner's state, error fields, or timestamps.
+            await session_loser.flush()
+            await session_loser.commit()
+
+        # Fresh session verifies the winner's state is preserved
+        async with factory() as verify_session:
+            db_run = await verify_session.get(WorkflowRun, run_id)
+            assert db_run is not None
+            assert db_run.state == WorkflowState.FAILED_PROVIDER.value
+            assert db_run.error_code == "PROVIDER_PERMANENT"
+            assert db_run.error_detail == "PermanentChatProviderError"
+            assert db_run.completed_at is not None
+            # Loser's metadata must NOT be present
+            assert db_run.error_code != "INTERNAL_ERROR"
+            assert db_run.error_detail != "LoserInternalError"
+
+    async def test_loser_dirty_fields_not_persisted_after_conflict(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Loser's dirty error fields are not persisted after conflict.
+
+        After the loser receives TransitionConflictError, its ORM instance
+        is refreshed from the DB. Even if the loser's session later
+        flushes/commits, the winner's error_code, error_detail, and
+        completed_at must be preserved.
+        """
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+
+        # Create and transition to RUNNING
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+            await engine_a._transition_run(run, WorkflowState.RUNNING)
+            await session_a.commit()
+
+        winner_code = "PROVIDER_TRANSIENT"
+        winner_detail = "TransientChatProviderError"
+
+        async with factory() as session_winner, factory() as session_loser:
+            run_winner = await session_winner.get(WorkflowRun, run_id)
+            run_loser = await session_loser.get(WorkflowRun, run_id)
+            assert run_winner is not None
+            assert run_loser is not None
+
+            engine_winner = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_winner,
+            )
+            engine_loser = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_loser,
+            )
+
+            # Winner transitions first
+            await engine_winner._transition_run(
+                run_winner,
+                WorkflowState.FAILED_PROVIDER,
+                error_code=winner_code,
+                error_detail=winner_detail,
+            )
+            await session_winner.commit()
+
+            # Loser attempts with different metadata
+            with pytest.raises(TransitionConflictError):
+                await engine_loser._transition_run(
+                    run_loser,
+                    WorkflowState.FAILED_INTERNAL,
+                    error_code="INTERNAL_ERROR",
+                    error_detail="LoserDirtyDetail",
+                )
+
+            # After conflict, the loser's ORM instance should be refreshed
+            # to reflect the winner's state
+            assert run_loser.state == WorkflowState.FAILED_PROVIDER.value
+            assert run_loser.error_code == winner_code
+            assert run_loser.error_detail == winner_detail
+
+            # Loser commits — this must NOT overwrite the winner
+            await session_loser.commit()
+
+        # Verify in a fresh session
+        async with factory() as verify_session:
+            db_run = await verify_session.get(WorkflowRun, run_id)
+            assert db_run is not None
+            assert db_run.state == WorkflowState.FAILED_PROVIDER.value
+            assert db_run.error_code == winner_code
+            assert db_run.error_detail == winner_detail
+
+    async def test_invalid_transition_no_dirty_field_persistence(
+        self, db_engine: Any, plan_id: Any
+    ) -> None:
+        """Invalid transitions have no dirty-field persistence side effects.
+
+        An invalid transition (e.g., PENDING → COMPLETED) raises
+        StateMachineError before any conditional UPDATE is executed.
+        No error fields are mutated on the ORM instance, so a later
+        flush/commit cannot introduce dirty error fields.
+        """
+        from app.ai.workflow.state_machine import StateMachineError
+
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+
+        async with factory() as session_a:
+            engine_a = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_a,
+            )
+            run = await engine_a.create_run(plan_id=plan_id)
+            await session_a.commit()
+            run_id = run.id
+
+        async with factory() as session_b:
+            run_b = await session_b.get(WorkflowRun, run_id)
+            assert run_b is not None
+            engine_b = WorkflowEngine(
+                provider=_RecordingFakeProvider(),
+                session=session_b,
+            )
+
+            # Invalid transition: PENDING → COMPLETED
+            with pytest.raises(StateMachineError):
+                await engine_b._transition_run(
+                    run_b,
+                    WorkflowState.COMPLETED,
+                    error_code="SHOULD_NOT_PERSIST",
+                    error_detail="ShouldNotPersist",
+                )
+
+            # No error fields should be dirty on the ORM instance
+            assert run_b.error_code is None
+            assert run_b.error_detail is None
+            assert run_b.state == WorkflowState.PENDING.value
+
+            # Commit must not introduce any error fields
+            await session_b.commit()
+
+        # Verify in a fresh session
+        async with factory() as verify_session:
+            db_run = await verify_session.get(WorkflowRun, run_id)
+            assert db_run is not None
+            assert db_run.state == WorkflowState.PENDING.value
+            assert db_run.error_code is None
+            assert db_run.error_detail is None

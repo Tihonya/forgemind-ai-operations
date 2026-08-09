@@ -69,6 +69,32 @@ _ERROR_CODE_PROVIDER_PERMANENT = "PROVIDER_PERMANENT"
 _ERROR_CODE_PROVIDER_CONFIG = "PROVIDER_CONFIG"
 _ERROR_CODE_INTERNAL = "INTERNAL_ERROR"
 
+# Allowlist of safe, deterministic error codes that may be stored in
+# WorkflowRun.error_code. Any caller-provided error_code not in this set
+# is replaced with _ERROR_CODE_INTERNAL.
+_SAFE_ERROR_CODES: frozenset[str] = frozenset({
+    _ERROR_CODE_INTERNAL,
+    _ERROR_CODE_PROVIDER_TRANSIENT,
+    _ERROR_CODE_PROVIDER_PERMANENT,
+    _ERROR_CODE_PROVIDER_CONFIG,
+})
+
+# Allowlist of safe, deterministic error detail strings that may be
+# persisted in WorkflowRun.error_detail via fail_internal(). These are
+# short, human-readable classification labels — never raw exception
+# messages, provider responses, or caller-provided text.
+#
+# New entries may be added here only after review — they must be:
+#   - deterministic (not derived from external input);
+#   - free of secrets, credentials, and raw payloads;
+#   - bounded in length.
+_SAFE_ERROR_DETAIL_REASONS: frozenset[str] = frozenset({
+    "INTERNAL_ERROR",
+    "INVALID_TRANSITION",
+    "STEP_RECORD_ERROR",
+    "STEP_SEQ_ERROR",
+})
+
 
 class WorkflowEngine:
     """Foundation workflow engine (WP-REC-03B).
@@ -270,13 +296,19 @@ class WorkflowEngine:
             else:
                 target_state = WorkflowState.FAILED_PROVIDER
 
-            # Store safe error info on the run as well.
+            # Pass safe error values explicitly into the conditional
+            # terminal UPDATE. Do NOT mutate run.error_code/error_detail
+            # on the ORM instance before the conditional UPDATE succeeds
+            # — if the transition loses the race, dirty ORM error fields
+            # could overwrite the winner's state on a later flush/commit.
             # error_detail is already a safe summary (type name only,
             # no raw exception message — see _safe_error_summary).
-            run.error_code = error_code
-            run.error_detail = error_detail
-
-            await self._transition_run(run, target_state)
+            await self._transition_run(
+                run,
+                target_state,
+                error_code=error_code,
+                error_detail=error_detail,
+            )
 
             _logger.warning(
                 "workflow.step.failed",
@@ -303,25 +335,50 @@ class WorkflowEngine:
         step (e.g., an invalid transition attempt or an unexpected
         engine-level failure).
 
-        The ``error_detail`` must be a safe, pre-redacted string — this
-        method does not re-process it. Callers must ensure no secrets,
-        credentials, or raw exception messages are passed.
+        Persistence contract:
+
+        This method does NOT persist arbitrary caller-provided text.
+        The ``error_detail`` parameter is classified against a strict
+        allowlist of safe, deterministic reason strings. If the
+        provided value is not in the allowlist, it is replaced with
+        ``INTERNAL_ERROR``. This ensures that no raw exception messages,
+        provider responses, API keys, bearer tokens, passwords, or
+        other untrusted content can be stored in ``error_detail``
+        through this path.
+
+        The ``error_code`` is always set to ``_ERROR_CODE_INTERNAL``
+        (or an explicitly allowlisted safe code). It is deterministic
+        and never contains caller text.
 
         Args:
             run: The WorkflowRun to fail.
-            error_detail: Safe error summary (no secrets). Must be
-                pre-redacted by the caller.
-            error_code: Safe error classification code.
+            error_detail: Caller-provided error reason. This value is
+                NOT persisted directly — it is classified against a
+                safe allowlist. Unrecognized values are replaced with
+                ``INTERNAL_ERROR``.
+            error_code: Safe error classification code. Defaults to
+                ``INTERNAL_ERROR``.
         """
-        run.error_code = error_code
-        run.error_detail = _safe_error_summary_from_string(error_detail)
-        await self._transition_run(run, WorkflowState.FAILED_INTERNAL)
+        safe_detail = _classify_safe_error_detail(error_detail)
+        safe_code = error_code if error_code in _SAFE_ERROR_CODES else _ERROR_CODE_INTERNAL
+        # Do NOT mutate run.error_code/error_detail on the ORM instance
+        # before the conditional UPDATE — pass them as parameters so the
+        # terminal UPDATE is atomic and the loser cannot dirty the winner.
+        await self._transition_run(
+            run,
+            WorkflowState.FAILED_INTERNAL,
+            error_code=safe_code,
+            error_detail=safe_detail,
+        )
         await self._session.flush()
 
     async def _transition_run(
         self,
         run: WorkflowRun,
         to_state: WorkflowState,
+        *,
+        error_code: str | None = None,
+        error_detail: str | None = None,
     ) -> None:
         """Validate and persist a state transition via conditional UPDATE.
 
@@ -335,9 +392,20 @@ class WorkflowEngine:
         state, relevant timestamps, and error fields only if the
         current database state matches the expected source state.
 
+        For terminal transitions, error_code and error_detail are
+        passed as explicit parameters (not read from the ORM instance)
+        and persisted atomically in the same UPDATE. This prevents the
+        losing ORM instance from retaining dirty error fields that
+        could overwrite the winner's state on a later flush/commit.
+
         If zero rows are returned (another contender won the race or
         the row was modified), the ORM instance is refreshed from the
-        database and :class:`TransitionConflictError` is raised.
+        database — including state, timestamps, error fields, and
+        updated_at — and :class:`TransitionConflictError` is raised.
+        The refreshed ORM instance reflects all authoritative persisted
+        state relevant to the transition, so a later flush/commit by
+        the losing session will not overwrite the winner's state,
+        timestamps, error_code, or error_detail.
 
         Does NOT commit the transaction — the caller owns the boundary.
 
@@ -346,6 +414,12 @@ class WorkflowEngine:
                 is used as the expected current state for the
                 conditional UPDATE.
             to_state: The target state.
+            error_code: Safe error classification code for terminal
+                transitions. Passed directly into the UPDATE, not via
+                ORM mutation. If None, the column is set to NULL.
+            error_detail: Safe error detail for terminal transitions.
+                Passed directly into the UPDATE, not via ORM mutation.
+                If None, the column is set to NULL.
 
         Raises:
             StateMachineError: If the transition is invalid per the
@@ -359,6 +433,13 @@ class WorkflowEngine:
 
         now = datetime.now(UTC)
 
+        is_terminal = to_state in (
+            WorkflowState.COMPLETED,
+            WorkflowState.FAILED_VALIDATION,
+            WorkflowState.FAILED_PROVIDER,
+            WorkflowState.FAILED_INTERNAL,
+        )
+
         # Build the conditional UPDATE with timestamp columns.
         # The WHERE clause checks both run ID and expected current state.
         if to_state == WorkflowState.RUNNING:
@@ -370,16 +451,12 @@ class WorkflowEngine:
                 WHERE id = :run_id AND state = :expected_state
                 RETURNING id
             """)
-        elif to_state in (
-            WorkflowState.COMPLETED,
-            WorkflowState.FAILED_VALIDATION,
-            WorkflowState.FAILED_PROVIDER,
-            WorkflowState.FAILED_INTERNAL,
-        ):
-            # Terminal transitions also set completed_at.
-            # error_code and error_detail are set on the ORM instance
-            # before calling _transition_run; the UPDATE persists the
-            # current ORM values for those columns.
+        elif is_terminal:
+            # Terminal transitions set completed_at, error_code,
+            # error_detail, and updated_at atomically in the same UPDATE.
+            # error_code and error_detail are passed as explicit parameters
+            # (not read from the ORM instance) to prevent dirty ORM state
+            # from being persisted if the conditional UPDATE loses the race.
             update_sql = text("""
                 UPDATE workflow_runs
                 SET state = :new_state,
@@ -408,14 +485,9 @@ class WorkflowEngine:
             "now": now,
         }
 
-        if to_state in (
-            WorkflowState.COMPLETED,
-            WorkflowState.FAILED_VALIDATION,
-            WorkflowState.FAILED_PROVIDER,
-            WorkflowState.FAILED_INTERNAL,
-        ):
-            params["error_code"] = run.error_code
-            params["error_detail"] = run.error_detail
+        if is_terminal:
+            params["error_code"] = error_code
+            params["error_detail"] = error_detail
 
         result = await self._session.execute(update_sql, params)
         row = result.fetchone()
@@ -423,8 +495,21 @@ class WorkflowEngine:
         if row is None:
             # The conditional UPDATE matched zero rows — another
             # contender won the race or the row's state changed.
-            # Refresh the ORM instance to reflect the actual DB state.
-            await self._session.refresh(run, ["state", "started_at", "completed_at"])
+            # Refresh ALL relevant fields from the database so the
+            # ORM instance reflects authoritative persisted state.
+            # This prevents dirty error_code/error_detail/updated_at
+            # from being flushed later and overwriting the winner.
+            await self._session.refresh(
+                run,
+                [
+                    "state",
+                    "started_at",
+                    "completed_at",
+                    "error_code",
+                    "error_detail",
+                    "updated_at",
+                ],
+            )
             raise TransitionConflictError(
                 f"Conditional transition failed: run {run.id} expected "
                 f"{from_state.value} but the row no longer matches. "
@@ -432,16 +517,16 @@ class WorkflowEngine:
             )
 
         # Sync the ORM instance with the persisted values.
+        # This ensures the ORM instance matches the DB after a
+        # successful conditional UPDATE.
         run.state = to_state.value
         if to_state == WorkflowState.RUNNING:
             run.started_at = now
-        if to_state in (
-            WorkflowState.COMPLETED,
-            WorkflowState.FAILED_VALIDATION,
-            WorkflowState.FAILED_PROVIDER,
-            WorkflowState.FAILED_INTERNAL,
-        ):
+        if is_terminal:
             run.completed_at = now
+            run.error_code = error_code
+            run.error_detail = error_detail
+        run.updated_at = now
 
         _logger.info(
             "workflow.run.transition",
@@ -488,44 +573,28 @@ def _safe_error_summary(exc: Exception) -> str:
     return type(exc).__name__
 
 
-def _safe_error_summary_from_string(detail: str) -> str:
-    """Sanitize a caller-provided error detail string.
+def _classify_safe_error_detail(detail: str) -> str:
+    """Classify a caller-provided error detail against a safe allowlist.
 
-    Removes known secret patterns (API keys, bearer tokens, passwords,
-    authorization headers) from the string. If the string is too long,
-    it is truncated. If no safe content remains, only the type-safe
-    classification is returned.
+    This function implements the conservative persistence contract for
+    ``fail_internal()``: only a deterministic, allowlisted safe reason
+    is returned. Arbitrary caller-provided text — including short
+    exception messages, JSON/provider responses, API keys, bearer
+    tokens, passwords, and long messages — is never persisted. Instead,
+    unrecognized values are replaced with ``INTERNAL_ERROR``.
 
-    This is used by :meth:`WorkflowEngine.fail_internal` to sanitize
-    caller-provided error details before persistence.
+    Regex-based secret detection is NOT used as the primary safety
+    boundary. The allowlist is the boundary: if the value is not an
+    exact match for a known safe reason, it is discarded.
 
     Args:
-        detail: The raw error detail string from the caller.
+        detail: The raw error detail string from the caller. This may
+            contain anything — it is never trusted.
 
     Returns:
-        A sanitized, bounded error detail string (max 200 chars).
+        A safe, deterministic error detail string from the allowlist,
+        or ``INTERNAL_ERROR`` if the input is not recognized.
     """
-    import re
-
-    # Patterns that indicate secret-bearing content.
-    # If any pattern is found, the entire string is considered unsafe
-    # and replaced with a generic marker.
-    secret_patterns = [
-        re.compile(r"api[_-]?key\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"bearer\s+[A-Za-z0-9\-._~+\/]+", re.IGNORECASE),
-        re.compile(r"authorization\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"password\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"secret\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"token\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"credential\s*[:=]\s*\S+", re.IGNORECASE),
-        re.compile(r"sk-[A-Za-z0-9]{20,}", re.IGNORECASE),
-    ]
-
-    for pattern in secret_patterns:
-        if pattern.search(detail):
-            return "UNSAFE_ERROR_DETAIL_REDACTED"
-
-    # Truncate to prevent unbounded error detail.
-    if len(detail) > 200:
-        detail = detail[:200] + "..."
-    return detail
+    if detail in _SAFE_ERROR_DETAIL_REASONS:
+        return detail
+    return _ERROR_CODE_INTERNAL
