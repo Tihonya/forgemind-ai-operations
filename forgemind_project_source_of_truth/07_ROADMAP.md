@@ -63,6 +63,8 @@ Roadmap побудовано вертикально: кожна фаза зав�
 
 ## Phase 4 — Knowledge and RAG
 
+**Status:** PARTIALLY COMPLETE — substantial RAG and role-filtering implementation exists (document ingestion, pgvector index, retrieval with citations, role-filtered retrieval, DocumentPermission model, server-side role derivation, unauthorized-role test); formal AT-006/AT-007 PASS evidence is incomplete. This is a documentation/status and acceptance-evidence contradiction, not a false technical foundation.
+
 ### Deliverables
 - document ingestion;
 - document versions/status;
@@ -74,6 +76,8 @@ Roadmap побудовано вертикально: кожна фаза зав�
 ### Exit criteria
 - AT-006, AT-007 pass;
 - evaluation fixtures створені.
+
+> Phase 4 remains PARTIALLY COMPLETE until AT-006 and AT-007 have accepted PASS evidence. The exit criteria are not weakened. Formal verification requires a bounded verification package (SD-2), separate from WP-ARCH-01. WP-REC-05 (Phase 4 completion) is positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 
 ## Phase 5 — Controlled AI workflow
 
