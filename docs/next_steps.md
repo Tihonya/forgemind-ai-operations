@@ -110,11 +110,14 @@ The accepted planning sequence is:
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
 2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — NOT AUTHORIZED. Follows WP-STRAT-01. Requires separate Product Owner authorization.
 3. **WP-REC-03C → 03D → 03E → 03F → 03G** (Phase 5 AI Workflow) — NOT AUTHORIZED. Sequence preserved per SD-3. Each requires separate authorization. Reassessment after WP-STRAT-01 and WP-ARCH-01.
-4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
-5. **Bounded AT-006/AT-007 verification package** — NOT AUTHORIZED. Formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). SD-4 does not establish its execution timing.
-6. **Phase 6** (Approval and Audit) — NOT STARTED.
-7. **Phase 7** (Public Deployment) — NOT STARTED.
-8. **Phase 8** (Portfolio Release) — NOT STARTED.
+4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
+5. **Phase 6** (Approval and Audit) — NOT STARTED.
+6. **Phase 7** (Public Deployment) — NOT STARTED.
+7. **Phase 8** (Portfolio Release) — NOT STARTED.
+
+**Required package with timing not yet established:**
+
+- **Bounded AT-006/AT-007 verification package** — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). Its execution timing and position relative to WP-REC-05 and Phase 6 remain intentionally undecided. NOT AUTHORIZED. Authorization of any package does not authorize the verification package. Phase 4 cannot become COMPLETE until its unchanged exit criteria, including accepted AT-006/AT-007 PASS evidence, are satisfied.
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 

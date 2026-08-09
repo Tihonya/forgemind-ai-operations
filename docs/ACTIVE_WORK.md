@@ -88,7 +88,7 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 | SP-1 assessment (historical snapshot) | `docs/reviews/sp1_recovery_mvp_separation_assessment.md` |
 | Source of Truth | `forgemind_project_source_of_truth/` (9 documents) |
 | Acceptance test status | `docs/next_steps.md` § "Acceptance Test Status" |
-| Authorized work | `docs/next_steps.md` § "Delivery Sequence" |
+| Planning sequence and authorization constraints | `docs/next_steps.md` § "Delivery Sequence" |
 | Active work tracker | `docs/ACTIVE_WORK.md` (this file) |
 
 ---

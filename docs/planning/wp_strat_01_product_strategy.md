@@ -109,7 +109,7 @@ Release 1 = the complete Golden Scenario (13 steps from SoT 01 §2) deployed to 
 | Authentication + RBAC | Step 1 | AT-002 | Phase 2 | COMPLETE (requires deployment verification) |
 | Dashboard + Supply Risk UI | Steps 1–4, 8 (deterministic) | AT-005 | Phase 3 | COMPLETE (AT PASS) |
 | RAG retrieval with citations | Step 6 | AT-006 | Phase 4 | IMPLEMENTED — NOT VERIFIED AS PASS |
-| Document access control | Step 6 (restricted docs) | AT-007 | Phase 4 / WP-REC-05 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
+| Document access control | Step 6 (restricted docs) | AT-007 | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
 | AI provider adapter | Step 5 | — | Phase 5 (03A) | COMPLETE |
 | Workflow state machine + engine | Steps 5–7 | — | Phase 5 (03B) | COMPLETE |
 | Structured-output validation | Step 7 | AT-008 | Phase 5 (03C) | NOT IMPLEMENTED |
@@ -243,11 +243,14 @@ The accepted planning sequence is:
 1. **WP-STRAT-01** (this package) — product strategy and Release 1 alignment. COMPLETED.
 2. **WP-ARCH-01** — Architecture Hygiene and Agent Onboarding. NOT AUTHORIZED.
 3. **WP-REC-03C** → **WP-REC-03D** → **WP-REC-03E** → **WP-REC-03F** → **WP-REC-03G** — Phase 5 AI Workflow packages. Sequence preserved per SD-3. Each requires separate authorization.
-4. **WP-REC-05** — RAG integration into the AI workflow; Phase 4 closure also depends on the separately authorized AT-006/AT-007 verification package. Positioned after 03C–03G and before Phase 6 per SD-4.
-5. **Bounded AT-006/AT-007 verification package** — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). SD-4 does not establish its execution timing. NOT AUTHORIZED.
-6. **Phase 6** — Approval and Audit. Not started.
-7. **Phase 7** — Public Deployment. Not started.
-8. **Phase 8** — Portfolio Release. Not started.
+4. **WP-REC-05** — RAG integration into the AI workflow. Positioned after 03C–03G and before Phase 6 per SD-4. NOT AUTHORIZED.
+5. **Phase 6** — Approval and Audit. Not started.
+6. **Phase 7** — Public Deployment. Not started.
+7. **Phase 8** — Portfolio Release. Not started.
+
+**Required package with timing not yet established:**
+
+- **Bounded AT-006/AT-007 verification package** — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). Its execution timing and position relative to WP-REC-05 and Phase 6 remain intentionally undecided. NOT AUTHORIZED. Authorization of any package does not authorize the verification package. Phase 4 cannot become COMPLETE until its unchanged exit criteria, including accepted AT-006/AT-007 PASS evidence, are satisfied.
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
