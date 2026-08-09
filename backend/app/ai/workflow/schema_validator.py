@@ -53,8 +53,22 @@ _logger = get_logger(__name__)
 _MAX_EXPOSED_ERRORS: int = 20
 
 # Maximum length of a single sanitized location-component string.
-# Components longer than this are truncated and marked.
+# Components longer than this are replaced with the neutral marker.
 _MAX_LOC_COMPONENT_LENGTH: int = 50
+
+# Maximum number of components in a single sanitized field-location path.
+# Paths with more components are truncated to this depth, with the final
+# component replaced by ``<truncated>`` to indicate truncation.
+_MAX_LOC_DEPTH: int = 10
+
+# Maximum length of the final rendered field-location string.
+# If the joined path exceeds this, it is replaced entirely with
+# ``<truncated>`` to enforce a deterministic maximum size.
+_MAX_RENDERED_LOC_LENGTH: int = 200
+
+# Maximum length of a single sanitized Pydantic error-type string.
+# Error types longer than this are replaced with a neutral marker.
+_MAX_ERROR_TYPE_LENGTH: int = 50
 
 # Known schema field names for the v1 recommendation wire schema.
 # When a Pydantic error location component matches one of these names,
@@ -83,6 +97,15 @@ _KNOWN_FIELD_NAMES: frozenset[str] = frozenset({
 
 # Neutral marker replacing unknown or input-controlled location components.
 _UNKNOWN_MARKER: str = "<extra>"
+
+# Neutral marker replacing truncated or oversized location paths.
+_TRUNCATED_MARKER: str = "<truncated>"
+
+# Neutral marker replacing oversized error-type strings.
+_ERROR_TYPE_OVERFLOW_MARKER: str = "<error_type_overflow>"
+
+# Neutral marker replacing invalid numeric indices (negative, non-int).
+_INVALID_INDEX_MARKER: str = "<invalid_index>"
 
 
 class ValidationFailureReason(StrEnum):
@@ -160,14 +183,19 @@ class StructuredOutputValidationError(Exception):
 def _sanitize_location_component(component: Any) -> str:
     """Sanitize a single Pydantic error location component.
 
-    Known schema field names are returned as-is. Integer list indices
-    are returned as their string representation. Any other string
-    component — including input-controlled extra-field names — is
+    Known schema field names are returned as-is. Non-negative integer
+    list indices are returned as their string representation. Any other
+    string component — including input-controlled extra-field names — is
     replaced with ``_UNKNOWN_MARKER`` to prevent input-controlled text
     from entering exception metadata or logs.
 
-    Components longer than ``_MAX_LOC_COMPONENT_LENGTH`` are truncated
-    and marked, even if they are known field names (defensive).
+    Components longer than ``_MAX_LOC_COMPONENT_LENGTH`` are replaced
+    with ``_UNKNOWN_MARKER``, even if they are known field names
+    (defensive).
+
+    Numeric components are subject to the same length bound as string
+    components. Negative integers and non-integer values are replaced
+    with ``_INVALID_INDEX_MARKER``.
 
     Args:
         component: A single element from a Pydantic error ``loc`` tuple.
@@ -175,8 +203,19 @@ def _sanitize_location_component(component: Any) -> str:
     Returns:
         A safe, bounded string representation of the component.
     """
+    # Handle integer list indices.
     if isinstance(component, int):
-        return str(component)
+        # Only non-negative integers are safe list indices.
+        if component < 0:
+            return _INVALID_INDEX_MARKER
+        text = str(component)
+        if len(text) > _MAX_LOC_COMPONENT_LENGTH:
+            return _UNKNOWN_MARKER
+        return text
+
+    # Handle bool separately from int (bool is a subclass of int in Python).
+    if isinstance(component, bool):
+        return _UNKNOWN_MARKER
 
     text = str(component)
 
@@ -196,6 +235,14 @@ def _sanitize_field_location(loc: tuple[Any, ...]) -> str:
     :func:`_sanitize_location_component`. Components are joined with
     ``"."`` to produce a dotted path string.
 
+    The path depth is capped at ``_MAX_LOC_DEPTH`` components. If the
+    input has more components, only the first ``_MAX_LOC_DEPTH - 1``
+    sanitized components are kept and ``_TRUNCATED_MARKER`` is appended.
+
+    The final rendered string is capped at ``_MAX_RENDERED_LOC_LENGTH``.
+    If it exceeds this length, it is replaced entirely with
+    ``_TRUNCATED_MARKER`` to enforce a deterministic maximum size.
+
     Args:
         loc: The ``loc`` tuple from a Pydantic validation error.
 
@@ -205,8 +252,43 @@ def _sanitize_field_location(loc: tuple[Any, ...]) -> str:
     """
     if not loc:
         return ""
-    parts = [_sanitize_location_component(c) for c in loc]
-    return ".".join(parts)
+
+    # Cap depth: if the location has more components than allowed,
+    # sanitize the first _MAX_LOC_DEPTH - 1 and append the truncation marker.
+    if len(loc) > _MAX_LOC_DEPTH:
+        kept = loc[: _MAX_LOC_DEPTH - 1]
+        parts = [_sanitize_location_component(c) for c in kept]
+        parts.append(_TRUNCATED_MARKER)
+    else:
+        parts = [_sanitize_location_component(c) for c in loc]
+
+    rendered = ".".join(parts)
+
+    # Enforce deterministic maximum rendered size.
+    if len(rendered) > _MAX_RENDERED_LOC_LENGTH:
+        return _TRUNCATED_MARKER
+
+    return rendered
+
+
+def _sanitize_error_type(err_type: Any) -> str:
+    """Sanitize a single Pydantic error-type string.
+
+    Error types are normally framework-controlled, but the sanitizer
+    contract must not depend on an unbounded ``str()`` result.
+
+    Args:
+        err_type: The ``type`` value from a Pydantic validation error.
+
+    Returns:
+        A safe, bounded error-type string.
+    """
+    text = str(err_type)
+
+    if len(text) > _MAX_ERROR_TYPE_LENGTH:
+        return _ERROR_TYPE_OVERFLOW_MARKER
+
+    return text
 
 
 def _extract_safe_error_info(exc: ValidationError) -> tuple[int, list[str], list[str]]:
@@ -220,9 +302,12 @@ def _extract_safe_error_info(exc: ValidationError) -> tuple[int, list[str], list
         - ``field_locations`` is a list of sanitized, bounded
           field-location strings, capped at ``_MAX_EXPOSED_ERRORS``
           entries. Each location contains only known schema field
-          names, integer indices, or the neutral marker ``<extra>``.
-        - ``error_types`` is a list of safe Pydantic error-type
-          strings, capped at ``_MAX_EXPOSED_ERRORS`` entries.
+          names, non-negative integer indices, or neutral markers.
+          Location depth is capped at ``_MAX_LOC_DEPTH`` components
+          and rendered size at ``_MAX_RENDERED_LOC_LENGTH``.
+        - ``error_types`` is a list of sanitized, bounded
+          error-type strings, capped at ``_MAX_EXPOSED_ERRORS`` entries.
+          Each error-type string is capped at ``_MAX_ERROR_TYPE_LENGTH``.
 
     Field locations and error types are safe to log because they
     contain only field paths and type names — never raw input values
@@ -242,7 +327,7 @@ def _extract_safe_error_info(exc: ValidationError) -> tuple[int, list[str], list
         field_locations.append(_sanitize_field_location(tuple(loc)))
 
         err_type = err.get("type", "unknown")
-        error_types.append(str(err_type))
+        error_types.append(_sanitize_error_type(err_type))
 
     return error_count, field_locations, error_types
 

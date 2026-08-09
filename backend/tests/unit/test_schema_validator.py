@@ -28,6 +28,7 @@ verify that design contract rather than mocking databases.
 from __future__ import annotations
 
 import json
+from typing import Any
 
 import pytest
 
@@ -522,3 +523,311 @@ class TestPromptInterpolation:
 
     def test_prompt_version_is_1_0(self) -> None:
         assert PROMPT_VERSION == "1.0"
+
+
+class TestSanitizerBounds:
+    """Verify explicit bounds on location depth, component size, rendered
+    path size, numeric components, and error-type strings (Finding 1).
+
+    These tests exercise the private sanitizer helpers directly to
+    verify invariants that the fixed schema may not naturally trigger.
+    Testing private helpers is acceptable for sanitizer invariants.
+    """
+
+    def test_normal_known_path_unchanged(self) -> None:
+        """A normal known path such as risks.0.sources remains unchanged."""
+        from app.ai.workflow.schema_validator import _sanitize_field_location
+
+        result = _sanitize_field_location(("risks", 0, "sources"))
+        assert result == "risks.0.sources"
+
+    def test_deeply_nested_location_capped_at_max_depth(self) -> None:
+        """A synthetic deeply nested location cannot exceed the documented depth."""
+        from app.ai.workflow.schema_validator import (
+            _MAX_LOC_DEPTH,
+            _TRUNCATED_MARKER,
+            _sanitize_field_location,
+        )
+
+        # Build a location deeper than _MAX_LOC_DEPTH using known field names.
+        deep_loc = tuple(["risks"] * (_MAX_LOC_DEPTH + 5))
+        result = _sanitize_field_location(deep_loc)
+        # The result should contain the truncation marker, not all components.
+        assert _TRUNCATED_MARKER in result
+        # The number of components should not exceed _MAX_LOC_DEPTH.
+        assert len(result.split(".")) <= _MAX_LOC_DEPTH
+
+    def test_oversized_numeric_component_cannot_enlarge_output(self) -> None:
+        """An oversized numeric component is bounded."""
+        from app.ai.workflow.schema_validator import (
+            _MAX_LOC_COMPONENT_LENGTH,
+            _UNKNOWN_MARKER,
+            _sanitize_location_component,
+        )
+
+        # A very large integer whose string representation exceeds the limit.
+        huge_int = 10 ** (_MAX_LOC_COMPONENT_LENGTH + 1)
+        result = _sanitize_location_component(huge_int)
+        assert result == _UNKNOWN_MARKER
+
+    def test_negative_index_neutralized(self) -> None:
+        """Negative indices are replaced with the invalid-index marker."""
+        from app.ai.workflow.schema_validator import (
+            _INVALID_INDEX_MARKER,
+            _sanitize_location_component,
+        )
+
+        assert _sanitize_location_component(-1) == _INVALID_INDEX_MARKER
+
+    def test_non_integer_numeric_neutralized(self) -> None:
+        """Float indices are replaced with the unknown marker."""
+        from app.ai.workflow.schema_validator import (
+            _UNKNOWN_MARKER,
+            _sanitize_location_component,
+        )
+
+        assert _sanitize_location_component(1.5) == _UNKNOWN_MARKER
+
+    def test_every_rendered_location_has_deterministic_max_length(self) -> None:
+        """Every rendered location string is bounded by _MAX_RENDERED_LOC_LENGTH."""
+        from app.ai.workflow.schema_validator import (
+            _MAX_RENDERED_LOC_LENGTH,
+            _sanitize_field_location,
+        )
+
+        # Test with a variety of inputs including long unknown strings.
+        test_cases: list[tuple[Any, ...]] = [
+            ("risks", 0, "sources"),
+            tuple("A" * 40 for _ in range(15)),
+            tuple("risks" for _ in range(20)),
+            ("risks", 99999999999999999999999999999999999999999999999999),
+        ]
+        for loc in test_cases:
+            result = _sanitize_field_location(loc)
+            assert len(result) <= _MAX_RENDERED_LOC_LENGTH, (
+                f"Location {loc!r} rendered as {result!r} exceeds max length"
+            )
+
+    def test_oversized_error_type_bounded(self) -> None:
+        """An oversized or unexpected error-type representation is bounded."""
+        from app.ai.workflow.schema_validator import (
+            _ERROR_TYPE_OVERFLOW_MARKER,
+            _MAX_ERROR_TYPE_LENGTH,
+            _sanitize_error_type,
+        )
+
+        long_type = "A" * (_MAX_ERROR_TYPE_LENGTH + 1)
+        assert _sanitize_error_type(long_type) == _ERROR_TYPE_OVERFLOW_MARKER
+
+    def test_normal_error_type_unchanged(self) -> None:
+        """Normal error types pass through unchanged."""
+        from app.ai.workflow.schema_validator import _sanitize_error_type
+
+        assert _sanitize_error_type("missing") == "missing"
+        assert _sanitize_error_type("extra_forbidden") == "extra_forbidden"
+
+    def test_extra_behavior_remains_intact(self) -> None:
+        """Existing <extra> behavior for unknown string components is preserved."""
+        from app.ai.workflow.schema_validator import (
+            _UNKNOWN_MARKER,
+            _sanitize_location_component,
+        )
+
+        assert _sanitize_location_component("unknown_field") == _UNKNOWN_MARKER
+        assert _sanitize_location_component("SECRET_API_KEY") == _UNKNOWN_MARKER
+
+
+class TestStructuredLogCapture:
+    """Verify that structured logs are genuinely inspected (Finding 2).
+
+    These tests capture the validator module's logger using unittest.mock
+    and inspect the actual keyword arguments passed to the log calls.
+    This verifies that raw model output, input-controlled field names,
+    and input values cannot enter structured log fields.
+    """
+
+    @pytest.fixture
+    def mock_logger(self, monkeypatch: pytest.MonkeyPatch) -> Any:
+        """Replace the validator module's logger with a Mock.
+
+        Returns the Mock object whose ``call_args`` and ``call_args_list``
+        can be inspected to verify the actual structured arguments.
+        """
+        from unittest.mock import MagicMock
+
+        mock = MagicMock()
+        monkeypatch.setattr(
+            "app.ai.workflow.schema_validator._logger",
+            mock,
+        )
+        return mock
+
+    def test_secret_in_extra_field_value_absent_from_log_args(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """A secret in an extra-field value is absent from captured log fields."""
+        data = json.loads(_valid_recommendation_json())
+        data["SECRET_EXTRA_FIELD"] = "SECRET_LOG_VALUE_999"
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(json.dumps(data))
+
+        # Inspect all warning calls.
+        for call in mock_logger.warning.call_args_list:
+            call_str = str(call)
+            assert "SECRET_LOG_VALUE_999" not in call_str
+            assert "SECRET_EXTRA_FIELD" not in call_str
+
+    def test_secret_in_extra_field_name_absent_from_log_args(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """A secret in an extra-field name is absent from captured log fields."""
+        raw = json.dumps({
+            "schema_version": "1.0",
+            "SECRET_API_KEY_NAME": "value",
+        })
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(raw)
+
+        for call in mock_logger.warning.call_args_list:
+            call_str = str(call)
+            assert "SECRET_API_KEY_NAME" not in call_str
+
+    def test_long_field_name_absent_from_and_cannot_enlarge_log(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """A very long field name is absent from and cannot enlarge logged metadata."""
+        long_name = "B" * 200
+        raw = json.dumps({"schema_version": "1.0", long_name: "value"})
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(raw)
+
+        for call in mock_logger.warning.call_args_list:
+            call_str = str(call)
+            assert long_name not in call_str
+
+    def test_logged_field_locations_obey_cap(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Logged field_locations obey their cap."""
+        data: dict[str, object] = {
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+        }
+        for i in range(50):
+            data[f"extra_field_{i}"] = "value"
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(json.dumps(data))
+
+        for call in mock_logger.warning.call_args_list:
+            kwargs = call.kwargs
+            if "field_locations" in kwargs:
+                assert len(kwargs["field_locations"]) <= 20
+
+    def test_logged_error_types_obey_cap(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Logged error_types obey their cap."""
+        data: dict[str, object] = {
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+        }
+        for i in range(50):
+            data[f"extra_field_{i}"] = "value"
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(json.dumps(data))
+
+        for call in mock_logger.warning.call_args_list:
+            kwargs = call.kwargs
+            if "error_types" in kwargs:
+                assert len(kwargs["error_types"]) <= 20
+
+    def test_logged_error_count_retains_full_count(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Logged error_count retains the full uncapped count."""
+        data: dict[str, object] = {
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+        }
+        for i in range(30):
+            data[f"extra_field_{i}"] = "value"
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(json.dumps(data))
+
+        for call in mock_logger.warning.call_args_list:
+            kwargs = call.kwargs
+            if "error_count" in kwargs:
+                assert kwargs["error_count"] >= 30
+
+    def test_malformed_json_log_contains_only_safe_classification(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Malformed JSON logging contains only the safe failure classification."""
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output("{not valid json")
+
+        # Should have exactly one warning call.
+        assert mock_logger.warning.call_count == 1
+        call = mock_logger.warning.call_args
+        kwargs = call.kwargs
+        assert kwargs.get("reason") == "INVALID_JSON"
+        # No raw content in any argument.
+        call_str = str(call)
+        assert "not valid json" not in call_str
+
+    def test_success_log_contains_only_permitted_metadata(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Success logging contains only schema_version and risk_count."""
+        validate_structured_output(_valid_recommendation_json())
+
+        assert mock_logger.info.call_count == 1
+        call = mock_logger.info.call_args
+        kwargs = call.kwargs
+        assert "schema_version" in kwargs
+        assert "risk_count" in kwargs
+        assert kwargs["schema_version"] == "1.0"
+        assert kwargs["risk_count"] == 1
+        # No raw content in any argument.
+        call_str = str(call)
+        assert "PLAN-2026-W31" not in call_str
+        assert "RISK-001" not in call_str
+        assert "Critical shortage" not in call_str
+
+    def test_neither_raw_output_nor_pydantic_details_logged(
+        self,
+        mock_logger: Any,
+    ) -> None:
+        """Neither raw model output nor complete Pydantic error details are logged."""
+        raw = json.dumps({
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+            "SECRET_FIELD": "SECRET_VALUE_LOG",
+        })
+        with pytest.raises(StructuredOutputValidationError):
+            validate_structured_output(raw)
+
+        for call in mock_logger.warning.call_args_list:
+            call_str = str(call)
+            assert "SECRET_VALUE_LOG" not in call_str
+            assert "SECRET_FIELD" not in call_str
+            # Pydantic's raw error details (which may echo input) should
+            # not appear in the log call — only sanitized metadata.
+            assert "msg=" not in call_str
+            assert "input=" not in call_str
