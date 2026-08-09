@@ -597,32 +597,87 @@ Each package below specifies the 15 required attributes.
 
 | Concern | Behavior |
 |---------|----------|
-| `POST /api/v1/workflow-runs` | Enqueues an ARQ job (`workflow_start`) and returns `202 Accepted` with `{run_id, state: PENDING, location}`. **No provider call, no risk calculation, no validation, no persistence beyond the initial `PENDING` run row** inside the HTTP request. |
-| `POST /api/v1/workflow-runs/{run_id}/retry` | Enqueues an ARQ job (`workflow_retry`) and returns `202 Accepted`. Allowed only when the run is in a terminal failure state (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`). |
+| `POST /api/v1/workflow-runs` | Requires `PRODUCTION_MANAGER` role (`require_role({"PRODUCTION_MANAGER"})`). Stores `current_user.username` in `WorkflowRun.triggered_by`. Enqueues an ARQ job (`workflow_start`) and returns `202 Accepted` with `{run_id, state: PENDING, location}`. **No provider call, no risk calculation, no validation, no persistence beyond the initial `PENDING` run row** inside the HTTP request. |
+| `POST /api/v1/workflow-runs/{run_id}/retry` | Requires authentication. Permitted when `current_user.username == workflow_run.triggered_by` (run creator) OR current user has `PRODUCTION_MANAGER` role. When `triggered_by IS NULL`, only `PRODUCTION_MANAGER` may retry. Authorization is evaluated before the D1 conditional transition. Performs one atomic conditional transition from an eligible failed state (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`) to `PENDING`, reusing the same `run_id`. After the transition is committed, enqueues an ARQ job (`workflow_retry`) and returns `202 Accepted`. Exactly one concurrent caller may win the transition; losing concurrent callers receive `409 Conflict`. Retry must not modify `triggered_by`. |
 | ARQ worker ownership | The worker executes the full vertical wiring: risk engine → provider call → schema validation → recommendation persistence (03B's `Recommendation` model) → state transitions (03B's state machine). The worker owns all long-running work. |
 | Polling | `GET /api/v1/workflow-runs/{run_id}` (03E) — the client polls persisted run state until a terminal state. DEC-012 approved approach (HTTP polling, 3s interval, stop at terminal). |
 | Deterministic risk result persistence | The risk engine result is persisted as part of the workflow run **independently of the provider call**. If the provider fails after the risk engine succeeds, the deterministic risk result remains persisted and available. |
-| Duplicate start/retry requests | Start and retry enqueue jobs keyed by `run_id`. A second enqueue request for the same idempotency key returns the existing `run_id` with `202 Accepted` and does **not** re-execute. ARQ job deduplication at the worker level prevents duplicate execution. |
-| Enqueue failure (Redis/ARQ unavailable) | If ARQ enqueue fails, the endpoint returns `503 Service Unavailable` and no run is created. The client may retry the start request. |
-| Concurrent retry | Concurrent retry requests for the same `run_id` are serialized by idempotency key — only one worker executes, the others observe the existing run. |
+| Duplicate start requests | Duplicate start requests continue to follow the already recorded start idempotency contract. A duplicate start request returns the existing `run_id` with `202 Accepted` and does **not** re-execute. This start behavior does not define retry replay semantics. Retry requests are governed exclusively by the D1 atomic conditional transition. Once the run has left an eligible `FAILED_*` state, another retry request receives `409 Conflict`. ARQ `_job_id` remains queue-level deduplication only and does not replace database serialization (DEC-013 §5). |
+| Enqueue failure (Redis/ARQ unavailable) — C1 | For both start and retry, the required sequence is: (1) create or transition the workflow run to `PENDING`; (2) commit the durable `PENDING` state; (3) attempt ARQ enqueue only after that commit; (4) if enqueue fails, return `503 Service Unavailable`; (5) preserve the committed `PENDING` run; (6) allow the periodic reconciler to find and re-enqueue it. If enqueue fails, the committed `PENDING` run is not orphaned and the reconciler handles it in the same manner as any other stale `PENDING` run. For start enqueue failure, the `503` response must not expose the newly created `run_id`. A database failure before commit is a different failure category and must not be described as an enqueue failure. |
+| Concurrent retry serialization | Concurrent retry requests for the same `run_id` are serialized by the database conditional-transition rule (`UPDATE ... WHERE state = :expected RETURNING id`, DEC-013 §5). Exactly one concurrent caller wins the transition to `PENDING`; all losing concurrent callers receive `409 Conflict`. ARQ `_job_id` deduplication is queue-level only and does not replace database serialization. |
 | No blocking of HTTP lifecycle | The HTTP request returns within the API latency budget. No synchronous provider call, no synchronous risk calculation longer than the API timeout, no synchronous persistence beyond the `PENDING` row. |
 | DEC-011 preservation | No new orchestration technology is introduced. ARQ + Redis (already Accepted in DEC-011) is the sole background-job mechanism. DEC-011 is **not modified** by this package. |
 
+**D1 retry state-transition contract (Product Owner decision, 2026-08-09):**
+
+**Decision D1 — Select Option 1: an explicit user-initiated retry transitions an eligible failed run back to `PENDING`, reusing the same `run_id`.**
+
+Permitted retry transitions (the only outgoing transitions from terminal states):
+
+| Source state | Target state | Mechanism |
+|--------------|--------------|----------|
+| `FAILED_PROVIDER` | `PENDING` | Atomic conditional UPDATE (`WHERE state = 'FAILED_PROVIDER' RETURNING id`) |
+| `FAILED_VALIDATION` | `PENDING` | Atomic conditional Update (`WHERE state = 'FAILED_VALIDATION' RETURNING id`) |
+| `FAILED_INTERNAL` | `PENDING` | Atomic conditional Update (`WHERE state = 'FAILED_INTERNAL' RETURNING id`) |
+
+`COMPLETED` remains ineligible for retry and has no outgoing transition. The three failed states remain terminal for ordinary workflow execution and polling. An authenticated and authorized retry request is an explicit external action that opens a new attempt through an approved state-machine transition. This is not authorization for direct SQL bypass of the state machine.
+
+**Contract semantics:**
+
+1. Retry reuses the existing workflow run and returns the same `run_id`.
+2. The retry endpoint performs one atomic conditional transition from an eligible failed state to `PENDING`.
+3. Exactly one concurrent caller may win the transition.
+4. Losing concurrent callers receive `409 Conflict`.
+5. ARQ `_job_id` remains queue-level deduplication only and does not replace database serialization.
+6. After the transition to `PENDING` is committed, enqueue occurs.
+7. If enqueue fails, the durable `PENDING` run remains available to the periodic reconciler.
+8. The reconciler handles a retried `PENDING` run in the same manner as any other stale `PENDING` run.
+9. The worker must retain its database state guard before execution (the conditional `PENDING → RUNNING` UPDATE in `WorkflowEngine._transition_run` is not bypassed).
+10. Previous `WorkflowStep` records remain append-only; new steps for the retried attempt get new sequence numbers after the prior max.
+11. Beginning a retry clears stale run-level terminal data required for the new attempt: `error_code`, `error_detail`, and `completed_at` are set to `NULL` atomically in the same conditional UPDATE that transitions to `PENDING`.
+12. `started_at` handling: The existing model and engine semantics are **not authoritative** on whether `started_at` must be cleared for a retried attempt. The `WorkflowRun` model docstring says `started_at` is the "timestamp when the run transitioned to RUNNING"; the engine sets `started_at` only on the `PENDING → RUNNING` conditional UPDATE. However, no existing contract explicitly states whether a retried run (already having a prior `started_at` from a previous `RUNNING` transition) must clear `started_at` to `NULL` on the retry `→ PENDING` transition, or whether the subsequent `PENDING → RUNNING` transition overwrites it with a new timestamp. This is a narrowly identified implementation decision for 03F: the retry transition must either (a) clear `started_at` to `NULL` in the same conditional UPDATE that clears `error_code`/`error_detail`/`completed_at`, so the new `PENDING → RUNNING` sets a fresh `started_at`; or (b) leave `started_at` and let the subsequent `PENDING → RUNNING` overwrite it. Option (a) is recommended for data cleanliness (a retried run's `started_at` should reflect the new attempt, not a prior failed attempt), but the choice is deferred to implementation because no existing authoritative contract mandates either behavior.
+13. `created_at` and prior step timestamps are preserved; the retry does not reset the run's creation time or modify existing step records.
+14. Retry metadata or retry count: no existing canonical retry-count field exists on `WorkflowRun` as of the 03B implementation. Do not introduce a new field during this task. If a retry-count mechanism is needed, it must be introduced in a separate approved work package.
+15. A valid retry-eligible failed run should not contain a `Recommendation`: recommendation persistence occurs only after successful validation, successful validation produces `COMPLETED`, and `COMPLETED` cannot be retried. Do not justify recommendation upsert using the impossible scenario "a previous successful retry later becomes failed."
+16. Defensive handling of inconsistent legacy data (a `Recommendation` row associated with a failed run) is not required by any existing authoritative contract; do not add speculative cleanup logic for this task.
+
+**D2 role-based access contract (Product Owner decision, 2026-08-09):**
+
+**Decision D2 — Start requires `PRODUCTION_MANAGER`; retry is permitted for the run creator OR `PRODUCTION_MANAGER`.**
+
+1. `POST /api/v1/workflow-runs` requires the `PRODUCTION_MANAGER` role, enforced through the existing `require_role({"PRODUCTION_MANAGER"})` dependency.
+2. A user-created run stores `current_user.username` in the existing `WorkflowRun.triggered_by` field on creation.
+3. `POST /api/v1/workflow-runs/{run_id}/retry` is permitted when either:
+   - `current_user.username == workflow_run.triggered_by` (run creator); or
+   - the current user has the `PRODUCTION_MANAGER` role.
+4. The exact authorized-role set for retry is `PRODUCTION_MANAGER` only. Do not add `AI_ADMINISTRATOR`, `ENGINEER`, `PROCUREMENT_SPECIALIST`, or `AUDITOR`.
+5. When `triggered_by IS NULL`, ownership cannot authorize retry; a `PRODUCTION_MANAGER` may still retry.
+6. Retry must not modify or replace `triggered_by`.
+7. An authenticated user who is neither the run creator nor a `PRODUCTION_MANAGER` receives `403 Forbidden` with the existing `insufficient_permissions` error contract.
+8. An unauthenticated caller receives `401`.
+9. Authorization is evaluated before the D1 conditional retry transition:
+   - unauthorized caller → `403`, with no transition or enqueue;
+   - authorized caller whose run is no longer retry-eligible → `409`;
+   - authorized concurrent loser → `409`.
+10. This does not reopen or modify any accepted D1 semantics.
+
 **4. Exact included scope:**
+- `backend/app/ai/workflow/state_machine.py` — extend the existing transition table with the three approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) per the D1 retry contract above. No new state, no `RETRY_PENDING`, no ORM CHECK-constraint change, no Alembic migration.
 - `backend/app/api/workflow.py` — extend with:
-  - `POST /api/v1/workflow-runs` — enqueues ARQ job, returns `202 Accepted` with `run_id`
-  - `POST /api/v1/workflow-runs/{run_id}/retry` — enqueues ARQ retry job, returns `202 Accepted`
+  - `POST /api/v1/workflow-runs` — requires `PRODUCTION_MANAGER` via `require_role({"PRODUCTION_MANAGER"})`; stores `current_user.username` in `triggered_by`; enqueues ARQ job, returns `202 Accepted` with `run_id`
+  - `POST /api/v1/workflow-runs/{run_id}/retry` — requires authentication; permits run creator (`triggered_by` match) OR `PRODUCTION_MANAGER`; performs the atomic conditional `→ PENDING` transition, then enqueues ARQ retry job, returns `202 Accepted`; does not modify `triggered_by`
 - `backend/app/ai/workflow/vertical.py` — vertical wiring executed **inside the ARQ worker**: risk engine → provider call → schema validation → recommendation persistence; distinguishes automatic retry (03D) from user-initiated retry (this package)
 - `backend/app/ai/workflow/worker.py` — ARQ worker functions `workflow_start(ctx, plan_id, ...)` and `workflow_retry(ctx, run_id, ...)`; idempotency-key handling; enqueue-failure path; state transitions
 - `backend/app/schemas/workflow.py` — update with start/retry request schemas (`plan_id`) and accepted response schema (`run_id`, `state`, `location`)
-- Unit tests: `backend/tests/unit/test_workflow_api_start_retry.py` (HTTP-level: enqueue mocked, 202 response shape, idempotency, terminal-state check on retry, enqueue-failure 503)
+- Unit tests: `backend/tests/unit/test_workflow_api_start_retry.py` (HTTP-level: enqueue mocked, 202 response shape, idempotency, terminal-state check on retry, enqueue-failure 503, concurrent-retry 409)
+- State-machine tests: `backend/tests/unit/test_workflow_state_machine.py` (extend existing tests to verify the three new retry transitions `FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING` are accepted, `COMPLETED → PENDING` is rejected, and terminal-state behavior is updated for the three retry-eligible failed states)
 - Worker tests: `backend/tests/unit/test_workflow_worker.py` (worker logic: full lifecycle, risk-persistence-on-provider-failure, duplicate-key handling, retry-from-terminal-only)
 - Integration tests: `backend/tests/integration/test_workflow_start_retry.py` (enqueue → worker → state transitions → recommendation persistence; retry → terminal-state check; enqueue failure → 503)
 
 **5. Explicit exclusions:**
 - No approval/audit/procurement logic (Phase 6 / WP-REC-04)
 - No document access control or RAG integration (WP-REC-05)
-- No new provider adapter or state machine logic (03A/03B)
+- No new provider adapter logic (03A) and no unrelated state-machine redesign (03B) — **except** the three narrowly approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) added to the existing transition table in `backend/app/ai/workflow/state_machine.py` per the D1 retry contract below. This resolves reconnaissance contradiction **C2**: the WP-REC-03F retry requirement needed `FAILED_* → PENDING` transitions, but the former exclusion prohibited all new state-machine logic. C2 is resolved by permitting only these three approved transitions while continuing to prohibit unrelated state-machine redesign. No `RETRY_PENDING` state, no new state, no ORM CHECK-constraint change, no Alembic migration, and no other transition-table changes are introduced.
 - No automatic retry policy (03D — this package provides user-initiated retry only)
 - No controlled write actions — no procurement task creation, no approval (Phase 6)
 - No frontend changes (that is 03G)
@@ -630,10 +685,12 @@ Each package below specifies the 15 required attributes.
 - No synchronous execution of risk calculation, provider call, validation, or persistence inside the HTTP request lifecycle
 
 **6. Permitted repository areas:**
+- `backend/app/ai/workflow/state_machine.py` (extend 03B — add three retry transitions only)
 - `backend/app/api/workflow.py` (extend 03E)
 - `backend/app/ai/workflow/vertical.py` (new)
 - `backend/app/ai/workflow/worker.py` (new)
 - `backend/app/schemas/workflow.py` (update)
+- `backend/tests/unit/test_workflow_state_machine.py` (extend 03B tests — verify new retry transitions)
 - `backend/tests/unit/test_workflow_api_start_retry.py` (new test)
 - `backend/tests/unit/test_workflow_worker.py` (new test)
 - `backend/tests/integration/test_workflow_start_retry.py` (new test)
@@ -658,21 +715,25 @@ Each package below specifies the 15 required attributes.
 
 **9. Acceptance tests and additional unit/integration tests:**
 - AT-013 backend clauses (PASS after 03F, pending all clauses verified): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). The UI clauses (non-freezing UI, user can retry in UI) require 03G.
-- Additional unit tests (HTTP): start returns 202 with `run_id`; retry returns 202 only on terminal failure states; retry on non-terminal returns 409; duplicate start with same idempotency key returns existing `run_id`; enqueue failure returns 503.
-- Additional worker tests: full lifecycle enqueue → run → complete; provider failure after risk engine → risk result persisted + run marked `FAILED_PROVIDER`; retry from `FAILED_PROVIDER` → success; retry from `FAILED_VALIDATION` → success; duplicate key at worker level skipped; enqueue failure → 503, no run row created.
+- Additional unit tests (HTTP): start returns 202 with `run_id` (as `PRODUCTION_MANAGER`); start returns 403 for authenticated non-`PRODUCTION_MANAGER`; start returns 401 for unauthenticated; `triggered_by` is set to `current_user.username` on start; retry returns 202 only on eligible failed states (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`) for run creator or `PRODUCTION_MANAGER`; retry on `COMPLETED` returns 409 (non-retryable terminal); retry on non-terminal (`RUNNING`, `AWAITING_VALIDATION`) returns 409; retry on `PENDING` returns 409; retry by non-creator/non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by `PRODUCTION_MANAGER` returns 202; retry does not modify `triggered_by`; duplicate start with same idempotency key returns existing `run_id`; enqueue failure returns 503; concurrent retry — losing caller receives 409.
+- Additional state-machine unit tests: `FAILED_PROVIDER → PENDING` accepted; `FAILED_VALIDATION → PENDING` accepted; `FAILED_INTERNAL → PENDING` accepted; `COMPLETED → PENDING` rejected (non-retryable terminal); `get_allowed_transitions` for the three failed states now includes `PENDING`; `get_allowed_transitions` for `COMPLETED` remains empty; `is_terminal` for the three failed states still returns `True` (terminal for ordinary execution); `TERMINAL_STATES` frozenset unchanged (the three failed states remain in it — retry is an explicit external action, not a polling/ordinary transition).
+- Additional worker tests: full lifecycle enqueue → run → complete; provider failure after risk engine → risk result persisted + run marked `FAILED_PROVIDER`; retry from `FAILED_PROVIDER` → success; retry from `FAILED_VALIDATION` → success; ARQ duplicate delivery at worker level skipped (queue-level `_job_id` deduplication only; does not alter the retry endpoint's `409` behavior); enqueue failure → 503 (committed `PENDING` row remains, reconciler can recover); start enqueue failure → 503 (response does not expose `run_id`); worker retains database state guard (conditional `PENDING → RUNNING` UPDATE) before execution on a retried run.
 - Additional integration tests: full start → run → complete lifecycle with recommendation persisted; start → provider outage → `FAILED_PROVIDER` → user retry via endpoint → success; start → invalid output → `FAILED_VALIDATION` → user retry; deterministic risk result queryable independently of provider outcome.
 
 **10. Failure and rollback behavior:**
-- Start API failure: 400 if plan not found, 401 if unauthenticated, 503 if ARQ enqueue fails, 500 on other internal error
-- Retry API failure: 409 if run not in terminal failure state, 404 if run not found, 503 if ARQ enqueue fails
+- Start API failure: 401 if unauthenticated, 403 if authenticated but not `PRODUCTION_MANAGER`, 400 if plan not found, 503 if ARQ enqueue fails, 500 on other internal error
+- Retry API failure: 401 if unauthenticated, 403 if authenticated but neither run creator nor `PRODUCTION_MANAGER`, 409 if run not in an eligible failed state (including `COMPLETED`, `PENDING`, `RUNNING`, `AWAITING_VALIDATION`), 404 if run not found, 503 if ARQ enqueue fails (committed `PENDING` run remains for reconciler)
 - Worker failure: exception in worker → run marked `FAILED_INTERNAL`; risk result (already persisted) remains queryable
-- Concurrency: retry is idempotent per idempotency key; concurrent retry requests for the same run are serialized via key deduplication
+- Concurrency: retry is serialized by the database conditional-transition rule (`UPDATE ... WHERE state = :expected RETURNING id`); exactly one concurrent caller wins the `→ PENDING` transition; losing concurrent callers receive `409 Conflict`. ARQ `_job_id` deduplication is queue-level only.
 - No write actions created (by design — write actions are Phase 6)
 - Rollback: revert feature branch; no database changes beyond 03B
 
 **11. Security and secrets constraints:**
-- Start/retry APIs require authentication (existing `get_current_user` dependency)
-- Role-based access: only Production Manager can start workflow runs; only the run creator or authorized roles can retry
+- Start API requires `PRODUCTION_MANAGER` role via `require_role({"PRODUCTION_MANAGER"})` (D2); unauthenticated → 401; authenticated non-`PRODUCTION_MANAGER` → 403
+- Start stores `current_user.username` in `WorkflowRun.triggered_by` on creation (D2)
+- Retry API requires authentication; permitted for run creator (`current_user.username == triggered_by`) OR `PRODUCTION_MANAGER` (D2); unauthenticated → 401; authenticated non-creator/non-`PRODUCTION_MANAGER` → 403; when `triggered_by IS NULL`, only `PRODUCTION_MANAGER` may retry
+- Retry does not modify or replace `triggered_by` (D2)
+- Authorization is evaluated before the D1 conditional retry transition: unauthorized → 403 with no transition or enqueue; authorized but state-ineligible → 409; authorized concurrent loser → 409 (D2)
 - No secrets in vertical wiring or API code
 - Provider errors do not leak API keys or internal details to the client
 - ARQ job payloads contain no secrets (risk engine input is deterministic data, no LLM tokens)
@@ -683,18 +744,22 @@ Each package below specifies the 15 required attributes.
 - Worker logs: correlation ID, run_id, each step (risk engine, provider call, validation, persistence), enqueue duration, worker duration, final state
 - Enqueue failure logged with correlation ID and cause
 
-**13. Estimated size:** M (5-7 new/updated files, ~400-500 lines implementation + ~400-500 lines tests). Split from the prior monolithic 03F into backend execution (this package, M) and frontend interaction (03G, S) because the original 03F bundled HTTP/worker/persistence/UI concerns into one review unit.
+**13. Estimated size:** M (6-9 new/updated files, ~450-550 lines implementation + ~450-550 lines tests). Includes the state-machine transition-table extension and its tests. Split from the prior monolithic 03F into backend execution (this package, M) and frontend interaction (03G, S) because the original 03F bundled HTTP/worker/persistence/UI concerns into one review unit.
 
 **14. Exit criteria:**
-- `POST /api/v1/workflow-runs` enqueues an ARQ job and returns `202 Accepted` with `run_id` within API latency budget (no provider call, no risk calculation, no validation, no persistence beyond `PENDING` row inside the HTTP request)
-- `POST /api/v1/workflow-runs/{run_id}/retry` enqueues an ARQ retry job and returns `202 Accepted`; rejects non-terminal states with 409
+- `POST /api/v1/workflow-runs` requires `PRODUCTION_MANAGER` via `require_role({"PRODUCTION_MANAGER"})`; stores `current_user.username` in `triggered_by`; enqueues an ARQ job and returns `202 Accepted` with `run_id` within API latency budget (no provider call, no risk calculation, no validation, no persistence beyond `PENDING` row inside the HTTP request)
+- `POST /api/v1/workflow-runs/{run_id}/retry` requires authentication; permits run creator (`triggered_by` match) OR `PRODUCTION_MANAGER`; performs one atomic conditional transition from an eligible failed state to `PENDING`, then enqueues an ARQ retry job and returns `202 Accepted`; rejects `COMPLETED`, `PENDING`, `RUNNING`, and `AWAITING_VALIDATION` with 409; does not modify `triggered_by`
+- Unauthenticated start/retry returns 401; authenticated non-`PRODUCTION_MANAGER` start returns 403; authenticated non-creator/non-`PRODUCTION_MANAGER` retry returns 403; `triggered_by IS NULL` retry by non-`PRODUCTION_MANAGER` returns 403
+- State machine transition table extended with `FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`; `COMPLETED` has no outgoing transition; no new state, no `RETRY_PENDING`, no ORM CHECK-constraint change, no Alembic migration
+- State-machine unit tests verify the three new retry transitions are accepted, `COMPLETED → PENDING` is rejected, and `TERMINAL_STATES` frozenset is unchanged
 - ARQ worker executes vertical wiring: risk engine → provider → validation → recommendation persistence
-- Duplicate start/retry requests return the same `run_id` without re-executing (idempotency key)
-- Enqueue failure returns 503; no orphan run created
-- Concurrent retry requests for the same `run_id` are serialized (one worker executes, others observe)
+- Duplicate start requests return the existing `run_id` under the existing start idempotency contract without re-executing; retry requests use the D1 atomic state transition, and any caller that does not win an eligible `FAILED_* → PENDING` transition receives `409 Conflict`
+- Enqueue failure returns 503; committed `PENDING` run remains available to the reconciler for both start and retry; start enqueue failure `503` response does not expose the new `run_id`
+- Concurrent retry requests for the same `run_id` are serialized by the database conditional-transition rule; exactly one caller wins, losing callers receive `409 Conflict`
+- Worker retains its database state guard (conditional `PENDING → RUNNING` UPDATE) before execution on a retried run
 - Deterministic risk result persisted and queryable even when provider fails after the risk engine succeeds
 - AT-013 backend clauses verifiable (risk engine result available, failed step visible in API trace)
-- All backend unit, worker, and integration tests pass
+- All backend unit, worker, and integration tests pass (including extended `test_workflow_state_machine.py`)
 - Linter and type checks pass
 - DEC-011 (ARQ + Redis) explicitly preserved; no new orchestration technology introduced
 
