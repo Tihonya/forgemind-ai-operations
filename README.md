@@ -1,6 +1,6 @@
 # ForgeMind AI Operations
 
-Supply Risk Intelligence — a portfolio-grade industrial AI demonstration.
+Controlled AI-assisted Supply Risk Intelligence portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow.
 
 ## Live Demo
 
@@ -31,11 +31,14 @@ ForgeMind is a web platform for AI-assisted supply chain risk assessment in engi
 
 **Currently implemented:**
 - **Deterministic business logic** (Python/SQL) for risk calculation
-- **RAG-powered document intelligence** for evidence retrieval (implementation complete; integration test AT-006 requires live database and was not executed in this review environment)
+- **RAG-powered document intelligence** for evidence retrieval (implementation complete; AT-006 requires formal verification against a live database)
+- **AI provider adapter** — OpenAI-compatible ChatProvider (WP-REC-03A, merged)
+- **Workflow state machine + engine** — explicit state machine with 7 states and immutable transitions (WP-REC-03B, merged)
 
 **Release 1 targets (not yet implemented):**
 - **Structured AI recommendations** with human-in-the-loop approval
 - **Complete audit traceability** for every workflow step
+- **Public HTTPS deployment** with demo reset
 
 Release 1 is a **public portfolio MVP** demonstrating one complete vertical scenario: **Production Plan Supply Risk Review**.
 
@@ -45,12 +48,20 @@ Release 1 is a **public portfolio MVP** demonstrating one complete vertical scen
 
 A Production Manager logs in, views an active production plan, runs supply risk analysis, receives AI-explained recommendations with document citations, approves a procurement action, and reviews the complete audit trail — all with synthetic data only.
 
-**Currently working:**
-- Login and authentication (AT-002)
+**Currently working (demonstrable):**
+- Login and authentication
 - Dashboard with synthetic production plan
 - Supply risk list and detail views
-- Deterministic risk calculation (AT-003, AT-004 verified)
-- RAG document retrieval infrastructure (AT-006 test exists but not executed in this review)
+- Deterministic risk calculation (AT-003, AT-004, AT-005 verified)
+- RAG document retrieval infrastructure (AT-006 test exists but requires formal verification)
+
+**Not yet working (Release 1 targets):**
+- Structured AI recommendations (Phase 5: WP-REC-03C through 03G)
+- Human approval workflow (Phase 6)
+- Audit trace (Phase 6)
+- Public HTTPS deployment (Phase 7)
+
+The full 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) is not yet complete. The current demonstrable journey covers steps 1–4 (deterministic core) plus partial step 8 (deterministic risk display).
 
 **Target audience:** Recruiters and technical reviewers evaluating AI-assisted industrial workflow capabilities.
 
@@ -125,13 +136,13 @@ Release 1 implements one complete vertical scenario:
 
 **Production Plan Supply Risk Review (5 condensed milestones)**
 
-1. Synthetic production plan → deterministic risk calculation ✅ IMPLEMENTED (AT-003, AT-004 verified)
-2. RAG over synthetic engineering documents → cited retrieval ⚠️ IMPLEMENTATION COMPLETE (AT-006 test exists but requires live database; not executed in this review)
-3. Structured AI recommendation → human approval ❌ NOT IMPLEMENTED
-4. Controlled procurement task creation → complete audit trace ❌ NOT IMPLEMENTED
-5. Public HTTPS deployment → demo reset ❌ NOT IMPLEMENTED
+1. Synthetic production plan → deterministic risk calculation ✅ IMPLEMENTED (AT-003, AT-004, AT-005 verified)
+2. RAG over synthetic engineering documents → cited retrieval ⚠️ IMPLEMENTATION COMPLETE (AT-006 test exists; requires formal verification)
+3. Structured AI recommendation → human approval ❌ NOT IMPLEMENTED (Phase 5: WP-REC-03C through 03G)
+4. Controlled procurement task creation → complete audit trace ❌ NOT IMPLEMENTED (Phase 6)
+5. Public HTTPS deployment → demo reset ❌ NOT IMPLEMENTED (Phase 7)
 
-**Current implementation status:** Step 1 is verified by passing integration tests. Step 2 has implementation code and an integration test file, but the test requires a live PostgreSQL database and was not executed in this review environment. Steps 3–5 (AI recommendation, approval, procurement, audit, public deployment) are not implemented.
+**Current implementation status:** Step 1 is verified by passing integration tests and the Playwright E2E test. Step 2 has implementation code and an integration test file; formal AT-006/AT-007 PASS evidence requires a bounded verification package. Steps 3–5 (AI recommendation, approval, procurement, audit, public deployment) are not implemented.
 
 **Canonical Golden Scenario:** The full 13-step Golden Scenario is defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2. The 5 condensed milestones above map to subsets of the canonical steps.
 
@@ -140,7 +151,7 @@ See [docs/next_steps.md](docs/next_steps.md) for the full status and blockers.
 ## Documentation
 
 - [Source of Truth](forgemind_project_source_of_truth/)
-- [Phase 0 Bootstrap Plan](docs/planning/phase_0_bootstrap_plan.md)
+- [Product Strategy (WP-STRAT-01)](docs/planning/wp_strat_01_product_strategy.md)
 - [Requirements Traceability](docs/planning/requirements_traceability_matrix.md)
 - [Open Questions](docs/planning/open_questions.md)
 
@@ -149,7 +160,7 @@ See [docs/next_steps.md](docs/next_steps.md) for the full status and blockers.
 | Layer | Choice |
 |-------|--------|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
-| AI/ML | ARQ + Redis (AI provider adapter: planned for Phase 5, not yet implemented) |
+| AI/ML | ARQ + Redis, OpenAI-compatible ChatProvider adapter (WP-REC-03A, merged) |
 | Frontend | React 18, TypeScript, Vite, Tailwind, shadcn/ui |
 | Database | PostgreSQL + pgvector |
 | Infra | Docker Compose, Caddy, GitHub Actions |

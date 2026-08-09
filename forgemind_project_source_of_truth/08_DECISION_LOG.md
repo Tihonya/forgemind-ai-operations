@@ -420,6 +420,85 @@ contract.
 
 ---
 
+## DEC-034 — Phase 4 status: PARTIALLY COMPLETE (SD-1)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** SoT 07_ROADMAP.md Phase 4 exit criteria require "AT-006, AT-007 pass." docs/next_steps.md previously marked Phase 4 as COMPLETE. However, AT-006 has a test file and retrieval infrastructure but has NOT been verified as PASS (requires live database execution). AT-007 has implementation at service/API level (DocumentPermission model, role-filtered retriever SQL, server-side role derivation, unauthorized-role test) but has NOT been verified as PASS under its complete Source of Truth acceptance contract.
+**Decision:** Reclassify Phase 4 as PARTIALLY COMPLETE until AT-006 and AT-007 have accepted PASS evidence. The exit criteria (AT-006, AT-007 pass; evaluation fixtures створені) are not weakened.
+**Reason:** SoT 07 exit criteria require AT-006+AT-007 PASS. Evidence is incomplete. Keeping COMPLETE while exit criteria are unmet creates a documentation/status and acceptance-evidence contradiction. Substantial implementation exists — this is not a false technical foundation, but incomplete formal acceptance evidence.
+**Consequences:** Phase 4 status is PARTIALLY COMPLETE across all status documents. Phase 5 builds on real, implemented infrastructure.
+**Affected documents/tests:** `07_ROADMAP.md`, `docs/next_steps.md`, `docs/ACTIVE_WORK.md`, `README.md`, `docs/planning/requirements_traceability_matrix.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-035 — Separate AT-006/AT-007 verification package (SD-2)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** AT-006 and AT-007 both have relevant implementation but neither has been confirmed as PASS under the complete Source of Truth acceptance contract. AT-006 requires live database execution. AT-007 requires formal execution and confirmation that restricted content is excluded from the complete authenticated retrieval context/response path.
+**Decision:** Use a separate, bounded verification package for AT-006 and AT-007. Do not assign acceptance-test execution to WP-ARCH-01.
+**Reason:** WP-ARCH-01 owns architecture hygiene and agent onboarding, not acceptance-test verification. A bounded verification package keeps scope clean.
+**Consequences:** A bounded verification package will be separately authorized. This decision does not authorize execution of that package.
+**Affected documents/tests:** `docs/next_steps.md`, `docs/planning/wp_strat_01_product_strategy.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-036 — WP-REC-03C–03G sequence preserved (SD-3)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** The WP-REC-03 decomposition defines a dependency chain: 03C → 03D → 03E → 03F → 03G. An alternative sequence could prioritize 03E (first externally observable demo progress) earlier.
+**Decision:** Keep the current sequence: 03C → 03D → 03E → 03F → 03G. User-visible velocity does not justify violating the established dependency sequence.
+**Reason:** The decomposition's dependency chain is internally consistent. Reordering would break dependencies and increase risk.
+**Consequences:** The delivery sequence preserves the decomposed order. Each package requires separate authorization.
+**Affected documents/tests:** `docs/planning/wp_rec_03_decomposition.md`, `docs/next_steps.md`, `docs/planning/wp_strat_01_product_strategy.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-037 — WP-REC-05 positioning (SD-4)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** WP-REC-05 (Phase 4 completion: AT-006/AT-007 verification + RAG integration into AI workflow) needs positioning relative to Phase 5 packages and Phase 6.
+**Decision:** Position WP-REC-05 after WP-REC-03C–03G completion and before Phase 6.
+**Reason:** RAG integration into the AI workflow requires the workflow pipeline (03F) to exist. Phase 6 (approval/audit) requires RAG citations in recommendations.
+**Consequences:** The delivery sequence is: 03C–03G → WP-REC-05 → Phase 6. WP-REC-05 is NOT AUTHORIZED by this decision.
+**Affected documents/tests:** `07_ROADMAP.md`, `docs/next_steps.md`, `docs/planning/wp_strat_01_product_strategy.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-038 — Release 1 framing (SD-5)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** The product needs a concise, canonical framing that communicates its scope and positioning to recruiters and technical reviewers.
+**Decision:** Use the framing: "Controlled AI-assisted Supply Risk Intelligence portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow."
+**Reason:** Emphasizes deterministic control, AI assistance (not autonomy), auditability, human approval, and single vertical workflow.
+**Consequences:** This framing is applied in README.md and all status documents. It does not change the product scope or acceptance criteria.
+**Affected documents/tests:** `README.md`, `docs/next_steps.md`, `docs/planning/wp_strat_01_product_strategy.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-039 — Two-phase risk engine ↔ AI contract (TD-4)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** Open question Q-19 proposed a two-phase approach for the risk engine ↔ AI output contract. The architectural principle (SoT 02 §1, DEC-004) requires that the LLM does not own deterministic values.
+**Decision:** Two-phase contract: deterministic code owns quantities, severity, constraints, feasible facts, state transitions, and business-rule enforcement. AI enriches validated facts with explanations, business impact, and structured recommendations.
+**Reason:** Matches the architectural principle that LLM doesn't do arithmetic. Deterministic numbers come from the engine; LLM adds human-readable context and recommendations.
+**Consequences:** Affects structured-output schema design (WP-REC-03C) and recommendation schema. Consistent with DEC-004.
+**Affected documents/tests:** `docs/planning/wp_strat_01_product_strategy.md`, `docs/planning/open_questions.md`
+**Approved by:** Product Owner (2026-08-09)
+
+## DEC-040 — Role-based document permissions direction (TD-5)
+
+**Date:** 2026-08-09
+**Status:** Accepted
+**Context:** Open question Q-20 proposed role-based document permissions. The current implementation already uses role-based behavior: retriever.py filters via document_permissions join on role_id, and retrieval.py derives role IDs server-side from the authenticated user.
+**Decision:** Role-based document permissions match the current implementation direction. Each role has access to certain document access levels (public, internal, restricted).
+**Reason:** Simpler, matches RBAC model. Sufficient for MVP synthetic data. Consistent with the existing implementation.
+**Consequences:** Formal decision is recorded. AT-007 verification remains required via a bounded verification package (DEC-035). The current implementation direction is confirmed.
+**Affected documents/tests:** `docs/planning/wp_strat_01_product_strategy.md`, `docs/planning/open_questions.md`, `backend/app/ai/rag/retriever.py`, `backend/app/api/retrieval.py`
+**Approved by:** Product Owner (2026-08-09)
+
+---
+
 ## Template for new decisions
 
 ```markdown
