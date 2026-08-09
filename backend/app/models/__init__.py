@@ -27,6 +27,7 @@ from app.models.production import (
 from app.models.supplier import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.user import Role, User, UserRole
 from app.models.warehouse import InventoryBalance, InventoryReservation, Warehouse
+from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
 
 __all__ = [
     # Diagnostic (Phase 1)
@@ -68,4 +69,8 @@ __all__ = [
     "DocumentPermission",
     # Knowledge chunks (WP-4.2)
     "KnowledgeChunk",
+    # Workflow (WP-REC-03B)
+    "WorkflowRun",
+    "WorkflowStep",
+    "Recommendation",
 ]
