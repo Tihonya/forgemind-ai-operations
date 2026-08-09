@@ -100,14 +100,231 @@
 
 ## DEC-013 — Workflow orchestration
 
-**Date:** 2026-07-15  
-**Status:** Proposed  
-**Context:** 02_SYSTEM_BEHAVIOR_AND_DATA.md §2 says "LangGraph або власна explicit state machine".  
-**Decision:** Use custom explicit state machine (no LangGraph).  
-**Reason:** No extra dependency, fully debuggable, matches SoT preference.  
-**Consequences:** Defines backend/ai/workflow/ architecture in Phase 5.  
-**Affected documents/tests:** backend/app/ai/workflow/  
-**Approved by:** Pending
+**Date:** 2026-07-15 (Accepted 2026-08-09)
+**Status:** Accepted
+**Approved by:** Product Owner (2026-08-09)
+
+### Context
+
+The recovery workflow (WP-REC-03 / MVP Phase 5: AI Workflow) requires a
+mechanism to drive the sequence of steps that connect deterministic risk
+calculation to AI provider invocation, structured-output validation,
+recommendation persistence, and user-visible retry. The workflow must be
+auditable: every state transition must be traceable, inspectable, and
+reproducible from persisted records.
+
+The existing background execution mechanism is ARQ + Redis (DEC-011,
+Accepted). ARQ already runs document ingestion and diagnostic jobs in
+`backend/app/worker.py`. ARQ handles dispatch and execution of background
+jobs — it is not a workflow state machine and does not provide transition
+validation, domain state introspection, or audit-grade transition
+logging.
+
+WP-REC-03A (AI Provider Adapter — Chat/Reasoning) is complete and merged
+through PR #63 at `5c86000046ea265c799dab05d6e23601d0fe79c0`. The
+`ChatProvider` abstraction (`backend/app/ai/provider/chat_provider.py`)
+provides `async complete(prompt, schema, context) -> ChatResult` with
+`correlation_id` propagation via the `context` dict. DEC-013 must preserve
+compatibility with this merged provider abstraction — the workflow engine
+calls the provider through the `ChatProvider` interface, not through any
+LangGraph-specific contract.
+
+WP-REC-03B (Workflow/State-Machine Foundation) is the next implementation
+package. Its scope is an explicit state machine, workflow run/step models,
+a `WorkflowEngine` class, correlation-ID propagation, and a migration.
+DEC-013 is the decision gate (WP-REC-03-DEC-GATE-1) that unblocks 03B.
+
+`02_SYSTEM_BEHAVIOR_AND_DATA.md` §2 lists "LangGraph або власна explicit
+state machine — обрати один" as the open choice. This decision resolves
+that choice.
+
+### Decision
+
+ForgeMind will use its own explicit application-owned workflow state
+machine. LangGraph is not introduced.
+
+Specifically:
+
+1. **Explicit application-owned state machine.** The workflow lifecycle
+   (PENDING → RUNNING → AWAITING_VALIDATION → COMPLETED /
+   FAILED_VALIDATION / FAILED_PROVIDER / FAILED_INTERNAL) is defined as
+   an explicit set of states and validated transitions owned by the
+   application in `backend/app/ai/workflow/state_machine.py`. Transitions
+   are declared as a static structure (e.g. a `dict` / `frozenset`) and
+   validated before any state change is persisted. Invalid transitions
+   raise `StateMachineError` and mark the run `FAILED_INTERNAL`.
+
+2. **No LangGraph dependency.** LangGraph is not added to
+   `backend/pyproject.toml`. No LangGraph imports appear in
+   `backend/app/`. The workflow graph topology for the MVP vertical
+   scenario is fixed and linear; it does not require dynamic graph
+   composition.
+
+3. **ARQ handles background dispatch and execution only.** ARQ + Redis
+   (DEC-011) remains the sole background job queue and execution
+   mechanism. The ARQ worker (`backend/app/ai/workflow/worker.py` in
+   WP-REC-03F) enqueues and executes jobs. ARQ is not the workflow state
+   machine — ARQ job state (queued / running / done / failed) is not
+   used to infer domain workflow state.
+
+4. **Domain workflow state is not inferred from ARQ job state.** The
+   `workflow_runs` row and its `state` column are the source of truth
+   for domain workflow state. The ARQ enqueue is a best-effort
+   notification; a committed `PENDING` row is the durability anchor. A
+   periodic reconciler detects stuck `PENDING` rows and re-enqueues,
+   guaranteeing eventual completion via reconciliation — not via ARQ job
+   state.
+
+5. **Transitions are explicit and validated.** Every state change goes
+   through the state machine's transition function. Concurrent
+   transitions for the same run are serialized by a database
+   conditional-transition rule (`UPDATE ... WHERE state = :expected`
+   with `RETURNING id`), not by ARQ-level dedup alone.
+
+6. **Persisted state remains the source of truth where persistence is
+   required.** The `workflow_runs` and `workflow_steps` tables (created
+   in WP-REC-03B) record the authoritative state, step history, and
+   correlation IDs. In-memory state is ephemeral; the database row is
+   authoritative.
+
+### Responsibility boundaries
+
+| Concern | Owner |
+|---------|-------|
+| Domain/workflow state and state definitions | WP-REC-03B (explicit state machine in `backend/app/ai/workflow/state_machine.py`) |
+| Transition rules and validation | WP-REC-03B; extended by WP-03C (`FAILED_VALIDATION`) and WP-03D (`FAILED_PROVIDER`) |
+| Persistence and transactions | WP-REC-03B (models + migration); WP-REC-03F (worker persistence path) |
+| Background job dispatch and execution | ARQ + Redis (DEC-011); worker functions in WP-REC-03F |
+| Model invocation | WP-REC-03A `ChatProvider` abstraction (`backend/app/ai/provider/`); the workflow engine calls `ChatProvider.complete()`, not any LangGraph or framework-specific interface |
+| Structured-output handling | WP-REC-03C (`schema_validator.py`, `prompts.py`, Pydantic wire schema) — not part of the state machine itself |
+| Retry ownership | Automatic backend retry: WP-REC-03D; user-initiated retry API + worker: WP-REC-03F; retry UI: WP-REC-03G |
+
+Structured-output validation is planned for WP-REC-03C and is not
+prematurely designed here. Retry orchestration is planned for WP-REC-03D
+(automatic) and WP-REC-03F (user-initiated), per the current Source of
+Truth decomposition in `docs/planning/wp_rec_03_decomposition.md`.
+
+### Consequences
+
+**Benefits:**
+
+- No new dependency; the workflow engine is pure Python with no framework
+  lock-in. Full control over transitions, validation, and audit logging.
+- State machine transitions are inspectable in code (static structure)
+  and in the database (`workflow_runs.state`), supporting audit and
+  debugging.
+- Compatible with the merged `ChatProvider` abstraction from WP-REC-03A
+  — the engine calls the provider through the existing interface.
+- Preserves DEC-011 (ARQ + Redis) as the background-job mechanism without
+  modification; no competing orchestration technology is introduced.
+- Testability: transition correctness is unit-testable in isolation
+  without a running queue or database; integration tests verify the
+  full lifecycle with real persistence.
+
+**Implementation cost:**
+
+- WP-REC-03B implements the state machine, `WorkflowEngine`, models, and
+  migration. This is a bounded M-size package (6-8 files, ~400-500 lines
+  implementation + ~300-400 lines tests per the decomposition plan).
+- No framework-provided graph primitives; the application owns the
+  transition table and engine. This is acceptable for the MVP's fixed,
+  linear workflow topology.
+
+**Testing implications:**
+
+- State machine transitions (valid and invalid) are unit-tested in
+  isolation.
+- Workflow run lifecycle (create → run → complete/fail) is
+  integration-tested with a real database.
+- Correlation-ID propagation through all steps is verified.
+
+**Concurrency and idempotency expectations:**
+
+- Concurrent state transitions for the same run are serialized by the
+  database conditional-transition rule (`UPDATE ... WHERE state =
+  :expected` with `RETURNING id`).
+- ARQ-level idempotency keys deduplicate enqueue requests; they do not
+  replace the database-level serialization primitive.
+- The reconciler (WP-REC-03F) detects stuck `PENDING` rows and re-enqueues
+  idempotently by `run_id`.
+
+**Observability and audit implications:**
+
+- Every state transition is logged with correlation ID, run ID, old
+  state, and new state.
+- Every workflow step is logged with correlation ID, run ID, step name,
+  duration, and status.
+- The `workflow_steps` table provides the persistent audit trail for
+  trace display (WP-REC-03E) and future audit events (Phase 6).
+
+### Rejected alternative — LangGraph
+
+LangGraph is not selected for the current project scope. This is a
+decision based on current project requirements, not a judgment about the
+library's general quality.
+
+Reasons LangGraph is not justified now:
+
+1. The MVP workflow is a single fixed linear vertical scenario (risk
+   calculation → provider call → validation → recommendation
+   persistence). The topology does not require dynamic graph
+   composition, conditional branching across many nodes, or runtime
+   graph modification.
+2. Introducing LangGraph would add a dependency and an abstraction layer
+   whose graph-composition primitives are not exercised by the MVP's
+   linear flow. The explicit state machine provides the same
+   auditability with fewer moving parts and zero framework lock-in.
+3. The project's auditability requirement (FR-07, AT-012) is satisfied by
+   explicit transition logging and persisted `workflow_steps`. The state
+   machine makes transitions directly inspectable in code and in the
+   database; this directness is harder to achieve when transitions are
+   implicit in a framework's graph execution model.
+4. DEC-011 (ARQ + Redis) is already Accepted for background dispatch.
+   LangGraph would introduce a second orchestration abstraction that
+   overlaps with ARQ's role, increasing integration complexity without a
+   demonstrated MVP benefit.
+
+### Reconsideration triggers
+
+This decision should be revisited when one or more of the following
+conditions are demonstrated:
+
+1. **Workflows become substantially more dynamic.** If future phases
+   require runtime-composed workflow graphs (e.g. user-defined or
+   data-dependent branching across many nodes), an explicit static
+   transition table may become a maintenance burden that a graph
+   framework could reduce.
+
+2. **Graph composition becomes a dominant requirement.** If the
+   number of workflow nodes and edges grows such that maintaining the
+   transition table by hand is a significant source of defects, a
+   framework with graph-composition primitives may produce a net
+   maintenance benefit.
+
+3. **Human-in-the-loop branching outgrows the explicit transition
+   model.** If approval workflows (Phase 6) introduce complex
+   branching (multi-approver, conditional routes, parallel approvals)
+   that exceeds what an explicit transition table can express cleanly,
+   a framework with native human-in-the-loop support may be justified.
+
+4. **Framework capabilities produce a demonstrated maintenance
+   benefit.** If a concrete evaluation shows that LangGraph (or a
+   comparable framework) reduces code, defect rate, or integration
+   complexity by an amount greater than the dependency and migration
+   cost, the decision should be revisited.
+
+Until such conditions are demonstrated, the explicit application-owned
+state machine remains the architectural choice. This keeps framework
+lock-in avoided: the workflow engine is pure Python with no
+framework-specific contracts, so a future migration to a graph framework
+would replace the engine's internals without changing the
+`ChatProvider` interface, the `workflow_runs` schema, or the ARQ worker
+contract.
+
+**Affected documents/tests:** `backend/app/ai/workflow/` (WP-REC-03B),
+`backend/app/ai/provider/` (WP-REC-03A — compatibility preserved),
+`docs/planning/wp_rec_03_decomposition.md`, `docs/ACTIVE_WORK.md`,
+`docs/next_steps.md`
 
 ## DEC-014 — Reverse proxy
 

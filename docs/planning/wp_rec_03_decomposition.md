@@ -63,7 +63,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 2. **The provisional order 03C before 03D is confirmed as correct.** The provisional list already places structured-output validation (03C) before model outage handling (03D). This order is preserved: 03C defines the `FAILED_VALIDATION` failure path, which 03D's outage handler must also handle as a non-retryable failure. No reordering was needed; the original order was already correct.
 
-3. **A decision gate must precede WP-REC-03B.** DEC-013 (workflow orchestration: custom state machine vs LangGraph) is **Proposed**, not **Accepted**. The assessment recommended a custom state machine, but the Product Owner has not accepted this. WP-REC-03B cannot begin until DEC-013 is Accepted. A decision gate (WP-REC-03-DEC-GATE-1) is recorded before 03B.
+3. **A decision gate must precede WP-REC-03B.** DEC-013 (workflow orchestration: custom state machine vs LangGraph) is **Accepted** (Product Owner accepted 2026-08-09; see `08_DECISION_LOG.md` DEC-013). The decision gate (WP-REC-03-DEC-GATE-1) is satisfied. WP-REC-03B now requires only implementation authorization.
 
 4. **DEC-013 may be resolved at any time.** The gate has no dependency on WP-REC-03A completion. The Product Owner may accept DEC-013 before, during, or after 03A implementation. The only constraint is that DEC-013 must be Accepted before WP-REC-03B implementation begins.
 
@@ -106,7 +106,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 ### GATE-1: DEC-013 — Workflow orchestration
 
-**Current status:** Proposed (not Accepted). Approved by: Pending.
+**Current status:** Accepted (Product Owner accepted 2026-08-09; see `08_DECISION_LOG.md` DEC-013). Approved by: Product Owner.
 
 **Decision:** Use custom explicit state machine (no LangGraph).
 
@@ -114,7 +114,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 **Timing:** DEC-013 may be resolved at any time. It has no dependency on WP-REC-03A or any other implementation package. The Product Owner may accept it before, during, or after 03A. The only constraint: DEC-013 must be Accepted before WP-REC-03B implementation begins.
 
-**Gate requirement:** The Product Owner must accept, reject, or modify DEC-013 before WP-REC-03B implementation begins. This acceptance must be recorded in `forgemind_project_source_of_truth/08_DECISION_LOG.md` with status **Accepted**. Acceptance of DEC-013 remains separately unauthorized until Product Owner approval.
+**Gate requirement:** ~~The Product Owner must accept, reject, or modify DEC-013 before WP-REC-03B implementation begins.~~ **SATISFIED:** DEC-013 is Accepted (2026-08-09). The gate is resolved. WP-REC-03B now requires only explicit Product Owner implementation authorization.
 
 **If accepted (custom state machine):** WP-REC-03B proceeds as specified below.
 
@@ -244,7 +244,7 @@ Each package below specifies the 15 required attributes.
 
 **8. Relevant Source-of-Truth requirements:**
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LangGraph or own explicit state machine — choose one"
-- `08_DECISION_LOG.md` DEC-013: "Use custom explicit state machine (no LangGraph)" — Status: Proposed
+- `08_DECISION_LOG.md` DEC-013: "Use custom explicit state machine (no LangGraph)" — Status: Accepted (2026-08-09)
 
 **9. Acceptance tests:** N/A (decision gate, not implementation)
 
@@ -257,10 +257,10 @@ Each package below specifies the 15 required attributes.
 **13. Estimated size:** S (decision recording only)
 
 **14. Exit criteria:**
-- DEC-013 status is **Accepted** in `08_DECISION_LOG.md`
-- `Approved by: Product Owner` recorded
+- [x] DEC-013 status is **Accepted** in `08_DECISION_LOG.md`
+- [x] `Approved by: Product Owner` recorded
 
-**15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. This gate requires explicit Product Owner decision. Acceptance of DEC-013 remains separately unauthorized until Product Owner approval.
+**15. Separate Product Owner authorization requirement:** **SATISFIED.** The Product Owner accepted DEC-013 on 2026-08-09. The gate is resolved. WP-REC-03B now requires only explicit Product Owner implementation authorization.
 
 ---
 
@@ -318,8 +318,8 @@ Each package below specifies the 15 required attributes.
 - **NOT permitted:** `backend/app/schemas/recommendation.py` — owned by 03C (Pydantic wire schema)
 
 **7. Dependencies and predecessor gates:**
-- WP-REC-03A complete (provider adapter must exist)
-- WP-REC-03-DEC-GATE-1 complete (DEC-013 must be Accepted)
+- WP-REC-03A complete (provider adapter must exist) — COMPLETE (merged via PR #63)
+- WP-REC-03-DEC-GATE-1 complete (DEC-013 Accepted) — SATISFIED (Product Owner accepted 2026-08-09)
 
 **8. Relevant Source-of-Truth requirements:**
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LangGraph or own explicit state machine"
@@ -825,7 +825,7 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
 | No implementation is described as already authorized | ✅ Every package says "NOT AUTHORIZED" in §15 |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A is the first candidate; NOT AUTHORIZED |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); next candidate WP-REC-03B is NOT AUTHORIZED |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
@@ -891,7 +891,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 - Unblocks WP-REC-03B (after GATE-1) and 03C/03D/03E/03F
 - No database changes (lowest risk, easiest to revert)
 
-**Status: NOT AUTHORIZED.** This package requires explicit Product Owner authorization before implementation begins.
+**Status: COMPLETE — merged via PR #63 (2026-08-09).** The first candidate implementation package is complete. The next candidate is WP-REC-03B (Workflow/State-Machine Foundation), which requires explicit Product Owner authorization.
 
 ---
 
@@ -899,8 +899,8 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 
 | Item | Status |
 |------|--------|
-| WP-REC-03A (AI provider adapter) | NOT AUTHORIZED |
-| WP-REC-03-DEC-GATE-1 (DEC-013 decision) | NOT AUTHORIZED |
+| WP-REC-03A (AI provider adapter) | COMPLETE — merged via PR #63 |
+| WP-REC-03-DEC-GATE-1 (DEC-013 decision) | SATISFIED — DEC-013 Accepted (2026-08-09) |
 | WP-REC-03B (workflow/state-machine) | NOT AUTHORIZED |
 | WP-REC-03C (structured-output validation) | NOT AUTHORIZED |
 | WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED |
@@ -911,5 +911,5 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
-| DEC-013 acceptance | NOT AUTHORIZED (Proposed, pending PO) |
+| DEC-013 acceptance | ACCEPTED (Product Owner accepted 2026-08-09) |
 | DEC-015 permanent decision | NOT AUTHORIZED (Proposed, deferred) |

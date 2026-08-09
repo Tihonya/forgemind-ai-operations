@@ -1,24 +1,25 @@
 # ForgeMind Active Work
 
 **Last Updated:** 2026-08-09
-**Baseline:** origin/main @ `1bc79ca55e86311d2f042dd830163896ebc32275`
-**Status:** ACTIVE — WP-REC-03A (AI Provider Adapter — Chat/Reasoning) implementation authorized and in progress
+**Baseline:** origin/main @ `5c86000046ea265c799dab05d6e23601d0fe79c0`
+**Status:** WP-REC-03A COMPLETE (merged via PR #63); DEC-013 ACCEPTED; next implementation package is WP-REC-03B (NOT YET AUTHORIZED)
 
 ---
 
 ## Current Task
 
-**Work Package:** WP-REC-03A — AI Provider Adapter (Chat/Reasoning)
+**Work Package:** DEC-013 documentation finalization — explicit workflow state machine decision recorded; project status synchronized before WP-REC-03B.
 
-**Authorization:** Product Owner authorized implementation on 2026-08-09
+**Authorization:** Product Owner directed DEC-013 acceptance and project-state synchronization on 2026-08-09. This is a documentation-only package (branch `docs/dec-013-explicit-state-machine`). No WP-REC-03B implementation code is started on this branch.
 
 **Lifecycle state:**
 - WP-REC-01 + WP-REC-02: COMPLETE — MERGED via PR #61
 - PR #61: MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08)
 - WP-REC-03-DEC: COMPLETE — MERGED via PR #62 at `1bc79ca55e86311d2f042dd830163896ebc32275`
-- WP-REC-03A: ACTIVE — Product Owner explicitly authorized implementation on 2026-08-09
-- WP-REC-03B through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization
-- DEC-013 (workflow orchestration): Proposed — may be resolved at any time, but must be Accepted before WP-REC-03B implementation
+- WP-REC-03A: COMPLETE — MERGED via PR #63 at `5c86000046ea265c799dab05d6e23601d0fe79c0` (merge commit, 2026-08-09). The OpenAI-compatible chat provider adapter (`backend/app/ai/provider/`) is live on main.
+- DEC-013 (workflow orchestration): ACCEPTED — Product Owner accepted on 2026-08-09. Explicit application-owned state machine; LangGraph not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism. See `08_DECISION_LOG.md` DEC-013 for the full decision.
+- WP-REC-03B (Workflow/State-Machine Foundation): NOT YET AUTHORIZED — requires explicit Product Owner authorization. DEC-013 (the decision gate WP-REC-03-DEC-GATE-1) is now Accepted, so the gate is satisfied; the remaining blocker is implementation authorization.
+- WP-REC-03C through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
 - Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1)
@@ -30,15 +31,12 @@
 3. **N5 — Schema file ownership clarified:** `backend/app/schemas/recommendation.py` is now owned exclusively by 03C (Pydantic wire schema). 03B owns `backend/app/models/workflow.py` (SQLAlchemy ORM Recommendation model). No duplicate ownership.
 
 **Scope delivered (this package):**
-1. Decompose WP-REC-03 into small, separately authorizable implementation work packages
-2. Define boundaries, order, dependencies, verification gates, and rollback for each package
-3. Identify DEC-013/DEC-015 as architecture decision gates
-4. Map each package to acceptance-test requirements
-5. Identify the first candidate implementation package (WP-REC-03A) — remains unauthorized
-6. Reconcile bootstrap documentation with the completed PR #61 merge
-7. Open a documentation-only draft PR for independent review
+1. Accept DEC-013 (workflow orchestration: explicit state machine, no LangGraph) in the Decision Log
+2. Document the decision with context, responsibility boundaries, consequences, rejected alternative, and reconsideration triggers
+3. Synchronize ACTIVE_WORK.md and next_steps.md with the WP-REC-03A merge and DEC-013 acceptance
+4. Confirm no WP-REC-03B implementation code is started on this branch
 
-**Branch:** `docs/wp-rec-03-controlled-decomposition`
+**Branch:** `docs/dec-013-explicit-state-machine`
 
 ---
 
@@ -46,11 +44,11 @@
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `docs/planning/wp_rec_03_decomposition.md` | ADD | WP-REC-03 decomposition plan — 7 packages (03A–03G), 1 decision gate, 15-point spec each, AT mapping, quality gate checklist, Release 1 portfolio gate, runtime/automation distinction |
-| `docs/ACTIVE_WORK.md` | UPDATE | Reconcile with PR #61 merge; record WP-REC-03-DEC as active; update lifecycle, Q11, Q12, next steps |
-| `docs/next_steps.md` | UPDATE | Reconcile with PR #61 merge; update authorized work, Next Milestone, baseline SHA |
+| `forgemind_project_source_of_truth/08_DECISION_LOG.md` | UPDATE | DEC-013: status Proposed → Accepted; full decision documentation (context, decision, responsibility boundaries, consequences, rejected alternative, reconsideration triggers) |
+| `docs/ACTIVE_WORK.md` | UPDATE | Update baseline to PR #63 merge; record WP-REC-03A complete; record DEC-013 Accepted; update next steps |
+| `docs/next_steps.md` | UPDATE | Update baseline to PR #63 merge; record WP-REC-03A complete; record DEC-013 Accepted; update next milestone |
 
-The SP-1 assessment (`docs/reviews/sp1_recovery_mvp_separation_assessment.md`) was added in PR #61 and is NOT modified by this package.
+No application code, tests, dependencies, lockfiles, or migrations changed. This is documentation-only.
 
 ---
 
@@ -77,8 +75,7 @@ The SP-1 assessment (`docs/reviews/sp1_recovery_mvp_separation_assessment.md`) w
 ### Before Commit
 
 - [x] `git diff --check` passes
-- [x] Only authorized documentation files changed (README.md, docs/next_steps.md, docs/ACTIVE_WORK.md)
-- [x] SP-1 assessment blob unchanged from initial commit (verified by SHA)
+- [x] Only authorized documentation files changed (08_DECISION_LOG.md, docs/next_steps.md, docs/ACTIVE_WORK.md)
 - [x] No secrets in changed files
 - [x] No planned technology presented as released
 - [x] ForgeMind and Runtime goals not conflated
@@ -96,10 +93,10 @@ Can a new Hermes session answer these questions from documentation alone?
 6. **What blocks Release 1?** → docs/next_steps.md § "NOT IMPLEMENTED (Release 1 blockers)" (Phases 5-7) ✓
 7. **Does ForgeMind require agent-loop at runtime?** → docs/next_steps.md § "Product / Runtime Boundary" (No, development-time tool only) ✓
 8. **What is forgemind-agent-runtime for?** → docs/next_steps.md § "Product / Runtime Boundary" (Reusable agent-loop tool for Product Owner) ✓
-9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (WP-REC-03-DEC planning/decomposition only; WP-REC-03 implementation and all subpackages 03A–03G are NOT AUTHORIZED) ✓
+9. **What work is currently authorized?** → docs/next_steps.md § "Currently Authorized Work" (DEC-013 documentation finalization; WP-REC-03A is COMPLETE and merged; WP-REC-03B through 03G are NOT AUTHORIZED) ✓
 10. **What must not be started automatically?** → docs/next_steps.md § "What Must NOT Be Started Automatically" (7 explicit prohibitions) ✓
-11. **Is WP-REC-01/02 still active, completed, awaiting review, or merged?** → This file (Lifecycle state): WP-REC-01/02 COMPLETE — PR #61 MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (2026-08-08) ✓
-12. **What exact Product Owner decision is required next?** → docs/next_steps.md § "Next Milestone": (1) approve or reject merge of the WP-REC-03-DEC planning PR; (2) if merged, decide whether to authorize WP-REC-03A (AI provider adapter) as the first implementation package; (3) decide whether to accept DEC-013 (workflow orchestration) before WP-REC-03B; all implementation remains unauthorized until separately approved ✓
+11. **Is WP-REC-01/02 still active, completed, awaiting review, or merged?** → This file (Lifecycle state): WP-REC-01/02 COMPLETE — PR #61 MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (2026-08-08); WP-REC-03A COMPLETE — PR #63 MERGED at `5c86000046ea265c799dab05d6e23601d0fe79c0` (2026-08-09) ✓
+12. **What exact Product Owner decision is required next?** → docs/next_steps.md § "Next Milestone": (1) approve or reject merge of the DEC-013 documentation PR; (2) if merged, decide whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — the DEC-013 gate is now satisfied; all implementation remains unauthorized until separately approved ✓
 
 **Test status:** PASS (all 12 questions answerable from documentation)
 
@@ -159,11 +156,10 @@ PR #61 was merged as a two-parent merge commit: `a859c0d0fbee721ad0ea44a00682370
 
 ## Next Steps (awaiting Product Owner decision)
 
-1. Independent review of WP-REC-03-DEC decomposition plan (corrected: 7 packages 03A–03G)
-2. Product Owner decision: approve or reject merge of the planning PR
-3. If merged: Product Owner decides whether to authorize WP-REC-03A (AI provider adapter) as the first implementation package
-4. Product Owner decides whether to accept DEC-013 (workflow orchestration: custom state machine) — may be resolved at any time, must be Accepted before WP-REC-03B
-5. WP-REC-03 implementation and all subpackages (03A–03G): **NOT AUTHORIZED** — each requires separate Product Owner authorization
-6. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
-7. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker)
-8. Do not begin any implementation until authorized
+1. Independent review of DEC-013 documentation on branch `docs/dec-013-explicit-state-machine`
+2. Product Owner decision: approve or reject merge of the DEC-013 documentation PR
+3. If merged: Product Owner decides whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — the DEC-013 decision gate (WP-REC-03-DEC-GATE-1) is now satisfied
+4. WP-REC-03B through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization
+5. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
+6. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker)
+7. Do not begin any implementation until authorized
