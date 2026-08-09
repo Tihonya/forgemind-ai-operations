@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-09
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciled against:** origin/main @ `77d359c58cba43d310d2a532fda0836464adda2b` (PR #67 merge commit)
+**Reconciled against:** origin/main @ `3a2bc26028cac0352af2cdde8107df90f41f015c` (PR #69 merge commit)
 
 ---
 
@@ -108,8 +108,8 @@ This repository contains two conceptually separate projects:
 The accepted planning sequence is:
 
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
-2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — NOT AUTHORIZED. Follows WP-STRAT-01. Requires separate Product Owner authorization.
-3. **WP-REC-03C → 03D → 03E → 03F → 03G** (Phase 5 AI Workflow) — NOT AUTHORIZED. Sequence preserved per SD-3. Each requires separate authorization. Reassessment after WP-STRAT-01 and WP-ARCH-01.
+2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — COMPLETED and CLOSED (planning accepted, no execution required, 2026-08-09, PR #69 merge commit `3a2bc26`). Zero REQUIRED findings. Sole RECOMMENDED item (agent-onboarding document) deferred.
+3. **WP-REC-03C → 03D → 03E → 03F → 03G** (Phase 5 AI Workflow) — NOT AUTHORIZED. Sequence preserved per SD-3. Each requires separate authorization. Both WP-STRAT-01 and WP-ARCH-01 are complete. WP-REC-03C reassessment requires a separate Product Owner decision.
 4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
 5. **Phase 6** (Approval and Audit) — NOT STARTED.
 6. **Phase 7** (Public Deployment) — NOT STARTED.
@@ -121,7 +121,7 @@ The accepted planning sequence is:
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
-**WP-REC-03C through 03G remain NOT AUTHORIZED.** Their content, priority, and authorization will be reassessed only after WP-STRAT-01 and WP-ARCH-01 are complete.
+**WP-REC-03C through 03G remain NOT AUTHORIZED.** WP-STRAT-01 and WP-ARCH-01 are both complete. WP-REC-03C reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -131,7 +131,6 @@ This is a planning sequence, not an execution authorization. Every future packag
 
 Without explicit Product Owner authorization, do not:
 - Implement any MVP phase (Phase 5, 6, or 7)
-- Start WP-ARCH-01
 - Start or redesign WP-REC-03C through 03G
 - Start WP-REC-05 or the bounded AT-006/AT-007 verification package
 - Start SP-0B or create forgemind-agent-runtime
@@ -183,6 +182,7 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 **Accepted:**
 - DEC-001 through DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
 - DEC-034 through DEC-040 (WP-STRAT-01 strategic and technical decisions)
+- DEC-041 (WP-ARCH-01 closure)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
@@ -231,7 +231,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`). The next Product Owner decision is whether to separately authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package.
-2. WP-ARCH-01 remains **NOT AUTHORIZED**. This synchronization does not authorize its planning or execution.
-3. **After WP-ARCH-01** (if separately authorized): reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
+1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
+2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
+3. The next Product Owner decision is whether to reassess **WP-REC-03C** (Structured-Output Validation). WP-REC-03C remains **NOT AUTHORIZED**. Reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
 4. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. WP-REC-05 (RAG integration into the AI workflow) and the bounded AT-006/AT-007 verification package remain NOT AUTHORIZED as separate packages — authorization of one must not authorize the other. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.

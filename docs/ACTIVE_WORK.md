@@ -1,8 +1,8 @@
 # ForgeMind Active Work
 
 **Last Updated:** 2026-08-09
-**Reconciled against:** origin/main @ `77d359c58cba43d310d2a532fda0836464adda2b` (PR #67 merge commit)
-**Status:** WP-STRAT-01 (Product Strategy and Release 1 Alignment) — COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). No implementation work package is currently authorized.
+**Reconciled against:** origin/main @ `3a2bc26028cac0352af2cdde8107df90f41f015c` (PR #69 merge commit)
+**Status:** WP-ARCH-01 (Architecture Hygiene and Agent Onboarding) — COMPLETED and CLOSED (planning accepted, no execution required, 2026-08-09). No implementation work package is currently authorized.
 
 ---
 
@@ -12,7 +12,7 @@
 
 **WP-STRAT-01** (Product Strategy and Release 1 Alignment) is COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). It is no longer the active task.
 
-**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is the next candidate package. It remains **NOT AUTHORIZED**. This post-merge synchronization does not authorize WP-ARCH-01 or any other future package.
+**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is COMPLETED and CLOSED. The planning artifact was accepted by the Product Owner on 2026-08-09 (PR #69, merge commit `3a2bc26`). No execution was required — zero REQUIRED findings. The sole RECOMMENDED item (agent-onboarding document, Finding 4.5.1) was deferred. No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
 
 ---
 
@@ -41,9 +41,7 @@
 
 ## Next Governance Step
 
-**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is the next planned package. It is **NOT AUTHORIZED**. It requires separate Product Owner authorization.
-
-After WP-ARCH-01: reassess WP-REC-03C. Implementation remains paused and unauthorized.
+**WP-REC-03C** (Structured-Output Validation) is the next candidate for separate Product Owner reassessment. It is **NOT AUTHORIZED**. Reassessment requires a separate Product Owner decision — this closure does not start that reassessment. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
 
 ---
 
@@ -56,7 +54,8 @@ After WP-ARCH-01: reassess WP-REC-03C. Implementation remains paused and unautho
 - DEC-013 (workflow orchestration): ACCEPTED — Product Owner accepted on 2026-08-09. MERGED via PR #64 at `5d5616c12cf96049ef345b3d689be78d5359b352` (2026-08-09). Explicit application-owned state machine; LangGraph not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism.
 - WP-REC-03B (Workflow/State-Machine Foundation): COMPLETE — MERGED via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (two-parent merge commit, 2026-08-09). The workflow state machine, WorkflowEngine, ORM models (WorkflowRun, WorkflowStep, Recommendation), Alembic migration, and Pydantic schemas are live on main. Post-merge CI on main: Backend CI SUCCESS, End-to-End Tests SUCCESS, Playwright Golden Scenario SUCCESS.
 - WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETED — MERGED via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (regular two-parent merge, 2026-08-09). Three feature commits preserved: `8e5d032`, `f767aab`, `3fef078`.
-- WP-REC-03C through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization. Feature development is paused before WP-REC-03C pending WP-ARCH-01.
+- WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning artifact accepted and closed via PO decision 2026-08-09 (DEC-041). PR #69 merge commit `3a2bc26028cac0352af2cdde8107df90f41f015c`. No execution required. Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) deferred. No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
+- WP-REC-03C through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization. WP-STRAT-01 and WP-ARCH-01 are both complete. WP-REC-03C reassessment requires a separate Product Owner decision.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 - Bounded AT-006/AT-007 verification package: NOT AUTHORIZED — separate from WP-ARCH-01 (SD-2).
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
@@ -125,11 +124,10 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 ## Next Steps
 
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
-2. The next Product Owner decision concerns whether to separately authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding).
-3. WP-ARCH-01 remains **NOT AUTHORIZED** until an explicit future authorization. This synchronization does not authorize it.
-4. After WP-ARCH-01 (if separately authorized): reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
-5. WP-REC-03C through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization after reassessment.
-6. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
-7. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
-8. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
-9. Do not begin any implementation until authorized.
+2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
+3. The next Product Owner decision concerns whether to reassess **WP-REC-03C** (Structured-Output Validation). WP-REC-03C remains **NOT AUTHORIZED**. Reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
+4. WP-REC-03C through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization after reassessment.
+5. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
+6. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
+7. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
+8. Do not begin any implementation until authorized.

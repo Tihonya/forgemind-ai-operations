@@ -1,8 +1,9 @@
 # WP-ARCH-01 — Architecture Hygiene and Agent Onboarding (Planning)
 
-**Status:** DRAFT — Planning artifact for Product Owner review. Execution NOT AUTHORIZED.
+**Status:** ACCEPTED — Planning artifact accepted by Product Owner on 2026-08-09. WP-ARCH-01 is CLOSED with no execution required. The sole RECOMMENDED item (agent-onboarding document, Finding 4.5.1) is DEFERRED.
 **Date:** 2026-08-09
 **Inspection baseline:** `origin/main` @ `4e60de818e5f18c5f5184ab7ffb1d292551de6d8` — PR #68 merge commit
+**Product Owner acceptance and closure baseline:** `origin/main` @ `3a2bc26028cac0352af2cdde8107df90f41f015c` (PR #69 merge commit), 2026-08-09.
 **Authority:** Product Owner authorized planning-only creation on 2026-08-09.
 **Relationship:** Follows WP-STRAT-01 (COMPLETED, MERGED via PR #67, merge commit `77d359c`). Strategic inputs sourced from `docs/planning/wp_strat_01_product_strategy.md` §17 and `docs/planning/wp_strat_01_reconnaissance.md` §13.3.
 
@@ -536,42 +537,25 @@ WP-REC-03C may be reassessed for separate Product Owner authorization after WP-A
 
 ---
 
-## 7. Unresolved Product Owner Decisions
+## 7. Resolved Product Owner Decisions
 
-The following decisions are genuinely unresolved after applying existing accepted decisions. Accepted decisions from SP-0A, WP-STRAT-01, and the Decision Log are not reopened.
+The following decisions were recorded as unresolved at planning-review time. The Product Owner has since resolved all four on 2026-08-09 (see DEC-041 in `forgemind_project_source_of_truth/08_DECISION_LOG.md`). Accepted decisions from SP-0A, WP-STRAT-01, and the Decision Log are not reopened.
 
 ### 7.1 Whether WP-ARCH-01 requires execution work or can close after planning
 
-The architecture-hygiene assessment found zero `REQUIRED` items and zero `UNRESOLVED` items. All architecture-hygiene findings are `OK` (17). One `RECOMMENDED` item exists in agent onboarding (Finding 4.5.1). This means WP-ARCH-01 may be able to close after planning without any execution work.
-
-The Product Owner must decide whether to:
-- (a) close WP-ARCH-01 after planning (no execution needed); or
-- (b) authorize execution of selected `RECOMMENDED` items.
+**RESOLVED (2026-08-09):** The Product Owner chose option (a) — close WP-ARCH-01 after planning. No execution work is required. The architecture-hygiene assessment found zero `REQUIRED` items and zero `UNRESOLVED` items. All architecture-hygiene findings are `OK` (17). One `RECOMMENDED` item exists in agent onboarding (Finding 4.5.1).
 
 ### 7.2 Whether the remaining RECOMMENDED item should be implemented, deferred, or rejected
 
-One `RECOMMENDED` item was identified:
-
-1. Finding 4.5.1 — No dedicated agent-onboarding document (suggest creating `docs/agent_onboarding.md`).
-
-The Product Owner must decide:
-- implement (authorize a bounded execution package);
-- defer (leave for a later phase);
-- reject (determine the improvement is not needed).
+**RESOLVED (2026-08-09):** The Product Owner deferred the remaining `RECOMMENDED` item (Finding 4.5.1 — No dedicated agent-onboarding document). It is not authorized, not implemented, and not created. It may be revisited in a future phase if justified.
 
 ### 7.3 Whether a dedicated agent-onboarding document is justified
 
-Finding 4.5.1 identified that onboarding information is distributed across multiple documents. The Product Owner must decide whether:
-- a dedicated `docs/agent_onboarding.md` entry point is justified; or
-- the current distributed documentation is sufficient.
+**RESOLVED (2026-08-09):** Deferred. The Product Owner determined that the current distributed documentation is sufficient for now. A dedicated `docs/agent_onboarding.md` entry point is not authorized or created. This decision may be revisited in a future phase.
 
 ### 7.4 Whether WP-REC-03C is ready for a separate reassessment after WP-ARCH-01
 
-The Product Owner must decide whether:
-- WP-REC-03C reassessment should proceed after WP-ARCH-01 is completed and accepted; or
-- additional planning or architectural work is needed first.
-
-This decision is separate from WP-REC-03C authorization. Reassessment does not authorize implementation.
+**RESOLVED (2026-08-09):** WP-REC-03C may be reassessed for separate Product Owner authorization after a separate Product Owner decision. This closure does not start that reassessment. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases. Reassessment does not authorize implementation. WP-REC-03C remains `NOT AUTHORIZED`.
 
 ---
 
@@ -581,23 +565,21 @@ Based on the evidence, this document recommends option 1:
 
 ### 8.1 Recommendation: No WP-ARCH-01 implementation required
 
-**PROPOSED — NOT AUTHORIZED**
+**ACCEPTED — Product Owner accepted 2026-08-09.**
 
-The architecture-hygiene assessment found zero `REQUIRED` items. The codebase is structurally sound for WP-REC-03C–03G and subsequent phases. No structural issue materially affects Phase 5 work.
+No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases. Acceptance of WP-ARCH-01 does not replace package-specific planning, evidence, or authorization. WP-ARCH-01 closes after planning. No execution package is needed.
 
-One `RECOMMENDED` item remains (Finding 4.5.1 — agent-onboarding document). It may be pursued independently but is not a prerequisite for any planned work package. It may be deferred to a later phase or rejected.
-
-If the Product Owner agrees with this recommendation, WP-ARCH-01 can close after this planning artifact is reviewed and accepted. No execution package is needed.
+One RECOMMENDED item remains (Finding 4.5.1 — agent-onboarding document). It has been deferred by the Product Owner. It is not authorized, not implemented, and not created. It may be revisited in a future phase if justified.
 
 ### 8.2 Alternative: Bounded execution for the remaining RECOMMENDED item
 
-**PROPOSED — NOT AUTHORIZED**
+**DEFERRED — Product Owner deferred the agent-onboarding document on 2026-08-09. Not authorized. May be revisited in a future phase if justified.**
 
 If the Product Owner decides that the remaining `RECOMMENDED` item should be implemented, the following bounded scope is proposed. No official WP identifier is assigned — identifiers and sequence positions require a later Product Owner decision.
 
 #### Proposed scope A — Agent onboarding document
 
-**PROPOSED — NOT AUTHORIZED**
+**DEFERRED — not authorized, not created.**
 
 | Field | Value |
 |-------|-------|
@@ -613,7 +595,9 @@ If the Product Owner decides that the remaining `RECOMMENDED` item should be imp
 
 ---
 
-## 9. Planning-Artifact Acceptance Criteria
+## 9. Planning-Artifact Acceptance Criteria (Planning-Time Record)
+
+The table below records the acceptance state of this planning artifact when PR #69 was reviewed. Its PASS results are historical planning evidence. The subsequent Product Owner resolutions are recorded in §§7–8 above and in DEC-041 (`forgemind_project_source_of_truth/08_DECISION_LOG.md`).
 
 | # | Criterion | Status |
 |---|-----------|--------|
@@ -633,7 +617,7 @@ If the Product Owner decides that the remaining `RECOMMENDED` item should be imp
 
 ---
 
-## 10. Explicit Non-Authorization Statement
+## 10. Explicit Non-Authorization Boundary (Planning-Time Record)
 
 This planning artifact does not authorize:
 
@@ -646,7 +630,7 @@ This planning artifact does not authorize:
 - any Source of Truth or Decision Log change;
 - any proposed future scope described in §8.
 
-Every proposed scope in §8 is labeled `PROPOSED — NOT AUTHORIZED` and requires separate Product Owner authorization.
+At planning-review time, every proposed scope in §8 was labeled `PROPOSED — NOT AUTHORIZED`. The Product Owner subsequently accepted §8.1 as a no-execution closure outcome and deferred §8.2 without authorizing its implementation. WP-REC-03C, WP-REC-03D through 03G, WP-REC-05, SP-0B, Runtime-repository creation, agent automation, and every other execution package remain separately NOT AUTHORIZED.
 
 ---
 
