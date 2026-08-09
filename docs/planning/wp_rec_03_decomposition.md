@@ -78,7 +78,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 6. **Existing embedding provider pattern is reusable evidence.** `backend/app/services/embedding_provider.py` defines an ABC interface with `OpenAIEmbeddingProvider` and `FakeEmbeddingProvider` adapters, plus `embedding_provider_factory.py` with environment-aware validation. WP-REC-03A (AI provider adapter for chat/reasoning) can follow this proven pattern.
 
-7. **No workflow/approval/audit/procurement_task models exist.** `backend/app/models/` contains no workflow, approval, audit, or procurement task model. `backend/app/ai/workflow/` does not exist. All Phase 5 work is greenfield.
+7. **The original decomposition baseline was greenfield for workflow infrastructure.** At the 2026-08-08 decomposition baseline, the repository had no workflow engine, workflow state machine, workflow ORM models, or `backend/app/ai/workflow/` package. WP-REC-03B has since introduced that foundation, including the workflow package and the `WorkflowRun`, `WorkflowStep`, and `Recommendation` ORM models. Therefore, the remaining Phase 5 packages are no longer wholly greenfield; WP-REC-03C through 03G build on the completed WP-REC-03B foundation. This lifecycle correction does not reassess the current presence or absence of approval, audit, or procurement-task models.
 
 8. **Config already has OpenAI settings.** `backend/app/config.py` defines `openai_api_key`, `openai_api_base`, `openai_chat_model`, `openai_embedding_model`, `llm_timeout_seconds`, `llm_max_retries`, `ai_rate_limit_per_minute`. The adapter will reuse these settings, not invent new ones.
 
