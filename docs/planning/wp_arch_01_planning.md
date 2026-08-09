@@ -133,7 +133,7 @@ The backend follows a conventional layered FastAPI structure:
 |-------|-------|
 | Classification | `OK` |
 | Affected area | Backend import graph |
-| Evidence | Dependency direction is unidirectional: `api → services → models/schemas`, `api → dependencies → services`, `ai.workflow → ai.provider`, `ai.rag → models`. No service imports from `api`. No model imports from `services` or `api`. No `ai.*` imports from `api.*` directly (the API calls services, which call AI sub-packages where needed — though currently the API calls `ai.rag.retriever` directly from `api/retrieval.py`, this is an acceptable thin-controller pattern). |
+| Evidence | Dependency direction is unidirectional: `api → services → models/schemas`, `api → dependencies → services`, `ai.workflow → ai.provider`, `ai.rag → models`. No service imports from `api`. No model imports from `services` or `api`. The API calls domain services (including `ai.rag.retriever.RetrievalService`) through the expected FastAPI dependency-injection pattern. |
 | Impact | No circular import risk. Module loading order is deterministic. |
 | Blocks WP-REC-03C? | No. |
 | Remediation | None needed. |
@@ -287,17 +287,17 @@ Frontend structure:
 
 ### 3.8 Potential cross-layer leakage check
 
-**Finding 3.8.1 — Retrieval API directly imports RAG retriever**
+**Finding 3.8.1 — Retrieval API calls RetrievalService in ai.rag**
 
 | Field | Value |
 |-------|-------|
-| Classification | `RECOMMENDED` |
+| Classification | `OK` |
 | Affected area | `backend/app/api/retrieval.py` → `backend/app/ai/rag/retriever.py` |
-| Evidence | `api/retrieval.py` imports `RetrievalService` from `ai.rag.retriever` directly. This is a thin-controller pattern where the API layer calls a domain service directly rather than through a `services/` intermediary. The retrieval endpoint is simple (authenticate, resolve role IDs, call retriever, build citations, return). |
-| Impact | This is a common FastAPI pattern and does not cause a layering violation. However, if WP-REC-05 adds RAG integration into the AI workflow, the retrieval logic may need to be called from the workflow engine rather than only from the API. At that point, a `services/retrieval_service.py` wrapper may be justified. |
+| Evidence | `api/retrieval.py` imports `RetrievalService` from `ai.rag.retriever`. `RetrievalService` already exists as a service abstraction — the API calls a named service class, not a low-level standalone retrieval function. Its placement under `app.ai.rag` is consistent with the current AI subsystem boundary: the RAG retrieval logic, including role-filtered SQL and citation construction, belongs to the `ai.rag` domain package. No concrete duplication, coupling defect, circular dependency, or unsafe dependency direction was demonstrated. The dependency direction (`api → ai.rag.retriever`) does not cross the service/model boundary in a way that violates the layered architecture — the API layer calls a domain service, which is the expected FastAPI pattern. |
+| Impact | The existing service abstraction is sufficient. Adding another `services/retrieval_service.py` wrapper would currently add indirection around an existing service without an evidenced requirement. |
 | Blocks WP-REC-03C? | No. |
-| Blocks WP-REC-05? | No — WP-REC-05 can add its own integration path. |
-| Remediation (if pursued) | If pursued during WP-REC-05: extract a `RetrievalService` wrapper in `services/` that the API and workflow engine both call. This is a RECOMMENDED improvement, not a prerequisite. Do not pursue during WP-ARCH-01 unless the Product Owner explicitly authorizes it. |
+| Blocks WP-REC-05? | No. |
+| Remediation | None required. WP-REC-05 may reassess service placement only if its concrete integration design demonstrates a shared orchestration requirement. |
 
 ### 3.9 Environment variable handling
 
@@ -305,12 +305,12 @@ Frontend structure:
 
 | Field | Value |
 |-------|-------|
-| Classification | `RECOMMENDED` |
+| Classification | `OK` |
 | Affected area | `.env.example` |
-| Evidence | `.env.example` contains `${POSTGRES_USER}`, `${POSTGRES_PASSWORD}`, etc. in `DATABASE_URL` and `REDIS_URL`. Pydantic Settings resolves these when loading `.env`. However, shell sourcing (e.g., `source .env`) does not resolve `${VAR}` references — bash strips quote characters from JSON-valued variables. The agent-loop README documents a safe Python parser for `.env` loading. |
-| Impact | This is a known characteristic, not a defect. The project uses Pydantic Settings for configuration loading, which resolves `${VAR}` references correctly. Host-side test execution requires setting resolved `DATABASE_URL` and `TEST_DATABASE_URL` literals in the shell. This is documented in project conventions. |
+| Evidence | `.env.example` contains `${POSTGRES_USER}`, `${POSTGRES_PASSWORD}`, etc. in `DATABASE_URL` and `REDIS_URL`. Pydantic Settings loads the configured `.env` through `python-dotenv`, which supports `${VAR}` interpolation. Docker Compose also resolves `${VAR}` interpolation natively. Bash expands `${VAR}` when sourcing assignments after the referenced variable has been assigned; sourcing and exporting are separate concerns (variables assigned by a sourced file are available in the current shell but are not necessarily exported to child processes unless export semantics are enabled). The current `.env.example` uses a comma-separated `CORS_ORIGINS` value, not a JSON-valued variable. |
+| Impact | The existing `${VAR}` usage is compatible with the project's Pydantic/python-dotenv loading path and with Docker Compose interpolation. No configuration defect or setup instruction error was demonstrated. |
 | Blocks WP-REC-03C? | No. |
-| Remediation | None needed for WP-ARCH-01. If documentation clarity is desired, a note in the developer setup section could mention the `${VAR}` resolution behavior. This is cosmetic. |
+| Remediation | None required for the inspected configuration path. |
 
 ### 3.10 Summary of architecture-hygiene findings
 
@@ -331,13 +331,13 @@ Frontend structure:
 | 3.6.1 | Makefile test targets | `OK` | No |
 | 3.7.1 | Backend test organization | `OK` | No |
 | 3.7.2 | Frontend test organization | `OK` | No |
-| 3.8.1 | Retrieval API imports RAG retriever directly | `RECOMMENDED` | No |
-| 3.9.1 | .env.example uses ${VAR} interpolation | `RECOMMENDED` | No |
+| 3.8.1 | Retrieval API calls RetrievalService in ai.rag | `OK` | No |
+| 3.9.1 | .env.example uses ${VAR} interpolation | `OK` | No |
 
 **Architecture-hygiene summary:**
 
-- `OK`: 15 findings
-- `RECOMMENDED`: 2 findings
+- `OK`: 17 findings
+- `RECOMMENDED`: 0 findings
 - `REQUIRED`: 0 findings
 - `UNRESOLVED`: 0 findings
 
@@ -542,21 +542,19 @@ The following decisions are genuinely unresolved after applying existing accepte
 
 ### 7.1 Whether WP-ARCH-01 requires execution work or can close after planning
 
-The architecture-hygiene assessment found zero `REQUIRED` items and zero `UNRESOLVED` items. All findings are either `OK` (15) or `RECOMMENDED` (2 in architecture, 1 in agent onboarding). This means WP-ARCH-01 may be able to close after planning without any execution work.
+The architecture-hygiene assessment found zero `REQUIRED` items and zero `UNRESOLVED` items. All architecture-hygiene findings are `OK` (17). One `RECOMMENDED` item exists in agent onboarding (Finding 4.5.1). This means WP-ARCH-01 may be able to close after planning without any execution work.
 
 The Product Owner must decide whether to:
 - (a) close WP-ARCH-01 after planning (no execution needed); or
 - (b) authorize execution of selected `RECOMMENDED` items.
 
-### 7.2 Whether selected RECOMMENDED items should be implemented, deferred, or rejected
+### 7.2 Whether the remaining RECOMMENDED item should be implemented, deferred, or rejected
 
-Three `RECOMMENDED` items were identified:
+One `RECOMMENDED` item was identified:
 
-1. Finding 3.8.1 — Retrieval API directly imports RAG retriever (suggest extracting a `RetrievalService` wrapper in `services/`).
-2. Finding 3.9.1 — `.env.example` uses `${VAR}` interpolation (suggest adding developer-setup documentation note).
-3. Finding 4.5.1 — No dedicated agent-onboarding document (suggest creating `docs/agent_onboarding.md`).
+1. Finding 4.5.1 — No dedicated agent-onboarding document (suggest creating `docs/agent_onboarding.md`).
 
-The Product Owner must decide for each:
+The Product Owner must decide:
 - implement (authorize a bounded execution package);
 - defer (leave for a later phase);
 - reject (determine the improvement is not needed).
@@ -587,15 +585,15 @@ Based on the evidence, this document recommends option 1:
 
 The architecture-hygiene assessment found zero `REQUIRED` items. The codebase is structurally sound for WP-REC-03C–03G and subsequent phases. No structural issue materially affects Phase 5 work.
 
-The three `RECOMMENDED` items are improvements that may be pursued independently but are not prerequisites for any planned work package. They may be deferred to a later phase or rejected.
+One `RECOMMENDED` item remains (Finding 4.5.1 — agent-onboarding document). It may be pursued independently but is not a prerequisite for any planned work package. It may be deferred to a later phase or rejected.
 
 If the Product Owner agrees with this recommendation, WP-ARCH-01 can close after this planning artifact is reviewed and accepted. No execution package is needed.
 
-### 8.2 Alternative: Bounded execution for selected RECOMMENDED items
+### 8.2 Alternative: Bounded execution for the remaining RECOMMENDED item
 
 **PROPOSED — NOT AUTHORIZED**
 
-If the Product Owner decides that one or more `RECOMMENDED` items should be implemented, the following bounded scopes are proposed. No official WP identifiers are assigned — identifiers and sequence positions require a later Product Owner decision.
+If the Product Owner decides that the remaining `RECOMMENDED` item should be implemented, the following bounded scope is proposed. No official WP identifier is assigned — identifiers and sequence positions require a later Product Owner decision.
 
 #### Proposed scope A — Agent onboarding document
 
@@ -612,40 +610,6 @@ If the Product Owner decides that one or more `RECOMMENDED` items should be impl
 | Non-goals | No code changes. No Source of Truth changes. No Decision Log changes. No authorization of future work. |
 | Risks | Low — documentation-only. Risk of content drift if not maintained alongside status updates. |
 | Authorization required | Separate Product Owner authorization. |
-
-#### Proposed scope B — Retrieval service wrapper
-
-**PROPOSED — NOT AUTHORIZED**
-
-| Field | Value |
-|-------|-------|
-| Problem | Finding 3.8.1: `api/retrieval.py` imports `ai.rag.retriever` directly. |
-| Evidence | The retrieval endpoint calls the retriever without a `services/` intermediary. |
-| Objective | Extract a `RetrievalService` in `services/` that both the API and future workflow engine can call. |
-| Proposed file boundary | `backend/app/services/retrieval_service.py` (new), `backend/app/api/retrieval.py` (modify import), `backend/tests/unit/test_retrieval_service.py` (new) |
-| Dependencies | None for WP-ARCH-01. More relevant during WP-REC-05. |
-| Acceptance criteria | RetrievalService wraps retriever logic; API endpoint uses service; tests pass; no behavior change. |
-| Non-goals | No workflow integration (that is WP-REC-05). No RAG logic changes. |
-| Risks | Low — refactoring with test coverage. Risk of introducing a behavior change if not carefully tested. |
-| Authorization required | Separate Product Owner authorization. |
-| Note | This item is better timed during WP-REC-05 (RAG integration into AI workflow) when the workflow engine needs to call retrieval. Pursuing it during WP-ARCH-01 is not recommended. |
-
-#### Proposed scope C — Developer setup documentation note
-
-**PROPOSED — NOT AUTHORIZED**
-
-| Field | Value |
-|-------|-------|
-| Problem | Finding 3.9.1: `.env.example` uses `${VAR}` interpolation that is not shell-sourceable. |
-| Evidence | `DATABASE_URL` and `REDIS_URL` contain `${POSTGRES_USER}`, `${POSTGRES_PASSWORD}`, etc. |
-| Objective | Add a note in the developer setup section of `README.md` or `docs/next_steps.md` explaining that `.env` is loaded by Pydantic Settings (not shell sourcing) and that host-side test execution requires resolved DB URL literals. |
-| Proposed file boundary | `README.md` (modify developer setup section) or `docs/next_steps.md` |
-| Dependencies | None. |
-| Acceptance criteria | Note is present; accurate; does not expose secrets; references Pydantic Settings as the resolver. |
-| Non-goals | No `.env.example` changes. No configuration changes. |
-| Risks | Very low — documentation-only. |
-| Authorization required | Separate Product Owner authorization. |
-| Note | This is cosmetic and may be deferred or rejected without consequence. |
 
 ---
 
