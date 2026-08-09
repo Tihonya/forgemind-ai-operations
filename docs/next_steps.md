@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-09
 **Current Status:** Development in progress — Release 1 NOT READY
-**Authoritative baseline:** `origin/main` @ `5c86000046ea265c799dab05d6e23601d0fe79c0`
+**Authoritative baseline:** `origin/main` @ `fc48aed557d20f516cf46fe94175ce2d22c61dba`
 
 ---
 
@@ -36,23 +36,28 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Phase 4: Knowledge and RAG | COMPLETE | Document ingestion, pgvector index, retrieval with citations |
 | Authentication + RBAC | COMPLETE | JWT auth, 5 demo accounts (manager/procurement/engineer/admin/auditor) |
 | AI provider adapter (chat/reasoning) | COMPLETE | OpenAI-compatible ChatProvider adapter, merged via PR #63 |
+| WP-REC-03B: Workflow/state-machine foundation | COMPLETE | Explicit state machine (7 states, immutable transition table), WorkflowEngine with conditional UPDATE concurrency safety, WorkflowRun/WorkflowStep/Recommendation ORM models, Alembic migration, Pydantic run/step schemas, unit and integration tests — merged via PR #65 |
 | AT-003 (Golden Dataset) | PASS | Seed produces deterministic RISK-001/002/003 |
 | AT-004 (Deterministic risk) | PASS | Risk engine returns exact expected values |
 | AT-005 (No hidden mocks) | PASS | UI displays real backend data |
 | AT-006 (RAG retrieval) | NOT VERIFIED IN THIS REVIEW | Integration test `test_at006_rag_retrieval.py` exists; requires live PostgreSQL database; was skipped in review environment due to DB unavailability |
 
+**WP-REC-03B is a foundation package.** It delivers the workflow state machine, engine, models, and migration — but does NOT deliver end-to-end AI workflow execution. The following remain incomplete and are owned by subsequent packages (03C–03G): structured-output validation, automatic provider retry/outage handling, workflow-run detail API and recommendation UI, backend start/retry API + ARQ worker + reconciler, and frontend start/retry UI interaction. No acceptance test newly passes as a result of 03B alone.
+
 ### ❌ NOT IMPLEMENTED (Release 1 blockers)
 
 | Capability | Required For | Phase |
 |-----------|--------------|-------|
-| Workflow engine | AT-007, AT-012 | Phase 5 |
-| Structured output validation | AT-008 | Phase 5 |
-| Model outage handling | AT-013 | Phase 5 |
+| Structured output validation | AT-008 | Phase 5 (WP-REC-03C) |
+| Model outage handling | AT-013 | Phase 5 (WP-REC-03D) |
+| Workflow-run detail API + recommendation UI | AT-008 trace, FR-07 | Phase 5 (WP-REC-03E) |
+| Backend workflow start/retry API + ARQ worker | AT-008 full PASS, AT-013 backend | Phase 5 (WP-REC-03F) |
+| Frontend start/retry UI interaction | AT-013 UI clauses | Phase 5 (WP-REC-03G) |
 | Approval service | AT-009, AT-010, AT-011 | Phase 6 |
 | Audit event service | AT-012 | Phase 6 |
 | Procurement task service | AT-010 | Phase 6 |
 | Approval Center UI | AT-009, AT-010, AT-011 | Phase 6 |
-| Workflow run detail UI | AT-007, AT-012 | Phase 5 |
+| Workflow run detail UI | AT-007, AT-012 | Phase 5 (WP-REC-03E) |
 | Audit log UI | AT-012 | Phase 6 |
 | Demo reset | AT-015 | Phase 7 |
 | Rate limiting | Gate D | Phase 7 |
@@ -62,7 +67,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 ### Current MVP completion
 
-Two of five condensed MVP milestones have implementation evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but the integration test requires a live database and was not executed in this review). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 3–5 of the condensed milestones (AI recommendation → approval → procurement → audit → deployment) are not implemented.
+Two of five condensed MVP milestones have implementation evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but the integration test requires a live database and was not executed in this review). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 3–5 of the condensed milestones (AI recommendation → approval → procurement → audit → deployment) are not implemented. WP-REC-03B provides the foundational state machine and engine for step 3 but does not complete the end-to-end AI workflow execution path.
 
 ---
 
@@ -94,7 +99,9 @@ This repository contains two conceptually separate projects:
 
 ## Currently Authorized Work
 
-**DEC-013 documentation finalization** (branch `docs/dec-013-explicit-state-machine`). Product Owner directed DEC-013 acceptance and project-state synchronization on 2026-08-09. This is documentation-only: no WP-REC-03B implementation code is started.
+**This status-sync PR** (branch `docs/status-sync-after-wp-rec-03b`) is the only currently authorized repository mutation. It is documentation-only: records PR #64 and PR #65 as merged, marks WP-REC-03B COMPLETE, updates the authoritative baseline, and records the Product Owner's sequencing decision. No feature implementation, strategic replanning, or architectural redesign is performed.
+
+### Merged work packages
 
 PR #61 (WP-REC-01/02) is **MERGED** at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08). WP-REC-01/02 are COMPLETE.
 
@@ -102,9 +109,19 @@ PR #62 (WP-REC-03-DEC) is **MERGED** at `1bc79ca55e86311d2f042dd830163896ebc3227
 
 PR #63 (WP-REC-03A) is **MERGED** at `5c86000046ea265c799dab05d6e23601d0fe79c0` (merge commit, 2026-08-09). WP-REC-03A is COMPLETE. The OpenAI-compatible chat provider adapter (`backend/app/ai/provider/`) is live on main.
 
-**DEC-013 (workflow orchestration): ACCEPTED.** Product Owner accepted on 2026-08-09. ForgeMind will use its own explicit application-owned workflow state machine. LangGraph is not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism. Domain workflow state is not inferred from ARQ job state. See `forgemind_project_source_of_truth/08_DECISION_LOG.md` DEC-013 for the full decision.
+PR #64 (DEC-013 documentation finalization) is **MERGED** at `5d5616c12cf96049ef345b3d689be78d5359b352` (2026-08-09). DEC-013 is ACCEPTED. ForgeMind will use its own explicit application-owned workflow state machine. LangGraph is not introduced. ARQ + Redis (DEC-011) remains the background dispatch/execution mechanism. Domain workflow state is not inferred from ARQ job state. See `forgemind_project_source_of_truth/08_DECISION_LOG.md` DEC-013 for the full decision.
 
-**Next implementation package:** WP-REC-03B (Workflow/State-Machine Foundation) — **NOT YET AUTHORIZED**. The DEC-013 decision gate (WP-REC-03-DEC-GATE-1) is now satisfied. The remaining blocker is explicit Product Owner authorization to implement WP-REC-03B. WP-REC-03C through 03G remain **unauthorized** — each requires separate explicit Product Owner authorization before any implementation begins.
+PR #65 (WP-REC-03B — Workflow/State-Machine Foundation) is **MERGED** at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (two-parent merge commit, 2026-08-09). WP-REC-03B is COMPLETE. The workflow state machine, WorkflowEngine, ORM models (WorkflowRun, WorkflowStep, Recommendation), Alembic migration, and Pydantic schemas are live on main. Post-merge CI on main: Backend CI SUCCESS, End-to-End Tests SUCCESS, Playwright Golden Scenario SUCCESS.
+
+### Feature-development pause
+
+Feature development is temporarily paused after WP-REC-03B. No feature implementation is currently active.
+
+**WP-REC-03C through 03G remain NOT AUTHORIZED.** Furthermore, their content, priority, and authorization will be reassessed only after the following planned packages:
+
+1. **WP-STRAT-01 — Product Strategy and Release Replanning** — the next planned package after this status-sync PR is independently reviewed and merged. Requires separate controlled execution and must NOT be implemented inside this PR.
+2. **WP-ARCH-01 — Architecture Hygiene and Agent Onboarding** — follows WP-STRAT-01. Requires separate controlled execution and must NOT be implemented inside this PR.
+3. **WP-REC-03C reassessment** — only after WP-STRAT-01 and WP-ARCH-01 are complete. Implementation remains paused and unauthorized until reassessed and separately authorized.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED — not postponed merely because agent automation is unavailable. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -114,12 +131,15 @@ PR #63 (WP-REC-03A) is **MERGED** at `5c86000046ea265c799dab05d6e23601d0fe79c0` 
 
 Without explicit Product Owner authorization, do not:
 - Implement any MVP phase (Phase 5, 6, or 7)
+- Start WP-STRAT-01 or WP-ARCH-01
+- Start or redesign WP-REC-03C through 03G
 - Start SP-0B or create forgemind-agent-runtime
 - Copy or move Runtime files
 - Access or modify the VPS
 - Install dependencies or run migrations
 - Create branches, commits, tags, releases, or PRs
 - Change Source of Truth or Decision Log
+- Perform strategic replanning or architectural redesign
 
 ---
 
@@ -145,6 +165,7 @@ Without explicit Product Owner authorization, do not:
 
 **8 of 15 ATs cannot pass.** All require Phases 5–7 implementation.
 **1 AT (AT-006) has a test file but was not executed** in this review environment due to integration database unavailability. The test is skipped when the database is unavailable.
+**WP-REC-03B does not cause any AT to newly pass.** The state machine and engine are foundational; AT coverage accrues in later packages (03C–03G and Phase 6).
 
 ---
 
@@ -200,6 +221,8 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. **Immediate decision:** review and approve/reject the DEC-013 documentation draft PR (`docs/dec-013-explicit-state-machine`).
-2. **If merged:** decide whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — the DEC-013 decision gate (WP-REC-03-DEC-GATE-1) is now satisfied; the remaining blocker is implementation authorization.
-3. **Implementation authorization:** WP-REC-03B through 03G remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+1. **Immediate decision:** review and approve/reject this status-sync documentation draft PR (`docs/status-sync-after-wp-rec-03b`).
+2. **If merged:** authorize **WP-STRAT-01** (Product Strategy and Release Replanning) — a separate controlled execution package; must NOT be implemented inside this PR.
+3. **After WP-STRAT-01:** authorize **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — a separate controlled execution package; must NOT be implemented inside this PR.
+4. **After WP-ARCH-01:** reassess the content, priority, and authorization of **WP-REC-03C** — implementation remains paused and unauthorized until reassessed and separately authorized.
+5. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
