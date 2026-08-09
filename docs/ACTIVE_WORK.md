@@ -92,12 +92,12 @@ No application code, tests, dependencies, lockfiles, migrations, Source of Truth
 
 ### Before Commit
 
-- [ ] `git diff --check` passes
-- [ ] Only authorized documentation files changed (docs/ACTIVE_WORK.md, docs/next_steps.md, docs/planning/wp_rec_03_decomposition.md)
-- [ ] No secrets in changed files
-- [ ] No planned technology presented as released
-- [ ] ForgeMind and Runtime goals not conflated
-- [ ] All 12 fresh-session questions answered unambiguously
+- [x] `git diff --check` passes
+- [x] Only authorized documentation files changed (docs/ACTIVE_WORK.md, docs/next_steps.md, docs/planning/wp_rec_03_decomposition.md)
+- [x] No secrets in changed files
+- [x] No planned technology presented as released
+- [x] ForgeMind and Runtime goals not conflated
+- [x] All 12 fresh-session questions answered unambiguously
 
 ### Fresh-Session Test (12 questions)
 
@@ -106,7 +106,7 @@ Can a new Hermes session answer these questions from documentation alone?
 1. **What is ForgeMind?** → README.md § "What is ForgeMind?" ✓
 2. **What is Release 1?** → README.md § "Release 1 Deliverables" ✓
 3. **Who is Release 1 for?** → README.md § "Overview" (recruiters and technical reviewers) ✓
-4. **What is implemented now?** → docs/next_steps.md § "Current Implementation Status" (Phases 1-4 complete, WP-REC-03A and 03B complete; 4 ATs pass; AT-006 test exists but not re-executed in this review) ✓
+4. **What is implemented now?** → docs/next_steps.md § "Current Implementation Status" (Phases 1-4 complete, WP-REC-03A and 03B complete; 3 ATs pass; AT-006 test exists but not re-executed in this review) ✓
 5. **What is only targeted or proposed?** → README.md (Release 1 targets) and docs/next_steps.md § "NOT IMPLEMENTED" ✓
 6. **What blocks Release 1?** → docs/next_steps.md § "NOT IMPLEMENTED (Release 1 blockers)" (Phases 5-7) ✓
 7. **Does ForgeMind require agent-loop at runtime?** → docs/next_steps.md § "Product / Runtime Boundary" (No, development-time tool only) ✓
