@@ -1,23 +1,23 @@
 # ForgeMind Active Work
 
-**Last Updated:** 2026-08-08
-**Baseline:** origin/main @ `a859c0d0fbee721ad0ea44a00682370d3da9355f`
-**Status:** ACTIVE — WP-REC-03-DEC (planning/decomposition package) in progress; draft PR open for independent review; N3/N4/N5 corrective pass complete
+**Last Updated:** 2026-08-09
+**Baseline:** origin/main @ `1bc79ca55e86311d2f042dd830163896ebc32275`
+**Status:** ACTIVE — WP-REC-03A (AI Provider Adapter — Chat/Reasoning) implementation authorized and in progress
 
 ---
 
 ## Current Task
 
-**Work Package:** WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition (planning only)
+**Work Package:** WP-REC-03A — AI Provider Adapter (Chat/Reasoning)
 
-**Authorization:*** Product Owner authorized planning/decomposition package on 2026-08-08
+**Authorization:** Product Owner authorized implementation on 2026-08-09
 
 **Lifecycle state:**
 - WP-REC-01 + WP-REC-02: COMPLETE — MERGED via PR #61
 - PR #61: MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08)
-- WP-REC-03-DEC: ACTIVE — decomposition plan created, draft PR open for independent review, N3/N4/N5 corrective pass complete
-- WP-REC-03 implementation: NOT AUTHORIZED — requires separate Product Owner authorization for each subpackage
-- Every resulting implementation package (03A–03G): NOT AUTHORIZED
+- WP-REC-03-DEC: COMPLETE — MERGED via PR #62 at `1bc79ca55e86311d2f042dd830163896ebc32275`
+- WP-REC-03A: ACTIVE — Product Owner explicitly authorized implementation on 2026-08-09
+- WP-REC-03B through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization
 - DEC-013 (workflow orchestration): Proposed — may be resolved at any time, but must be Accepted before WP-REC-03B implementation
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)

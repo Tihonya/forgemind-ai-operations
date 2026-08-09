@@ -1,8 +1,8 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-09
 **Current Status:** Development in progress — Release 1 NOT READY
-**Authoritative baseline:** `origin/main` @ `a859c0d0fbee721ad0ea44a00682370d3da9355f`
+**Authoritative baseline:** `origin/main` @ `1bc79ca55e86311d2f042dd830163896ebc32275`
 
 ---
 
@@ -94,15 +94,15 @@ This repository contains two conceptually separate projects:
 
 ## Currently Authorized Work
 
-**WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition (planning only).**
+**WP-REC-03A — AI Provider Adapter (Chat/Reasoning).**
 
 PR #61 (WP-REC-01/02) is **MERGED** at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08). WP-REC-01/02 are COMPLETE.
 
-WP-REC-03-DEC is the active planning package. It decomposes WP-REC-03 (MVP Phase 5: AI Workflow) into seven small, separately authorizable implementation packages (WP-REC-03A through 03G) plus one decision gate (DEC-013). See `docs/planning/wp_rec_03_decomposition.md` for the full plan.
+PR #62 (WP-REC-03-DEC) is **MERGED** at `1bc79ca55e86311d2f042dd830163896ebc32275`. WP-REC-03-DEC is COMPLETE. The decomposition plan decomposes WP-REC-03 (MVP Phase 5: AI Workflow) into seven small, separately authorizable implementation packages (WP-REC-03A through 03G) plus one decision gate (DEC-013). See `docs/planning/wp_rec_03_decomposition.md` for the full plan.
 
-**WP-REC-03 implementation is NOT AUTHORIZED.** Every resulting implementation package (03A–03G) is NOT AUTHORIZED. Each requires separate explicit Product Owner authorization before any implementation begins.
+**WP-REC-03A is explicitly authorized and active.** The Product Owner authorized implementation on 2026-08-09. WP-REC-03B through 03G remain **unauthorized** — each requires separate explicit Product Owner authorization before any implementation begins.
 
-**First candidate implementation package:** WP-REC-03A (AI Provider Adapter) — NOT AUTHORIZED.
+**First candidate implementation package:** WP-REC-03A (AI Provider Adapter) — AUTHORIZED and ACTIVE.
 
 **DEC-013 (workflow orchestration):** Proposed — may be resolved at any time, but must be Accepted by the Product Owner before WP-REC-03B implementation begins.
 
@@ -201,7 +201,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ---
 
 **Next Milestone:** Product Owner decision required:
-1. **Immediate decision:** approve or reject merge of the WP-REC-03-DEC planning PR (documentation-only, decomposes WP-REC-03 into 03A–03G + DEC-013 gate).
-2. **If merged:** decide whether to authorize WP-REC-03A (AI Provider Adapter) as the first implementation package — remains NOT AUTHORIZED until separately approved.
+1. **Immediate decision:** review and approve/reject the WP-REC-03A draft PR (AI Provider Adapter — Chat/Reasoning).
+2. **If merged:** decide whether to authorize WP-REC-03B (Workflow/State-Machine Foundation) — requires DEC-013 Accepted first.
 3. **Architecture decision:** decide whether to accept DEC-013 (workflow orchestration: custom state machine) — may be resolved at any time, must be Accepted before WP-REC-03B.
-4. **Implementation authorization:** WP-REC-03 implementation and all subpackages (03A–03G) remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+4. **Implementation authorization:** WP-REC-03B through 03G remain **unauthorized** until separately approved. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
