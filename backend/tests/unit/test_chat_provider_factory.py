@@ -510,3 +510,166 @@ class TestOfficialBaseUrlNormalization:
             create_chat_provider(config=config)
         call_kwargs = mock_async_openai.call_args[1]
         assert call_kwargs["base_url"] == "http://localhost:8080/v1/"
+
+
+# ---------------------------------------------------------------------------
+# Final correction: robust official endpoint classification
+# ---------------------------------------------------------------------------
+
+
+class TestRobustOfficialEndpointClassification:
+    """Equivalent official forms must fail fast; non-official forms must not."""
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+            "https://api.openai.com/v1//",
+            "https://API.OPENAI.COM/v1",
+            "https://API.OPENAI.COM/v1/",
+            "https://api.openai.com:443/v1",
+            "https://api.openai.com:443/v1/",
+            "https://API.OPENAI.COM:443/v1",
+        ],
+    )
+    def test_equivalent_official_without_key_fails_fast(self, base_url: str) -> None:
+        """Every equivalent official form without an API key raises."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="",
+            openai_api_base=base_url,
+        )
+        with pytest.raises(
+            ChatProviderConfigurationError,
+            match="API key.*required.*official",
+        ):
+            create_chat_provider(config=config)
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+            "https://API.OPENAI.COM/v1",
+            "https://api.openai.com:443/v1",
+            "https://API.OPENAI.COM:443/v1/",
+        ],
+    )
+    def test_equivalent_official_with_key_succeeds(self, base_url: str) -> None:
+        """Every equivalent official form with a key creates a provider."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-real-key",
+            openai_api_base=base_url,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ):
+            provider = create_chat_provider(config=config)
+        assert isinstance(provider, OpenAIChatProvider)
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://api.openai.com/v1/",
+            "https://API.OPENAI.COM/v1",
+            "https://api.openai.com:443/v1",
+            "https://API.OPENAI.COM:443/v1/",
+        ],
+    )
+    def test_equivalent_official_base_url_omitted(self, base_url: str) -> None:
+        """Equivalent official forms get None base_url (SDK default)."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+            openai_api_base=base_url,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ) as mock_async_openai:
+            create_chat_provider(config=config)
+        call_kwargs = mock_async_openai.call_args[1]
+        assert "base_url" not in call_kwargs or call_kwargs.get("base_url") is None
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            # Subdomains — not the official endpoint
+            "https://sub.api.openai.com/v1",
+            "https://api.openai.com.evil.com/v1",
+            # Non-HTTPS schemes
+            "http://api.openai.com/v1",
+            "ftp://api.openai.com/v1",
+            # Different paths
+            "https://api.openai.com/v2",
+            "https://api.openai.com/",
+            "https://api.openai.com",
+            # Query and fragment
+            "https://api.openai.com/v1?foo=bar",
+            "https://api.openai.com/v1#frag",
+            # Userinfo
+            "https://user:pass@api.openai.com/v1",
+            "https://user@api.openai.com/v1",
+            # Non-default port
+            "https://api.openai.com:8443/v1",
+            # Lookalike hosts
+            "https://api.openai.com.org/v1",
+            "https://api-openai-com/v1",
+        ],
+    )
+    def test_non_official_not_classified_as_official(self, base_url: str) -> None:
+        """Non-official URLs must NOT be classified as official (no fail-fast)."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="",
+            openai_api_base=base_url,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ):
+            # Should NOT raise — sentinel key is used for custom endpoints.
+            provider = create_chat_provider(config=config)
+        assert isinstance(provider, OpenAIChatProvider)
+
+    @pytest.mark.parametrize(
+        "base_url",
+        [
+            "https://api.openai.com/v1",
+            "https://API.OPENAI.COM/v1",
+            "https://api.openai.com:443/v1",
+            "https://api.openai.com/v1/",
+        ],
+    )
+    def test_official_makes_no_network_call(self, base_url: str) -> None:
+        """Equivalent official form without key fails fast — no network call."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="",
+            openai_api_base=base_url,
+        )
+        with patch("httpx.Client") as mock_httpx:
+            with pytest.raises(ChatProviderConfigurationError):
+                create_chat_provider(config=config)
+            mock_httpx.assert_not_called()
+
+    def test_original_custom_url_passed_unchanged_to_sdk(self) -> None:
+        """The original configured base URL is passed unchanged to the SDK."""
+        original_url = "https://API.OPENAI.COM:443/v1/"
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+            openai_api_base=original_url,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ) as mock_async_openai:
+            create_chat_provider(config=config)
+        # Official endpoint recognized → base_url is None (SDK default).
+        call_kwargs = mock_async_openai.call_args[1]
+        assert "base_url" not in call_kwargs or call_kwargs.get("base_url") is None

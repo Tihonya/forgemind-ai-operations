@@ -31,27 +31,74 @@ _OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
 
 
 def _normalize_base_url(url: str) -> str:
-    """Normalize a base URL for comparison.
+    """Normalize a base URL for official-endpoint comparison.
 
-    Strips trailing slashes so that ``https://api.openai.com/v1`` and
-    ``https://api.openai.com/v1/`` are treated as equivalent.
+    Applies the following normalizations so equivalent forms of the
+    official OpenAI endpoint compare equal:
+    - lowercase the scheme;
+    - lowercase the hostname;
+    - strip explicit default HTTPS port ``:443``;
+    - strip trailing slashes from the path;
+    - preserve query and fragment for non-official comparison.
+
+    This function is used ONLY for comparison — the original configured
+    base URL is passed unchanged to the SDK.
     """
     if not url:
         return url
-    # Use urlsplit/urlunsplit to robustly strip trailing slashes from
-    # the path component without affecting query or fragment.
     parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    # Lowercase hostname (case-insensitive DNS). Port is preserved unless
+    # it is the default HTTPS port (443), which is stripped for comparison.
+    hostname = parts.hostname or ""
+    hostname = hostname.lower()
+    port = parts.port
+    netloc = hostname
+    if port is not None and port != 443:
+        netloc = f"{hostname}:{port}"
+    elif port is not None and port == 443:
+        # Explicit :443 is equivalent to omitting it for HTTPS.
+        netloc = hostname
+    elif ":" in parts.netloc and parts.netloc.split(":")[-1] == "443":
+        # Handle case where hostname is uppercase and port is :443.
+        netloc = hostname
     path = parts.path.rstrip("/")
-    return urlunsplit((parts.scheme, parts.netloc, path, parts.query, parts.fragment))
+    return urlunsplit((scheme, netloc, path, parts.query, parts.fragment))
 
 
 def _is_official_endpoint(base_url: str) -> bool:
     """Check if the base URL points to the official OpenAI endpoint.
 
-    Comparison is normalized so trailing slashes and equivalent forms
-    cannot bypass fail-fast API-key validation.
+    Comparison is semantically normalized so that equivalent forms —
+    trailing slashes, uppercase scheme/hostname, explicit default port
+    ``:443`` — cannot bypass fail-fast API-key validation.
+
+    Strictly checks: scheme=https, host=api.openai.com, path=/v1, no
+    query, no fragment, no userinfo. Subdomains, lookalike hosts,
+    non-HTTPS schemes, different paths, query-bearing URLs, and
+    fragments are NOT classified as official.
     """
-    return _normalize_base_url(base_url) == _normalize_base_url(_OFFICIAL_OPENAI_BASE_URL)
+    if not base_url:
+        return False
+    parts = urlsplit(base_url)
+    # Must be HTTPS.
+    if parts.scheme.lower() != "https":
+        return False
+    # Hostname must be exactly api.openai.com (case-insensitive).
+    hostname = parts.hostname or ""
+    if hostname.lower() != "api.openai.com":
+        return False
+    # Port must be default (None) or 443.
+    if parts.port is not None and parts.port != 443:
+        return False
+    # Path must be /v1 (with optional trailing slashes).
+    if parts.path.rstrip("/") != "/v1":
+        return False
+    # No query or fragment allowed for the official endpoint.
+    if parts.query or parts.fragment:
+        return False
+    # No userinfo allowed (user:pass@host).
+    return not (parts.username or parts.password)
 
 
 def create_chat_provider(

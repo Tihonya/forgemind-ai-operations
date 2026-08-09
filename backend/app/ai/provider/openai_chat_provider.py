@@ -9,11 +9,13 @@ as TransientChatProviderError for the caller to handle. Workflow-level
 outage retry is owned by WP-REC-03D; this adapter performs a single
 attempt and classifies failures deterministically.
 
-Rate limiting is process-local: a sliding-window limiter enforces
-``rate_limit_per_minute`` calls per minute within a single process.
-This is NOT a distributed limiter — multi-process deployments (e.g.,
-multiple Uvicorn workers) each get their own independent window.
-Distributed rate limiting is out of scope for WP-REC-03A.
+Rate limiting is per OpenAIChatProvider instance: a sliding-window
+limiter enforces ``rate_limit_per_minute`` calls per minute.  Limiter
+state is stored in-process and is not shared between provider
+instances, processes, or workers.  This is NOT a distributed limiter —
+multi-process deployments (e.g., multiple Uvicorn workers) each get
+their own independent window.  Distributed rate limiting is out of
+scope for WP-REC-03A.
 """
 
 from __future__ import annotations
@@ -62,18 +64,19 @@ _PERMANENT_TYPES: tuple[str, ...] = (
 
 
 class _SlidingWindowRateLimiter:
-    """Process-local sliding-window rate limiter.
+    """Per-instance sliding-window rate limiter.
 
     Allows at most ``max_calls`` calls within any 60-second window.
     Uses a deque of monotonic timestamps pruned on each acquire.
 
+    Scope: the limiter state lives in-process and is owned by a single
+    ``OpenAIChatProvider`` instance.  It is NOT shared between provider
+    instances, processes, or workers.  Each provider instance gets its
+    own limiter.
+
     Cancellation-safe: if the asyncio.sleep is cancelled, the timestamp
     is NOT consumed — the caller's CancelledError propagates without
     counting against the rate limit.
-
-    This is NOT a distributed limiter. Each process instance has its own
-    independent window. Multi-worker deployments (e.g. multiple Uvicorn
-    workers) do not share state.
     """
 
     def __init__(
