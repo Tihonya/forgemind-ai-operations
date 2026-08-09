@@ -168,7 +168,7 @@ class TestRequiredFieldsEnforced:
 
     def test_missing_requires_approval_rejected(self) -> None:
         item = _valid_risk_item()
-        del item["recommended_actions"][0]["requires_approval"]  # type: ignore[attr-defined]
+        del item["recommended_actions"][0]["requires_approval"]  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
 
@@ -184,14 +184,14 @@ class TestWrongTypesRejected:
 
     def test_requires_approval_wrong_type_rejected(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = []  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = []  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
 
     def test_risks_wrong_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
             RecommendationData.model_validate(
-                _valid_recommendation(risks="not-a-list"),  # type: ignore[arg-type]
+                _valid_recommendation(risks="not-a-list"),
             )
 
 
@@ -240,7 +240,7 @@ class TestSchemaVersionEnforcement:
     def test_unsupported_version_numeric_rejected(self) -> None:
         with pytest.raises(ValidationError):
             RecommendationData.model_validate(
-                _valid_recommendation(schema_version=1.0),  # type: ignore[arg-type]
+                _valid_recommendation(schema_version=1.0),
             )
 
 
@@ -293,21 +293,21 @@ class TestDeterministicQuantityExclusion:
 
     def test_shortage_field_rejected_as_extra(self) -> None:
         item = _valid_risk_item()
-        item["shortage"] = 8  # type: ignore[assignment]
+        item["shortage"] = 8
         with pytest.raises(ValidationError) as exc_info:
             RiskItem.model_validate(item)
         assert "extra_forbidden" in str(exc_info.value)
 
     def test_severity_field_rejected_as_extra(self) -> None:
         item = _valid_risk_item()
-        item["severity"] = "CRITICAL"  # type: ignore[assignment]
+        item["severity"] = "CRITICAL"
         with pytest.raises(ValidationError) as exc_info:
             RiskItem.model_validate(item)
         assert "extra_forbidden" in str(exc_info.value)
 
     def test_available_quantity_field_rejected_as_extra(self) -> None:
         item = _valid_risk_item()
-        item["available"] = 12  # type: ignore[assignment]
+        item["available"] = 12
         with pytest.raises(ValidationError) as exc_info:
             RiskItem.model_validate(item)
         assert "extra_forbidden" in str(exc_info.value)
@@ -323,36 +323,36 @@ class TestStrictBooleanApproval:
 
     def test_true_boolean_accepted(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = True  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = True  # type: ignore[index]
         result = RiskItem.model_validate(item)
         assert result.recommended_actions[0].requires_approval is True
 
     def test_false_boolean_accepted(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = False  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = False  # type: ignore[index]
         result = RiskItem.model_validate(item)
         assert result.recommended_actions[0].requires_approval is False
 
     def test_string_true_rejected(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = "true"  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = "true"  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
 
     def test_string_false_rejected(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = "false"  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = "false"  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
 
     def test_integer_one_rejected(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = 1  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = 1  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
 
     def test_integer_zero_rejected(self) -> None:
         item = _valid_risk_item()
-        item["recommended_actions"][0]["requires_approval"] = 0  # type: ignore[assignment]
+        item["recommended_actions"][0]["requires_approval"] = 0  # type: ignore[index]
         with pytest.raises(ValidationError):
             RiskItem.model_validate(item)
