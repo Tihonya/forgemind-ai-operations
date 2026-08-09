@@ -203,6 +203,12 @@ def _sanitize_location_component(component: Any) -> str:
     Returns:
         A safe, bounded string representation of the component.
     """
+    # Handle bool before int: bool is a subclass of int in Python,
+    # so isinstance(True, int) is True. Booleans are not valid list
+    # indices and must be neutralized.
+    if isinstance(component, bool):
+        return _UNKNOWN_MARKER
+
     # Handle integer list indices.
     if isinstance(component, int):
         # Only non-negative integers are safe list indices.
@@ -212,10 +218,6 @@ def _sanitize_location_component(component: Any) -> str:
         if len(text) > _MAX_LOC_COMPONENT_LENGTH:
             return _UNKNOWN_MARKER
         return text
-
-    # Handle bool separately from int (bool is a subclass of int in Python).
-    if isinstance(component, bool):
-        return _UNKNOWN_MARKER
 
     text = str(component)
 

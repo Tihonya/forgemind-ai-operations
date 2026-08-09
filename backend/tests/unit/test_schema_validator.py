@@ -636,6 +636,36 @@ class TestSanitizerBounds:
         assert _sanitize_location_component("unknown_field") == _UNKNOWN_MARKER
         assert _sanitize_location_component("SECRET_API_KEY") == _UNKNOWN_MARKER
 
+    def test_true_boolean_neutralized(self) -> None:
+        """True is not a valid list index and must be neutralized.
+
+        bool is a subclass of int in Python, so isinstance(True, int)
+        is True. The sanitizer must check bool before int to prevent
+        True from being returned as the string "True".
+        """
+        from app.ai.workflow.schema_validator import (
+            _UNKNOWN_MARKER,
+            _sanitize_location_component,
+        )
+
+        assert _sanitize_location_component(True) == _UNKNOWN_MARKER
+
+    def test_false_boolean_neutralized(self) -> None:
+        """False is not a valid list index and must be neutralized."""
+        from app.ai.workflow.schema_validator import (
+            _UNKNOWN_MARKER,
+            _sanitize_location_component,
+        )
+
+        assert _sanitize_location_component(False) == _UNKNOWN_MARKER
+
+    def test_non_negative_integer_still_accepted_after_bool_fix(self) -> None:
+        """Non-negative integer indices remain accepted after the bool fix."""
+        from app.ai.workflow.schema_validator import _sanitize_location_component
+
+        assert _sanitize_location_component(0) == "0"
+        assert _sanitize_location_component(42) == "42"
+
 
 class TestStructuredLogCapture:
     """Verify that structured logs are genuinely inspected (Finding 2).
