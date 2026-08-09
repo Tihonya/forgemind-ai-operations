@@ -311,3 +311,48 @@ class TestDeterministicQuantityExclusion:
         with pytest.raises(ValidationError) as exc_info:
             RiskItem.model_validate(item)
         assert "extra_forbidden" in str(exc_info.value)
+
+
+class TestStrictBooleanApproval:
+    """Verify that requires_approval enforces strict JSON boolean (Finding 3).
+
+    Pydantic's default bool coercion accepts strings like "true" and
+    integers like 1. The wire contract requires a JSON boolean. The
+    field-level validator rejects non-bool inputs before coercion.
+    """
+
+    def test_true_boolean_accepted(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = True  # type: ignore[assignment]
+        result = RiskItem.model_validate(item)
+        assert result.recommended_actions[0].requires_approval is True
+
+    def test_false_boolean_accepted(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = False  # type: ignore[assignment]
+        result = RiskItem.model_validate(item)
+        assert result.recommended_actions[0].requires_approval is False
+
+    def test_string_true_rejected(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = "true"  # type: ignore[assignment]
+        with pytest.raises(ValidationError):
+            RiskItem.model_validate(item)
+
+    def test_string_false_rejected(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = "false"  # type: ignore[assignment]
+        with pytest.raises(ValidationError):
+            RiskItem.model_validate(item)
+
+    def test_integer_one_rejected(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = 1  # type: ignore[assignment]
+        with pytest.raises(ValidationError):
+            RiskItem.model_validate(item)
+
+    def test_integer_zero_rejected(self) -> None:
+        item = _valid_risk_item()
+        item["recommended_actions"][0]["requires_approval"] = 0  # type: ignore[assignment]
+        with pytest.raises(ValidationError):
+            RiskItem.model_validate(item)

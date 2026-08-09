@@ -33,11 +33,14 @@ from __future__ import annotations
 PROMPT_VERSION: str = "1.0"
 
 # The system prompt is a static template. Runtime context (plan_id,
-# risk data) will be injected by the future 03F worker when it calls
-# ChatProvider.complete(prompt=..., schema=..., context=...).
+# run_id, risk data) will be injected by the future 03F worker when it
+# calls ChatProvider.complete(prompt=..., schema=..., context=...).
 #
-# The prompt uses placeholder markers in double-brace notation to
-# clearly distinguish template variables from literal JSON.
+# Template syntax: Python ``str.format()`` is used for runtime value
+# injection. Single-brace tokens ``{plan_id}``, ``{run_id}``, and
+# ``{risk_data}`` are format fields replaced at call time. All literal
+# JSON braces in the example structure are escaped as ``{{`` and ``}}``
+# so they survive ``str.format()`` as single braces in the output.
 SYSTEM_PROMPT_TEMPLATE: str = """\
 You are a supply chain risk intelligence assistant. Your task is to
 analyze production plan supply risks and provide structured
@@ -102,9 +105,9 @@ RULES:
 - Return only the JSON object. No markdown, no explanation text.
 
 INPUT CONTEXT (provided at runtime):
-- Plan identifier: {{plan_id}}
-- Workflow run ID: {{run_id}}
-- Risk engine output: {{risk_data}}
+- Plan identifier: {plan_id}
+- Workflow run ID: {run_id}
+- Risk engine output: {risk_data}
 """
 
 
@@ -116,9 +119,12 @@ def build_system_prompt(
 ) -> str:
     """Build the system prompt with runtime context injected.
 
-    This function performs simple string replacement of the template
-    placeholders. It does not perform retrieval, persistence, or
-    workflow-state mutation.
+    This function uses ``str.format()`` to inject the three runtime
+    values into the template. Literal JSON braces in the template are
+    escaped as ``{{`` / ``}}`` and survive ``str.format()`` as single
+    braces in the output. The three format fields ``{plan_id}``,
+    ``{run_id}``, and ``{risk_data}`` are replaced with the supplied
+    values.
 
     Args:
         plan_id: External production plan identifier (e.g.

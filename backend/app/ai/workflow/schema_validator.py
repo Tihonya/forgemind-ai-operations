@@ -45,6 +45,45 @@ from app.schemas.recommendation import RecommendationData
 
 _logger = get_logger(__name__)
 
+# Maximum number of error detail entries exposed in the exception's
+# ``field_locations`` and ``error_types`` lists and in structured logs.
+# The total ``error_count`` always reports the full number of validation
+# errors; only the exposed detail lists are capped to prevent unbounded
+# exception and log metadata.
+_MAX_EXPOSED_ERRORS: int = 20
+
+# Maximum length of a single sanitized location-component string.
+# Components longer than this are truncated and marked.
+_MAX_LOC_COMPONENT_LENGTH: int = 50
+
+# Known schema field names for the v1 recommendation wire schema.
+# When a Pydantic error location component matches one of these names,
+# it is exposed as-is. Integer list indices (e.g. ``0``, ``1``) are
+# also exposed as-is. Any other string component — including
+# input-controlled extra-field names — is replaced with ``<extra>`` to
+# prevent input-controlled text from entering exception metadata or logs.
+_KNOWN_FIELD_NAMES: frozenset[str] = frozenset({
+    "schema_version",
+    "run_id",
+    "plan_id",
+    "risks",
+    "risk_id",
+    "summary",
+    "business_impact",
+    "recommended_actions",
+    "action_type",
+    "title",
+    "rationale",
+    "requires_approval",
+    "sources",
+    "document_id",
+    "version",
+    "chunk_id",
+})
+
+# Neutral marker replacing unknown or input-controlled location components.
+_UNKNOWN_MARKER: str = "<extra>"
+
 
 class ValidationFailureReason(StrEnum):
     """Safe, bounded classification of why validation failed.
@@ -67,14 +106,22 @@ class StructuredOutputValidationError(Exception):
     Attributes:
         reason: Safe failure classification
             (:class:`ValidationFailureReason`). Never contains raw input.
-        error_count: Number of schema-validation errors when
+        error_count: Total number of schema-validation errors when
             ``reason`` is ``INVALID_SCHEMA``. ``0`` for ``INVALID_JSON``.
-        field_locations: List of safe field-location strings (e.g.
-            ``"risks.0.sources"``) when ``reason`` is ``INVALID_SCHEMA``.
+            This always reports the full count, even when the detail
+            lists are capped.
+        field_locations: Sanitized and capped list of safe
+            field-location strings (e.g. ``"risks.0.sources"``) when
+            ``reason`` is ``INVALID_SCHEMA``. Empty for ``INVALID_JSON``.
+            Each component is either a known schema field name, an
+            integer list index, or the neutral marker ``<extra>``.
+            Unknown or input-controlled components are never exposed.
+            The list is capped at ``_MAX_EXPOSED_ERRORS`` entries.
+        error_types: Sanitized and capped list of safe Pydantic
+            error-type strings (e.g. ``"missing"`` or
+            ``"extra_forbidden"``) when ``reason`` is ``INVALID_SCHEMA``.
             Empty for ``INVALID_JSON``.
-        error_types: List of safe Pydantic error-type strings (e.g.
-            ``"missing"`` or ``"extra_forbidden"``) when ``reason`` is
-            ``INVALID_SCHEMA``. Empty for ``INVALID_JSON``.
+            The list is capped at ``_MAX_EXPOSED_ERRORS`` entries.
 
     The ``__cause__`` attribute preserves the original exception
     (``json.JSONDecodeError`` or ``pydantic.ValidationError``) as an
@@ -110,24 +157,89 @@ class StructuredOutputValidationError(Exception):
         return ", ".join(parts)
 
 
+def _sanitize_location_component(component: Any) -> str:
+    """Sanitize a single Pydantic error location component.
+
+    Known schema field names are returned as-is. Integer list indices
+    are returned as their string representation. Any other string
+    component — including input-controlled extra-field names — is
+    replaced with ``_UNKNOWN_MARKER`` to prevent input-controlled text
+    from entering exception metadata or logs.
+
+    Components longer than ``_MAX_LOC_COMPONENT_LENGTH`` are truncated
+    and marked, even if they are known field names (defensive).
+
+    Args:
+        component: A single element from a Pydantic error ``loc`` tuple.
+
+    Returns:
+        A safe, bounded string representation of the component.
+    """
+    if isinstance(component, int):
+        return str(component)
+
+    text = str(component)
+
+    if len(text) > _MAX_LOC_COMPONENT_LENGTH:
+        return _UNKNOWN_MARKER
+
+    if text in _KNOWN_FIELD_NAMES:
+        return text
+
+    return _UNKNOWN_MARKER
+
+
+def _sanitize_field_location(loc: tuple[Any, ...]) -> str:
+    """Sanitize a full Pydantic error location path.
+
+    Each component is individually sanitized via
+    :func:`_sanitize_location_component`. Components are joined with
+    ``"."`` to produce a dotted path string.
+
+    Args:
+        loc: The ``loc`` tuple from a Pydantic validation error.
+
+    Returns:
+        A safe, bounded field-location string such as
+        ``"risks.0.sources"`` or ``"<extra>"``.
+    """
+    if not loc:
+        return ""
+    parts = [_sanitize_location_component(c) for c in loc]
+    return ".".join(parts)
+
+
 def _extract_safe_error_info(exc: ValidationError) -> tuple[int, list[str], list[str]]:
     """Extract safe, bounded metadata from a Pydantic ValidationError.
 
     Returns:
         A tuple of (error_count, field_locations, error_types).
 
-    Field locations and error types are safe to log because they contain
-        only field paths and type names — never raw input values.
+        - ``error_count`` is the total number of validation errors
+          (uncapped).
+        - ``field_locations`` is a list of sanitized, bounded
+          field-location strings, capped at ``_MAX_EXPOSED_ERRORS``
+          entries. Each location contains only known schema field
+          names, integer indices, or the neutral marker ``<extra>``.
+        - ``error_types`` is a list of safe Pydantic error-type
+          strings, capped at ``_MAX_EXPOSED_ERRORS`` entries.
+
+    Field locations and error types are safe to log because they
+    contain only field paths and type names — never raw input values
+    or input-controlled field names.
     """
     errors = exc.errors()
     error_count = len(errors)
+
+    # Cap the number of exposed detail entries.
+    exposed_errors = errors[:_MAX_EXPOSED_ERRORS]
+
     field_locations: list[str] = []
     error_types: list[str] = []
 
-    for err in errors:
+    for err in exposed_errors:
         loc = err.get("loc", ())
-        loc_str = ".".join(str(part) for part in loc)
-        field_locations.append(loc_str)
+        field_locations.append(_sanitize_field_location(tuple(loc)))
 
         err_type = err.get("type", "unknown")
         error_types.append(str(err_type))

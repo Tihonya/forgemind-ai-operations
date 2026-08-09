@@ -8,12 +8,15 @@ Tests cover:
 - Missing required fields rejected
 - Extra fields rejected
 - Raw response content is absent from exception text
+- Validation metadata is sanitized and bounded (no input-controlled
+  field names, capped detail lists, full error_count retained)
 - Validation performs no persistence
 - Validation performs no state transition
 - Validation creates no write action
 - Existing state-machine contract independently permits
   AWAITING_VALIDATION → FAILED_VALIDATION
 - Invalid transitions remain rejected by the existing state machine
+- Prompt template interpolation injects runtime values correctly
 
 The absence of side effects (no persistence, no state transition, no
 write action) follows from the validator's pure design: it imports only
@@ -28,6 +31,11 @@ import json
 
 import pytest
 
+from app.ai.workflow.prompts import (
+    PROMPT_VERSION,
+    SYSTEM_PROMPT_TEMPLATE,
+    build_system_prompt,
+)
 from app.ai.workflow.schema_validator import (
     StructuredOutputValidationError,
     ValidationFailureReason,
@@ -321,3 +329,196 @@ class TestStateMachineContract:
                 WorkflowState.FAILED_PROVIDER,
                 WorkflowState.FAILED_VALIDATION,
             )
+
+
+class TestMetadataSanitizationAndBounds:
+    """Verify that validation metadata is sanitized and bounded.
+
+    Finding 2 regression tests: input-controlled field names must not
+    appear in field_locations, exception text, or logs. Detail lists
+    must be capped. The total error_count must remain uncapped.
+    """
+
+    def test_secret_in_extra_field_value_absent_from_exception(self) -> None:
+        """A secret placed in an extra-field value must not leak."""
+        data = json.loads(_valid_recommendation_json())
+        data["SECRET_EXTRA_FIELD"] = "SECRET_VALUE_789"
+        raw = json.dumps(data)
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        exc_str = str(exc_info.value)
+        assert "SECRET_VALUE_789" not in exc_str
+
+    def test_secret_in_extra_field_name_absent_from_field_locations(self) -> None:
+        """A secret placed in an extra-field name must not appear in field_locations."""
+        raw = json.dumps({
+            "schema_version": "1.0",
+            "SECRET_API_KEY_NAME": "value",
+        })
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        for loc in exc_info.value.field_locations:
+            assert "SECRET_API_KEY_NAME" not in loc
+        exc_str = str(exc_info.value)
+        assert "SECRET_API_KEY_NAME" not in exc_str
+
+    def test_unknown_location_component_replaced_by_marker(self) -> None:
+        """Unknown location components are replaced with <extra>."""
+        raw = json.dumps({
+            "schema_version": "1.0",
+            "unknown_field": "value",
+        })
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        for loc in exc_info.value.field_locations:
+            assert "unknown_field" not in loc
+        # Each unknown component should be <extra> or contain only known names
+        for loc in exc_info.value.field_locations:
+            for component in loc.split("."):
+                allowed = {
+                    "<extra>",
+                    "schema_version",
+                    "risks",
+                    "run_id",
+                    "plan_id",
+                }
+                assert component in allowed or component.isdigit()
+
+    def test_detail_lists_never_exceed_cap(self) -> None:
+        """field_locations and error_types never exceed the documented cap."""
+        # Build a payload with many extra fields to generate many errors.
+        data: dict[str, object] = {
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+        }
+        for i in range(50):
+            data[f"extra_field_{i}"] = "value"
+        raw = json.dumps(data)
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        assert len(exc_info.value.field_locations) <= 20
+        assert len(exc_info.value.error_types) <= 20
+
+    def test_total_error_count_reports_full_number(self) -> None:
+        """error_count reports the full number of errors, not the capped count."""
+        data: dict[str, object] = {
+            "schema_version": "1.0",
+            "run_id": _RUN_ID,
+            "plan_id": "PLAN-2026-W31",
+            "risks": [],
+        }
+        for i in range(30):
+            data[f"extra_field_{i}"] = "value"
+        raw = json.dumps(data)
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        # error_count should be >= 30 (at least 30 extra_forbidden errors)
+        assert exc_info.value.error_count >= 30
+
+    def test_long_field_name_cannot_enlarge_output(self) -> None:
+        """Very long input-controlled field names are replaced by marker."""
+        long_name = "A" * 200
+        raw = json.dumps({
+            "schema_version": "1.0",
+            long_name: "value",
+        })
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(raw)
+        exc_str = str(exc_info.value)
+        assert long_name not in exc_str
+        for loc in exc_info.value.field_locations:
+            assert long_name not in loc
+
+    def test_known_paths_remain_useful_after_sanitization(self) -> None:
+        """Normal known paths such as risks.0.sources remain useful."""
+        data = json.loads(_valid_recommendation_json())
+        del data["risks"][0]["sources"]
+        with pytest.raises(StructuredOutputValidationError) as exc_info:
+            validate_structured_output(json.dumps(data))
+        # At least one location should contain the known path
+        locs_str = " ".join(exc_info.value.field_locations)
+        assert "risks" in locs_str
+        assert "sources" in locs_str
+
+
+class TestPromptInterpolation:
+    """Verify that build_system_prompt injects runtime values correctly.
+
+    Finding 1 regression tests: the returned prompt must contain the
+    supplied values, not literal {plan_id}, {run_id}, or {risk_data}
+    placeholders. Literal JSON example braces must be rendered as
+    single braces. Repeated calls must not mutate the template constant.
+    """
+
+    def test_plan_id_appears_in_built_prompt(self) -> None:
+        prompt = build_system_prompt(
+            plan_id="PLAN-2026-W31",
+            run_id="test-run-id",
+            risk_data="{}",
+        )
+        assert "PLAN-2026-W31" in prompt
+
+    def test_run_id_appears_in_built_prompt(self) -> None:
+        prompt = build_system_prompt(
+            plan_id="PLAN-X",
+            run_id="abc-123-def-456",
+            risk_data="{}",
+        )
+        assert "abc-123-def-456" in prompt
+
+    def test_risk_data_appears_in_built_prompt(self) -> None:
+        risk_data = '{"risks": [{"risk_id": "RISK-001", "severity": "CRITICAL"}]}'
+        prompt = build_system_prompt(
+            plan_id="PLAN-X",
+            run_id="test-run-id",
+            risk_data=risk_data,
+        )
+        assert risk_data in prompt
+
+    def test_unresolved_placeholders_do_not_remain(self) -> None:
+        prompt = build_system_prompt(
+            plan_id="PLAN-X",
+            run_id="test-run-id",
+            risk_data="{}",
+        )
+        assert "{plan_id}" not in prompt
+        assert "{run_id}" not in prompt
+        assert "{risk_data}" not in prompt
+
+    def test_literal_json_braces_rendered_correctly(self) -> None:
+        """Literal JSON example braces survive as single braces."""
+        prompt = build_system_prompt(
+            plan_id="PLAN-X",
+            run_id="test-run-id",
+            risk_data="{}",
+        )
+        # The JSON example structure should contain single braces
+        assert '"schema_version": "1.0"' in prompt
+        assert '"risks": [' in prompt
+        # Double braces should not appear in the output
+        assert "{{" not in prompt
+        assert "}}" not in prompt
+
+    def test_repeated_calls_do_not_mutate_template(self) -> None:
+        """The template constant must not be mutated by repeated calls."""
+        original = SYSTEM_PROMPT_TEMPLATE
+        build_system_prompt(
+            plan_id="FIRST_CALL",
+            run_id="first",
+            risk_data="{}",
+        )
+        build_system_prompt(
+            plan_id="SECOND_CALL",
+            run_id="second",
+            risk_data="{}",
+        )
+        assert original == SYSTEM_PROMPT_TEMPLATE
+        # Template should still contain the format fields
+        assert "{plan_id}" in SYSTEM_PROMPT_TEMPLATE
+        assert "{run_id}" in SYSTEM_PROMPT_TEMPLATE
+        assert "{risk_data}" in SYSTEM_PROMPT_TEMPLATE
+
+    def test_prompt_version_is_1_0(self) -> None:
+        assert PROMPT_VERSION == "1.0"

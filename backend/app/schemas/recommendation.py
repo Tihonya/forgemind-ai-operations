@@ -33,7 +33,7 @@ from __future__ import annotations
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # Canonical schema version. The validator rejects output carrying any
 # other version. Bumping this constant is a schema-versioning event that
@@ -84,6 +84,23 @@ class RecommendedAction(BaseModel):
     title: str = Field(..., min_length=1, description="Short action title")
     rationale: str = Field(..., min_length=1, description="Action rationale")
     requires_approval: bool = Field(..., description="Whether human approval is required")
+
+    @field_validator("requires_approval", mode="before")
+    @classmethod
+    def _strict_bool(cls, v: object) -> bool:
+        """Enforce that ``requires_approval`` is a genuine JSON boolean.
+
+        Pydantic's default ``bool`` coercion accepts strings like ``"true"``
+        and integers like ``1``. The wire contract requires a JSON boolean
+        (``true`` or ``false``). This validator rejects any non-bool input
+        before Pydantic's coercion applies.
+
+        This is a field-level constraint — it does not affect UUID string
+        parsing or any other field in the schema.
+        """
+        if isinstance(v, bool):
+            return v
+        raise ValueError("requires_approval must be a JSON boolean (true or false)")
 
 
 class RiskItem(BaseModel):
