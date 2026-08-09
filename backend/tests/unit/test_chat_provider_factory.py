@@ -29,6 +29,7 @@ from app.ai.provider.exceptions import ChatProviderConfigurationError
 from app.ai.provider.factory import create_chat_provider
 from app.ai.provider.fake_chat_provider import FakeChatProvider
 from app.ai.provider.openai_chat_provider import OpenAIChatProvider
+from app.ai.workflow.outage_handler import RetryingChatProvider
 from app.config import Settings
 
 # ---------------------------------------------------------------------------
@@ -65,19 +66,22 @@ class TestProviderSelection:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
     def test_fake_provider_returns_fake_in_development(self) -> None:
         config = _make_settings(embedding_provider="fake", environment="development")
         provider = create_chat_provider(config=config)
-        assert isinstance(provider, FakeChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_explicit_provider_name_overrides_config(self) -> None:
         config = _make_settings(embedding_provider="openai")
         provider = create_chat_provider(
             config=config, provider_name="fake"
         )
-        assert isinstance(provider, FakeChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_explicit_openai_overrides_config(self) -> None:
         config = _make_settings(embedding_provider="fake")
@@ -88,7 +92,8 @@ class TestProviderSelection:
             provider = create_chat_provider(
                 config=config, provider_name="openai"
             )
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +105,8 @@ class TestFakeProviderEnvironmentValidation:
     def test_fake_allowed_in_development(self) -> None:
         config = _make_settings(embedding_provider="fake", environment="development")
         provider = create_chat_provider(config=config)
-        assert isinstance(provider, FakeChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_fake_rejected_in_staging(self) -> None:
         config = _make_settings(embedding_provider="fake", environment="staging")
@@ -168,7 +174,8 @@ class TestOfficialEndpointApiKey:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +195,8 @@ class TestCustomEndpoint:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
     def test_sentinel_key_passed_for_custom_endpoint(self) -> None:
         config = _make_settings(
@@ -256,7 +264,7 @@ class TestConfigurationPreservation:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert provider._model == "gpt-4o"  # type: ignore[attr-defined]
+        assert provider._delegate._model == "gpt-4o"  # type: ignore[attr-defined]
 
     def test_timeout_preserved(self) -> None:
         config = _make_settings(
@@ -268,7 +276,7 @@ class TestConfigurationPreservation:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert provider._timeout_seconds == 60  # type: ignore[attr-defined]
+        assert provider._delegate._timeout_seconds == 60  # type: ignore[attr-defined]
 
     def test_rate_limit_preserved(self) -> None:
         config = _make_settings(
@@ -280,7 +288,7 @@ class TestConfigurationPreservation:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert provider._rate_limit_per_minute == 20  # type: ignore[attr-defined]
+        assert provider._delegate._rate_limit_per_minute == 20  # type: ignore[attr-defined]
 
 
 # ---------------------------------------------------------------------------
@@ -395,7 +403,8 @@ class TestConfigNoneFallback:
             fallback_config,
         ):
             provider = create_chat_provider(config=None)
-        assert isinstance(provider, FakeChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, FakeChatProvider)
 
 
 # ---------------------------------------------------------------------------
@@ -427,7 +436,8 @@ class TestNoNetworkRequests:
             return_value=AsyncMock(),
         ), patch("httpx.Client") as mock_httpx:
             provider = create_chat_provider(config=config)
-            assert isinstance(provider, OpenAIChatProvider)
+            assert isinstance(provider, RetryingChatProvider)
+            assert isinstance(provider._delegate, OpenAIChatProvider)
             mock_httpx.assert_not_called()
 
 
@@ -479,7 +489,8 @@ class TestOfficialBaseUrlNormalization:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
     def test_trailing_slash_official_base_url_omitted(self) -> None:
         """Official endpoint with trailing slash still gets None base_url (SDK default)."""
@@ -568,7 +579,8 @@ class TestRobustOfficialEndpointClassification:
             return_value=AsyncMock(),
         ):
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
     @pytest.mark.parametrize(
         "base_url",
@@ -634,7 +646,8 @@ class TestRobustOfficialEndpointClassification:
         ):
             # Should NOT raise — sentinel key is used for custom endpoints.
             provider = create_chat_provider(config=config)
-        assert isinstance(provider, OpenAIChatProvider)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
 
     @pytest.mark.parametrize(
         "base_url",
@@ -673,3 +686,94 @@ class TestRobustOfficialEndpointClassification:
         # Official endpoint recognized → base_url is None (SDK default).
         call_kwargs = mock_async_openai.call_args[1]
         assert "base_url" not in call_kwargs or call_kwargs.get("base_url") is None
+
+
+# ---------------------------------------------------------------------------
+# WP-REC-03D: Factory wrapping verification
+# ---------------------------------------------------------------------------
+
+
+class TestFactoryWrapping:
+    """Prove that create_chat_provider wraps every provider in RetryingChatProvider."""
+
+    def test_fake_provider_is_wrapped(self) -> None:
+        config = _make_settings(
+            embedding_provider="fake",
+            environment="development",
+        )
+        provider = create_chat_provider(config=config)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, FakeChatProvider)
+
+    def test_openai_provider_is_wrapped(self) -> None:
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ):
+            provider = create_chat_provider(config=config)
+        assert isinstance(provider, RetryingChatProvider)
+        assert isinstance(provider._delegate, OpenAIChatProvider)
+
+    def test_llm_max_retries_reaches_wrapper(self) -> None:
+        """The configured llm_max_retries reaches the wrapper's RetryPolicy."""
+        config = _make_settings(
+            embedding_provider="fake",
+            environment="development",
+            llm_max_retries=5,
+        )
+        provider = create_chat_provider(config=config)
+        assert isinstance(provider, RetryingChatProvider)
+        assert provider._policy.max_retries == 5
+        assert provider._policy.total_allowed_attempts == 6
+
+    def test_llm_max_retries_zero_reaches_wrapper(self) -> None:
+        config = _make_settings(
+            embedding_provider="fake",
+            environment="development",
+            llm_max_retries=0,
+        )
+        provider = create_chat_provider(config=config)
+        assert isinstance(provider, RetryingChatProvider)
+        assert provider._policy.max_retries == 0
+        assert provider._policy.total_allowed_attempts == 1
+
+    def test_sdk_retries_remain_disabled(self) -> None:
+        """The OpenAI SDK max_retries=0 is preserved under the wrapper."""
+        config = _make_settings(
+            embedding_provider="openai",
+            openai_api_key="sk-test",
+            llm_max_retries=5,
+        )
+        with patch(
+            "app.ai.provider.openai_chat_provider.AsyncOpenAI",
+            return_value=AsyncMock(),
+        ) as mock_async_openai:
+            create_chat_provider(config=config)
+        call_kwargs = mock_async_openai.call_args[1]
+        assert call_kwargs["max_retries"] == 0
+
+    def test_no_double_wrapping(self) -> None:
+        """The factory wraps exactly once — the delegate is not itself a wrapper."""
+        config = _make_settings(
+            embedding_provider="fake",
+            environment="development",
+        )
+        provider = create_chat_provider(config=config)
+        assert isinstance(provider, RetryingChatProvider)
+        # The delegate must NOT be another RetryingChatProvider.
+        assert not isinstance(provider._delegate, RetryingChatProvider)
+
+    def test_factory_return_compatible_with_chat_provider(self) -> None:
+        """The factory return type is compatible with ChatProvider."""
+        from app.ai.provider.chat_provider import ChatProvider
+
+        config = _make_settings(
+            embedding_provider="fake",
+            environment="development",
+        )
+        provider = create_chat_provider(config=config)
+        assert isinstance(provider, ChatProvider)
