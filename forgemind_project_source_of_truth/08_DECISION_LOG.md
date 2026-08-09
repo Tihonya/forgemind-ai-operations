@@ -499,6 +499,37 @@ contract.
 
 ---
 
+## DEC-041 — WP-ARCH-01 closure
+
+**Date:** 2026-08-09
+
+**Status:** Accepted
+
+**Context:** The WP-ARCH-01 planning artifact (`docs/planning/wp_arch_01_planning.md`) was merged via PR #69 at `3a2bc26028cac0352af2cdde8107df90f41f015c` (regular two-parent merge, 2026-08-09). The assessment produced two separate finding sets:
+
+- Architecture hygiene: 17 `OK`, 0 `RECOMMENDED`, 0 `REQUIRED`, 0 `UNRESOLVED`.
+- Agent onboarding: 6 `OK`, 1 `RECOMMENDED`, 0 `REQUIRED`, 0 `UNRESOLVED`.
+
+The sole `RECOMMENDED` item is Finding 4.5.1, the optional agent-onboarding document. The planning artifact §7 listed 4 unresolved Product Owner decisions.
+
+**Decision:**
+
+1. Accept the WP-ARCH-01 planning artifact.
+2. Close WP-ARCH-01 with no execution required — zero REQUIRED findings.
+3. Defer the optional agent-onboarding document (Finding 4.5.1) — not authorized, not created.
+4. Do not authorize WP-REC-03C, SP-0B, or any other package through this decision.
+5. WP-REC-03C may be reassessed after a separate Product Owner decision; this closure does not start that reassessment.
+
+**Reason:** No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. The assessment found zero REQUIRED findings and zero UNRESOLVED findings. Closing WP-ARCH-01 after planning avoids unnecessary execution work. The agent-onboarding document is deferred because the current distributed documentation is sufficient for now. WP-REC-03C remains NOT AUTHORIZED. No conclusion is made about the readiness of WP-REC-03D through 03G. No subsequent phase is authorized or declared ready. Acceptance of WP-ARCH-01 does not replace package-specific planning, evidence, or authorization.
+
+**Consequences:** WP-ARCH-01 is COMPLETED and CLOSED. No execution work package is spawned. The optional agent-onboarding document is not created. WP-REC-03C through 03G remain NOT AUTHORIZED. WP-REC-05 remains NOT AUTHORIZED. Bounded AT-006/AT-007 verification package remains NOT AUTHORIZED. SP-0B remains READY but NOT AUTHORIZED. Phase 4 remains PARTIALLY COMPLETE. No conclusion is made about the readiness of WP-REC-03D through 03G or any subsequent phase.
+
+**Affected documents:** `docs/planning/wp_arch_01_planning.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`. `docs/planning/wp_rec_03_decomposition.md` is NOT modified by this closure; its WP-ARCH-01 references will be synchronized during WP-REC-03 branch reconciliation.
+
+**Approved by:** Product Owner (2026-08-09)
+
+---
+
 ## Template for new decisions
 
 ```markdown
