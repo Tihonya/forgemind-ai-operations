@@ -241,7 +241,8 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 3. WP-REC-03F planning contracts (D1-D5) have been synced 2026-08-10 from reference branch `docs/wp-rec-03-controlled-decomposition`.
 
 **Current planning status:**
-- **D1-D5:** RESOLVED — contracts integrated into `docs/planning/wp_rec_03_decomposition.md`
+- **D1-D3 and D5:** RESOLVED — contracts integrated into `docs/planning/wp_rec_03_decomposition.md`
+- **D4:** SUPERSEDED
 - **D6:** UNRESOLVED — reconciler mechanism for stuck PENDING rows remains undetermined
 
 **Next Product Owner decision required:**
