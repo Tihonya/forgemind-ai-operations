@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-10
 **Reconciled against:** origin/main @ `82b449743092477d280cb80f6dcfa37d6d038aeb` (PR #74 merge commit)
-**Status:** WP-REC-03F planning contracts (D1-D5) synced from reference branch. D6 remains unresolved. No implementation work package is currently authorized.
+**Status:** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74). WP-REC-03F planning contracts (D1-D5) synced; D6 remains unresolved. WP-REC-03F and WP-REC-03G implementation NOT AUTHORIZED.
 
 ---
 
@@ -12,7 +12,7 @@
 
 **WP-STRAT-01** (Product Strategy and Release 1 Alignment) is COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). It is no longer the active task.
 
-**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is COMPLETED and CLOSED. The planning artifact was accepted by the Product Owner on 2026-08-09 (PR #69, merge commit `3a2bc26`). No execution was required — zero REQUIRED findings. The sole RECOMMENDED item (agent-onboarding document, Finding 4.5.1) was deferred. No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
+**WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) is COMPLETED and CLOSED. The planning artifact was accepted by the Product Owner on 2026-08-09 (PR #69, merge commit `3a2bc26`). No execution was required — zero REQUIRED findings. The sole RECOMMENDED item (agent-onboarding document, Finding 4.5.1) was deferred.
 
 ---
 
@@ -77,8 +77,11 @@ No conclusion is made about the readiness of WP-REC-03G or later phases.
 - WP-REC-03B (Workflow/State-Machine Foundation): COMPLETE — MERGED via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (two-parent merge commit, 2026-08-09). The workflow state machine, WorkflowEngine, ORM models (WorkflowRun, WorkflowStep, Recommendation), Alembic migration, and Pydantic schemas are live on main. Post-merge CI on main: Backend CI SUCCESS, End-to-End Tests SUCCESS, Playwright Golden Scenario SUCCESS.
 - WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETED — MERGED via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (regular two-parent merge, 2026-08-09). Three feature commits preserved: `8e5d032`, `f767aab`, `3fef078`.
 - WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning artifact accepted and closed via PO decision 2026-08-09 (DEC-041). PR #69 merge commit `3a2bc26028cac0352af2cdde8107df90f41f015c`. No execution required. Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) deferred. No REQUIRED architecture-hygiene finding blocks a separate Product Owner reassessment of WP-REC-03C. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
-- WP-REC-03C through 03G: NOT AUTHORIZED — each requires separate Product Owner authorization. WP-REC-03C reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
-- WP-REC-03F: Planning contracts (D1-D5) synced 2026-08-10 from reference branch; D6 remains unresolved. NOT AUTHORIZED for implementation.
+- WP-REC-03C (Structured-Output Validation): COMPLETE — MERGED via PR #72 at `d82b9aaacaab461e099099785b30022777a145d7` (two-parent merge commit, 2026-08-09). Structured-output validator, recommendation Pydantic wire schema, versioned prompt template, and unit tests are live on main.
+- WP-REC-03D (Automatic Provider Retry/Outage — Backend): COMPLETE — MERGED via PR #73 at `212735e9389060e0ceabbd6da51515efdd70817f` (two-parent merge commit, 2026-08-09). Automatic provider retry/outage handler, retry policy, unit and integration tests are live on main.
+- WP-REC-03E (Workflow-Run Detail + Recommendation UI): COMPLETE — MERGED via PR #74 at `82b449743092477d280cb80f6dcfa37d6d038aeb` (two-parent merge commit, 2026-08-09). Read-only workflow-run detail API, recommendation UI, TanStack Query hook, and tests are live on main.
+- WP-REC-03F (Backend Workflow Start/Retry API + ARQ Worker): Planning contracts D1-D5 synced 2026-08-10 from reference branch; D6 remains unresolved. NOT AUTHORIZED for implementation.
+- WP-REC-03G (Frontend Start/Retry UI Interaction): NOT AUTHORIZED.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 - Bounded AT-006/AT-007 verification package: NOT AUTHORIZED — separate from WP-ARCH-01 (SD-2).
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
@@ -137,7 +140,7 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 - [x] AT-006 and AT-007 are not marked PASS
 - [x] Phase 4 is consistently PARTIALLY COMPLETE
 - [x] Phase 4 exit criteria not weakened
-- [x] WP-REC-03C remains NOT AUTHORIZED
+- [x] WP-REC-03C, WP-REC-03D, WP-REC-03E are COMPLETE (merged via PRs #72, #73, #74)
 - [x] No new duplicate Release 1 or AT-status artifact created
 - [x] Provider-adapter statement in README is current
 - [x] Spatial Operations Twin remains post-Release 1, synthetic-only, deterministic-controlled, human-approved, unauthorized
@@ -148,10 +151,11 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
 2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
-3. WP-REC-03F planning contracts (D1-D5) have been synced 2026-08-10. **D6 (reconciler mechanism) remains unresolved** and is the remaining planning blocker for 03F implementation authorization.
-4. The next Product Owner decision concerns whether to resolve **D6** (reconciler mechanism for stuck PENDING rows) and subsequently authorize WP-REC-03F implementation.
-5. WP-REC-03C through 03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization after D6 resolution.
-6. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
-7. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
-8. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
-9. Do not begin any implementation until authorized.
+3. WP-REC-03C, WP-REC-03D, WP-REC-03E are COMPLETE (merged via PRs #72, #73, #74 on 2026-08-09).
+4. WP-REC-03F planning contracts (D1-D5) have been synced 2026-08-10. **D6 (reconciler mechanism) remains unresolved** and is the remaining planning blocker for 03F implementation authorization.
+5. The next Product Owner decision concerns whether to resolve **D6** (reconciler mechanism for stuck PENDING rows) and subsequently authorize WP-REC-03F implementation.
+6. WP-REC-03F and WP-REC-03G: **NOT AUTHORIZED** — each requires separate Product Owner authorization.
+7. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
+8. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
+9. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
+10. Do not begin any implementation until authorized.

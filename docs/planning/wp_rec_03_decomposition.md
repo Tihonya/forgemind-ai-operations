@@ -13,7 +13,9 @@
 - WP-REC-03B: COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba`
 - WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETE — merged via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (2026-08-09)
 - WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning artifact merged via PR #69 at `3a2bc26028cac0352af2cdde8107df90f41f015c`; Product Owner acceptance and closure recorded by DEC-041 and synchronized via PR #70 at `0e0afd151098d85fdd9eaf12ba98147ed41b6336` (2026-08-09). Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) DEFERRED and not authorized.
-- WP-REC-03C through 03G: NOT AUTHORIZED — the former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended because both packages are complete. WP-REC-03C is positioned for separate Product Owner reassessment. This reconciliation does not perform that reassessment and does not imply authorization. No readiness or authorization conclusion is made for WP-REC-03D through 03G or any later phase.
+- WP-REC-03C through 03E: COMPLETE — merged via PRs #72, #73, #74 respectively.
+- WP-REC-03F: Planning contracts D1-D5 resolved; D6 unresolved; implementation NOT AUTHORIZED.
+- WP-REC-03G: NOT AUTHORIZED.
 
 ---
 
@@ -80,7 +82,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 6. **Existing embedding provider pattern is reusable evidence.** `backend/app/services/embedding_provider.py` defines an ABC interface with `OpenAIEmbeddingProvider` and `FakeEmbeddingProvider` adapters, plus `embedding_provider_factory.py` with environment-aware validation. WP-REC-03A (AI provider adapter for chat/reasoning) can follow this proven pattern.
 
-7. **The original decomposition baseline was greenfield for workflow infrastructure.** At the 2026-08-08 decomposition baseline, the repository had no workflow engine, workflow state machine, workflow ORM models, or `backend/app/ai/workflow/` package. WP-REC-03B has since introduced that foundation, including the workflow package and the `WorkflowRun`, `WorkflowStep`, and `Recommendation` ORM models. Therefore, the remaining Phase 5 packages are no longer wholly greenfield; WP-REC-03C through 03G build on the completed WP-REC-03B foundation. This lifecycle correction does not reassess the current presence or absence of approval, audit, or procurement-task models.
+7. **The original decomposition baseline was greenfield for workflow infrastructure.** At the 2026-08-08 decomposition baseline, the repository had no workflow engine, workflow state machine, workflow ORM models, or `backend/app/ai/workflow/` package. WP-REC-03B introduced that foundation, including the workflow package and the `WorkflowRun`, `WorkflowStep`, and `Recommendation` ORM models. WP-REC-03C through 03E are now COMPLETE (merged via PRs #72, #73, #74). WP-REC-03F and 03G remain NOT AUTHORIZED for implementation.
 
 8. **Config already has OpenAI settings.** `backend/app/config.py` defines `openai_api_key`, `openai_api_base`, `openai_chat_model`, `openai_embedding_model`, `llm_timeout_seconds`, `llm_max_retries`, `ai_rate_limit_per_minute`. The adapter will reuse these settings, not invent new ones.
 
@@ -1141,8 +1143,8 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
-| No implementation is described as already authorized | ✅ 03A and 03B are COMPLETE in §15 (merged); 03C–03G say \"NOT AUTHORIZED\" in §15 |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). Next technical candidate WP-REC-03C is NOT AUTHORIZED. The former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended; WP-REC-03C is positioned for separate Product Owner reassessment. This does not authorize or start that reassessment. |
+| No implementation is described as already authorized | ✅ 03A, 03B, 03C, 03D, 03E are COMPLETE (merged); 03F and 03G say \"NOT AUTHORIZED\" in §15 |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E are now COMPLETE (merged via PRs #72, #73, #74). WP-REC-03F planning contracts D1-D5 resolved; D6 unresolved; implementation NOT AUTHORIZED. WP-REC-03G NOT AUTHORIZED. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
@@ -1212,7 +1214,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 
 **WP-REC-03B (Workflow/State-Machine Foundation) is also COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).** The second candidate implementation package is complete.
 
-**Next technical candidate:** WP-REC-03C (Structured-Output Validation). WP-REC-03C remains **NOT AUTHORIZED**. The former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended — both packages are complete. WP-REC-03C is positioned for separate Product Owner reassessment. This reconciliation does not perform that reassessment and does not imply authorization. No readiness or authorization conclusion is made for WP-REC-03D through 03G or any later phase. The "next candidate" designation here reflects technical sequence only, not authorization.
+**Phase 5 implementation status (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74 respectively). WP-REC-03F planning contracts D1-D5 are resolved; D6 (reconciler mechanism) remains unresolved. WP-REC-03F implementation is NOT AUTHORIZED pending D6 resolution and explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
 
 ---
 
@@ -1223,12 +1225,12 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03A (AI provider adapter) | COMPLETE — merged via PR #63 |
 | WP-REC-03-DEC-GATE-1 (DEC-013 decision) | SATISFIED — DEC-013 Accepted (2026-08-09); merged via PR #64 |
 | WP-REC-03B (workflow/state-machine) | COMPLETE — merged via PR #65 |
-| WP-REC-03C (structured-output validation) | NOT AUTHORIZED — positioned for separate Product Owner reassessment (former prerequisite pause ended; WP-STRAT-01 and WP-ARCH-01 complete) |
-| WP-REC-03D (automatic provider retry/outage — backend) | NOT AUTHORIZED |
-| WP-REC-03E (workflow-run detail + recommendation UI) | NOT AUTHORIZED |
+| WP-REC-03C (structured-output validation) | COMPLETE — merged via PR #72 |
+| WP-REC-03D (automatic provider retry/outage — backend) | COMPLETE — merged via PR #73 |
+| WP-REC-03E (workflow-run detail + recommendation UI) | COMPLETE — merged via PR #74 |
 | WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED |
 | WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
-| WP-REC-03 implementation (as a whole) | NOT AUTHORIZED — the former prerequisite pause (pending WP-STRAT-01 and WP-ARCH-01) has ended; WP-REC-03C is positioned for separate Product Owner reassessment. This does not authorize or start that reassessment. |
+| WP-REC-03 implementation (as a whole) | MIXED LIFECYCLE — WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74); WP-REC-03F implementation is NOT AUTHORIZED (planning contracts D1-D5 resolved, D6 unresolved); WP-REC-03G is NOT AUTHORIZED |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |

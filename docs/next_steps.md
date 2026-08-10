@@ -109,7 +109,7 @@ The accepted planning sequence is:
 
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
 2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — COMPLETED and CLOSED (planning accepted, no execution required, 2026-08-09, PR #69 merge commit `3a2bc26`). Zero REQUIRED findings. Sole RECOMMENDED item (agent-onboarding document) deferred.
-3. **WP-REC-03C → 03D → 03E → 03F → 03G** (Phase 5 AI Workflow) — NOT AUTHORIZED. Sequence preserved per SD-3. Each requires separate authorization. Both WP-STRAT-01 and WP-ARCH-01 are complete. WP-REC-03C reassessment requires a separate Product Owner decision.
+3. **WP-REC-03A through 03E** (Phase 5 AI Workflow, packages A-E) — COMPLETE. Merged via PRs #63, #65, #72, #73, #74 on 2026-08-09. **WP-REC-03F** (backend start/retry API + ARQ worker) — Planning contracts D1-D5 resolved; D6 unresolved; implementation NOT AUTHORIZED. **WP-REC-03G** (frontend start/retry UI) — NOT AUTHORIZED.
 4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
 5. **Phase 6** (Approval and Audit) — NOT STARTED.
 6. **Phase 7** (Public Deployment) — NOT STARTED.
@@ -121,7 +121,7 @@ The accepted planning sequence is:
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
-**WP-REC-03C through 03G remain NOT AUTHORIZED.** WP-STRAT-01 and WP-ARCH-01 are both complete. WP-REC-03C reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
+**WP-REC-03 mixed lifecycle (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74). WP-REC-03F planning contracts D1-D5 are resolved; D6 (reconciler mechanism) remains unresolved. WP-REC-03F implementation is NOT AUTHORIZED pending D6 resolution and explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -131,7 +131,7 @@ This is a planning sequence, not an execution authorization. Every future packag
 
 Without explicit Product Owner authorization, do not:
 - Implement any MVP phase (Phase 5, 6, or 7)
-- Start or redesign WP-REC-03C through 03G
+- Start or implement WP-REC-03F or WP-REC-03G
 - Start WP-REC-05 or the bounded AT-006/AT-007 verification package
 - Start SP-0B or create forgemind-agent-runtime
 - Copy or move Runtime files
