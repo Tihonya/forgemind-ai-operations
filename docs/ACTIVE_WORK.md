@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-08
 **Baseline:** origin/main @ `a859c0d0fbee721ad0ea44a00682370d3da9355f`
-**Status:** ACTIVE — WP-REC-03-DEC (planning/decomposition package) in progress; draft PR open for independent review
+**Status:** ACTIVE — WP-REC-03-DEC (planning/decomposition package) in progress; draft PR open for independent review; N3/N4/N5 corrective pass complete
 
 ---
 
@@ -10,18 +10,24 @@
 
 **Work Package:** WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition (planning only)
 
-**Authorization:** Product Owner authorized planning/decomposition package on 2026-08-08
+**Authorization:*** Product Owner authorized planning/decomposition package on 2026-08-08
 
 **Lifecycle state:**
 - WP-REC-01 + WP-REC-02: COMPLETE — MERGED via PR #61
 - PR #61: MERGED at `a859c0d0fbee721ad0ea44a00682370d3da9355f` (two-parent merge commit, 2026-08-08)
-- WP-REC-03-DEC: ACTIVE — decomposition plan created, draft PR open for independent review
+- WP-REC-03-DEC: ACTIVE — decomposition plan created, draft PR open for independent review, N3/N4/N5 corrective pass complete
 - WP-REC-03 implementation: NOT AUTHORIZED — requires separate Product Owner authorization for each subpackage
 - Every resulting implementation package (03A–03G): NOT AUTHORIZED
 - DEC-013 (workflow orchestration): Proposed — may be resolved at any time, but must be Accepted before WP-REC-03B implementation
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED (not postponed merely because agent automation is unavailable)
 - Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1)
+
+**N3/N4/N5 corrective pass (2026-08-08):**
+
+1. **N3 — DB/ARQ delivery contract resolved:** 03F now explicitly defines the commit-then-enqueue order, conditional-transition rule for concurrent retry serialization (not idempotency key alone), durable dispatch identity (D5 `dispatch_generation`), and eventual-completion need; reconciler mechanism remains D6 unresolved.
+2. **N4 — AT-008 PASS point corrected:** AT-008 full PASS now requires 03F (worker wiring) + 03E (trace retrieval), not just 03C. 03C owns only the validator and its unit-level verification. The end-to-end flow (provider → validation → state transition → recommendation persistence → trace display) is completed only after 03F wires the worker and 03E exposes the trace.
+3. **N5 — Schema file ownership clarified:** `backend/app/schemas/recommendation.py` is now owned exclusively by 03C (Pydantic wire schema). 03B owns `backend/app/models/workflow.py` (SQLAlchemy ORM Recommendation model). No duplicate ownership.
 
 **Scope delivered (this package):**
 1. Decompose WP-REC-03 into small, separately authorizable implementation work packages
