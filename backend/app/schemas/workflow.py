@@ -20,7 +20,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.ai.workflow.state_machine import WorkflowState
 from app.schemas.recommendation import RecommendationData
@@ -126,6 +126,14 @@ class WorkflowRunSchema(BaseModel):
     triggered_by: str | None = Field(
         default=None,
         description="User/system that initiated the run",
+    )
+    dispatch_generation: int = Field(
+        default=0,
+        description="Durable dispatch identity (D5)",
+    )
+    pending_since: datetime | None = Field(
+        default=None,
+        description="Beginning of current PENDING stay (D6)",
     )
     error_code: str | None = Field(
         default=None,
@@ -237,6 +245,14 @@ class WorkflowRunSummarySchema(BaseModel):
         default=None,
         description="User/system that initiated the run",
     )
+    dispatch_generation: int = Field(
+        default=0,
+        description="Durable dispatch identity (D5)",
+    )
+    pending_since: datetime | None = Field(
+        default=None,
+        description="Beginning of current PENDING stay (D6)",
+    )
     error_code: str | None = Field(
         default=None,
         description="Safe error classification code",
@@ -275,3 +291,78 @@ class WorkflowRunListResponse(BaseModel):
     limit: int = Field(..., description="Requested limit")
     offset: int = Field(..., description="Requested offset")
     total: int = Field(..., description="Total number of workflow runs")
+
+
+# ---------------------------------------------------------------------------
+# WP-REC-03F: Start / Retry request and response schemas (D3, D5)
+# ---------------------------------------------------------------------------
+
+
+class WorkflowStartRequest(BaseModel):
+    """Request body for POST /api/v1/workflow-runs (D3).
+
+    The ``plan_id`` field carries the external business identifier
+    (``ProductionPlan.code``), NOT the database UUID. The field name
+    remains ``plan_id`` because it is the established
+    recommendation-wire identifier (SoT §6).
+
+    Validation rules (D3 §2):
+    - JSON type: string
+    - non-empty
+    - not whitespace-only
+    - no leading or trailing whitespace
+    - no automatic trimming
+    - no case conversion
+    - no UUID parsing
+    - no regex restricting codes to a specific format
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(
+        ...,
+        min_length=1,
+        description="External production plan code (e.g. PLAN-2026-W31). "
+        "Resolved against ProductionPlan.code, not the database UUID.",
+    )
+
+    @field_validator("plan_id")
+    @classmethod
+    def _validate_plan_id_no_whitespace(cls, v: str) -> str:
+        """Reject whitespace-only and leading/trailing whitespace (D3 §2).
+
+        - Empty string is rejected by min_length=1.
+        - Whitespace-only strings are rejected here.
+        - Strings with leading or trailing whitespace are rejected here.
+        - No trimming, case normalization, or canonicalization is applied.
+        """
+        if v.strip() == "":
+            raise ValueError("plan_id must not be whitespace-only")
+        if v != v.strip():
+            raise ValueError(
+                "plan_id must not contain leading or trailing whitespace"
+            )
+        return v
+
+
+class WorkflowStartResponse(BaseModel):
+    """Response body for POST /api/v1/workflow-runs (202 Accepted).
+
+    The response contains exactly ``run_id``, ``state``, and ``location``.
+    It does NOT contain ``plan_id`` (D3 §4).
+    """
+
+    run_id: UUID = Field(..., description="Workflow run UUID")
+    state: WorkflowState = Field(..., description="Current workflow state")
+    location: str = Field(..., description="URL to poll run status")
+
+
+class WorkflowRetryResponse(BaseModel):
+    """Response body for POST /api/v1/workflow-runs/{run_id}/retry (202 Accepted).
+
+    Reuses the same run_id (D1). Contains ``run_id``, ``state``, and ``location``.
+    """
+
+    run_id: UUID = Field(..., description="Workflow run UUID (reused)")
+    state: WorkflowState = Field(..., description="Current workflow state")
+    location: str = Field(..., description="URL to poll run status")

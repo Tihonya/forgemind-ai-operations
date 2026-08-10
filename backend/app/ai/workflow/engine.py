@@ -152,6 +152,8 @@ class WorkflowEngine:
             state=WorkflowState.PENDING,
             plan_id=plan_id,
             triggered_by=triggered_by,
+            dispatch_generation=0,
+            pending_since=datetime.now(UTC),
         )
         self._session.add(run)
         await self._session.flush()
@@ -372,6 +374,298 @@ class WorkflowEngine:
         )
         await self._session.flush()
 
+    async def retry_transition(self, run: WorkflowRun) -> bool:
+        """Perform the D1 atomic conditional FAILED_* → PENDING retry transition.
+
+        This is the serialization primitive for user-initiated retry
+        (WP-REC-03F D1). It atomically:
+
+        - transitions the run from an eligible failed state
+          (``FAILED_PROVIDER``, ``FAILED_VALIDATION``, ``FAILED_INTERNAL``)
+          to ``PENDING``;
+        - increments ``dispatch_generation`` by exactly 1 (D5 §1);
+        - resets ``pending_since`` to the current authoritative UTC
+          timestamp (D6 §1);
+        - clears ``error_code``, ``error_detail``, ``completed_at``,
+          and ``started_at`` to NULL (D1 §11-12; D1 implementation
+          choice: clear ``started_at`` so the new ``PENDING → RUNNING``
+          transition sets a fresh start timestamp).
+
+        The transition uses a conditional UPDATE:
+        ``UPDATE ... WHERE id = :run_id AND state IN (:eligible_states)
+        RETURNING id, dispatch_generation``.
+        Exactly one concurrent caller wins; losers receive zero rows.
+
+        The caller owns the transaction boundary (commit/rollback).
+
+        Args:
+            run: The WorkflowRun to retry. Must be in an eligible
+                failed state.
+
+        Returns:
+            ``True`` if the transition succeeded (this caller won the
+            race). ``False`` if the conditional UPDATE matched zero
+            rows (the run is not in an eligible failed state or
+            another caller already won the transition).
+
+        Raises:
+            StateMachineError: If the run's current state is not an
+                eligible failed state (e.g. COMPLETED, PENDING,
+                RUNNING, AWAITING_VALIDATION). This is raised by the
+                pure state machine validation before any database
+                UPDATE.
+        """
+        from_state = WorkflowState(run.state)
+        validate_transition(from_state, WorkflowState.PENDING)
+
+        now = datetime.now(UTC)
+        eligible_states = (
+            WorkflowState.FAILED_PROVIDER.value,
+            WorkflowState.FAILED_VALIDATION.value,
+            WorkflowState.FAILED_INTERNAL.value,
+        )
+
+        # Use expanding bindparam for the IN clause (asyncpg-compatible).
+        from sqlalchemy import bindparam
+
+        update_sql = text("""
+            UPDATE workflow_runs
+            SET state = :new_state,
+                dispatch_generation = dispatch_generation + 1,
+                pending_since = :now,
+                error_code = NULL,
+                error_detail = NULL,
+                completed_at = NULL,
+                started_at = NULL,
+                updated_at = :now
+            WHERE id = :run_id
+              AND state IN :eligible_states
+            RETURNING id, dispatch_generation
+        """).bindparams(
+            bindparam("eligible_states", expanding=True),
+        )
+
+        params: dict[str, Any] = {
+            "new_state": WorkflowState.PENDING.value,
+            "now": now,
+            "run_id": str(run.id),
+            "eligible_states": tuple(eligible_states),
+        }
+
+        result = await self._session.execute(update_sql, params)
+        row = result.fetchone()
+
+        if row is None:
+            # The conditional UPDATE matched zero rows — the run is
+            # not in an eligible failed state or another caller won.
+            # Refresh the ORM instance to reflect authoritative state.
+            await self._session.refresh(
+                run,
+                [
+                    "state",
+                    "dispatch_generation",
+                    "pending_since",
+                    "started_at",
+                    "completed_at",
+                    "error_code",
+                    "error_detail",
+                    "updated_at",
+                ],
+            )
+            return False
+
+        # Sync the ORM instance with the persisted values.
+        run.state = WorkflowState.PENDING.value
+        run.dispatch_generation = row[1]
+        run.pending_since = now
+        run.started_at = None
+        run.completed_at = None
+        run.error_code = None
+        run.error_detail = None
+        run.updated_at = now
+
+        _logger.info(
+            "workflow.run.retry_transition",
+            run_id=str(run.id),
+            correlation_id=str(run.correlation_id),
+            from_state=from_state.value,
+            to_state=WorkflowState.PENDING.value,
+            dispatch_generation=run.dispatch_generation,
+        )
+        return True
+
+    async def transition_to_running_with_generation(
+        self,
+        run: WorkflowRun,
+        *,
+        expected_generation: int,
+    ) -> bool:
+        """Generation-guarded PENDING → RUNNING transition (D6 §5).
+
+        Atomically requires both ``state = PENDING`` AND
+        ``dispatch_generation = :expected_generation`` before
+        transitioning to RUNNING. This is the mandatory generation
+        guard from D6 §5 — a pre-read followed by an UPDATE filtered
+        only by ``state`` is insufficient.
+
+        If the conditional UPDATE matches zero rows, the run is either:
+        - no longer in PENDING (another worker already transitioned it);
+        - still PENDING but with a different generation (stale job).
+
+        In both cases, the caller (worker) must skip execution without
+        invoking the provider or regressing workflow state.
+
+        Args:
+            run: The WorkflowRun to transition.
+            expected_generation: The queued dispatch generation from
+                the ARQ job identity/context (D5 §4).
+
+        Returns:
+            ``True`` if the transition succeeded (generation matched
+            and state was PENDING). ``False`` if the conditional
+            UPDATE matched zero rows (stale generation or state
+            already changed).
+
+        Raises:
+            StateMachineError: If the run's current state is not
+                PENDING (pure state machine validation).
+        """
+        from_state = WorkflowState(run.state)
+        validate_transition(from_state, WorkflowState.RUNNING)
+
+        now = datetime.now(UTC)
+        update_sql = text("""
+            UPDATE workflow_runs
+            SET state = :new_state,
+                started_at = :now,
+                updated_at = :now
+            WHERE id = :run_id
+              AND state = :expected_state
+              AND dispatch_generation = :expected_generation
+            RETURNING id
+        """)
+
+        params: dict[str, Any] = {
+            "new_state": WorkflowState.RUNNING.value,
+            "now": now,
+            "run_id": str(run.id),
+            "expected_state": WorkflowState.PENDING.value,
+            "expected_generation": expected_generation,
+        }
+
+        result = await self._session.execute(update_sql, params)
+        row = result.fetchone()
+
+        if row is None:
+            await self._session.refresh(
+                run,
+                [
+                    "state",
+                    "dispatch_generation",
+                    "started_at",
+                    "updated_at",
+                ],
+            )
+            return False
+
+        run.state = WorkflowState.RUNNING.value
+        run.started_at = now
+        run.updated_at = now
+
+        _logger.info(
+            "workflow.run.transition_generation_guarded",
+            run_id=str(run.id),
+            correlation_id=str(run.correlation_id),
+            from_state=from_state.value,
+            to_state=WorkflowState.RUNNING.value,
+            dispatch_generation=expected_generation,
+        )
+        return True
+
+    async def transition_to_completed(
+        self,
+        run: WorkflowRun,
+    ) -> None:
+        """Transition a run from AWAITING_VALIDATION to COMPLETED.
+
+        Used by the 03F vertical wiring after successful validation
+        and recommendation persistence. The caller owns the transaction
+        boundary.
+
+        Args:
+            run: The WorkflowRun to complete. Must be in
+                AWAITING_VALIDATION state.
+
+        Raises:
+            StateMachineError: If the transition is invalid.
+            TransitionConflictError: If the conditional UPDATE lost
+                the race.
+        """
+        await self._transition_run(run, WorkflowState.COMPLETED)
+        await self._session.flush()
+
+    async def transition_to_failed_validation(
+        self,
+        run: WorkflowRun,
+        *,
+        error_code: str,
+        error_detail: str,
+    ) -> None:
+        """Transition a run from AWAITING_VALIDATION to FAILED_VALIDATION.
+
+        Used by the 03F vertical wiring when schema validation fails.
+
+        Args:
+            run: The WorkflowRun to fail.
+            error_code: Safe error classification code.
+            error_detail: Safe bounded error summary.
+
+        Raises:
+            StateMachineError: If the transition is invalid.
+            TransitionConflictError: If the conditional UPDATE lost
+                the race.
+        """
+        await self._transition_run(
+            run,
+            WorkflowState.FAILED_VALIDATION,
+            error_code=error_code,
+            error_detail=error_detail,
+        )
+        await self._session.flush()
+
+    async def transition_to_failed_internal(
+        self,
+        run: WorkflowRun,
+        *,
+        error_code: str = _ERROR_CODE_INTERNAL,
+        error_detail: str = _ERROR_CODE_INTERNAL,
+    ) -> None:
+        """Transition a run to FAILED_INTERNAL from any valid source state.
+
+        Used by the 03F vertical wiring when an internal error occurs
+        outside the provider-call step (e.g., risk engine failure,
+        recommendation persistence failure).
+
+        Args:
+            run: The WorkflowRun to fail.
+            error_code: Safe error classification code.
+            error_detail: Safe bounded error summary.
+
+        Raises:
+            StateMachineError: If the transition is invalid.
+            TransitionConflictError: If the conditional UPDATE lost
+                the race.
+        """
+        safe_code = error_code if error_code in _SAFE_ERROR_CODES else _ERROR_CODE_INTERNAL
+        safe_detail = _classify_safe_error_detail(error_detail)
+        await self._transition_run(
+            run,
+            WorkflowState.FAILED_INTERNAL,
+            error_code=safe_code,
+            error_detail=safe_detail,
+        )
+        await self._session.flush()
+
     async def _transition_run(
         self,
         run: WorkflowRun,
@@ -541,15 +835,34 @@ class WorkflowEngine:
 
         Queries the session for existing steps and returns max(seq) + 1.
         Returns 0 if no steps exist yet.
+
+        Flushes pending ORM objects before querying so that newly added
+        WorkflowStep rows in the session's identity map are visible to
+        the aggregate query. Without this flush, AsyncSession does not
+        auto-flush pending INSERTs before a SELECT, causing max(seq) to
+        return stale results and producing duplicate seq values (D1 §10
+        append-only contract violation).
+
+        Uses an explicit ``is None`` check rather than ``or`` to avoid
+        the Python falsy-zero bug: ``0 or -1`` evaluates to ``-1``
+        because ``0`` is falsy, which would return ``0`` instead of
+        ``1`` when the max seq is a legitimate ``0`` from the first
+        step.
         """
         from sqlalchemy import func, select
+
+        # Flush pending ORM objects so newly added WorkflowStep rows
+        # are visible to the aggregate query.
+        await self._session.flush()
 
         result = await self._session.execute(
             select(func.max(WorkflowStep.seq))
             .where(WorkflowStep.run_id == run_id)
         )
         max_seq = result.scalar()
-        return (max_seq or -1) + 1
+        if max_seq is None:
+            return 0
+        return max_seq + 1
 
 
 def _safe_error_summary(exc: Exception) -> str:

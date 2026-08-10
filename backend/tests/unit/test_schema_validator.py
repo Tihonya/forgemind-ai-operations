@@ -292,14 +292,22 @@ class TestStateMachineContract:
         )
 
     def test_failed_validation_is_terminal(self) -> None:
-        """FAILED_VALIDATION is a terminal state — no outgoing transitions."""
+        """FAILED_VALIDATION is a terminal state for ordinary execution.
+
+        WP-REC-03F D1 adds FAILED_VALIDATION → PENDING as a user-initiated
+        retry transition. The state remains terminal for ordinary execution
+        and polling (TERMINAL_STATES unchanged), but gains an outgoing
+        transition for authorized retry.
+        """
         from app.ai.workflow.state_machine import (
             TERMINAL_STATES,
             get_allowed_transitions,
         )
 
         assert WorkflowState.FAILED_VALIDATION in TERMINAL_STATES
-        assert get_allowed_transitions(WorkflowState.FAILED_VALIDATION) == frozenset()
+        # D1: FAILED_VALIDATION → PENDING is now an allowed retry transition.
+        allowed = get_allowed_transitions(WorkflowState.FAILED_VALIDATION)
+        assert WorkflowState.PENDING in allowed
 
     def test_invalid_transitions_rejected(self) -> None:
         """Transitions that skip AWAITING_VALIDATION are rejected."""

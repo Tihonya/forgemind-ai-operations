@@ -32,6 +32,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
     text,
 )
@@ -43,6 +44,16 @@ from app.database import Base
 
 if TYPE_CHECKING:
     pass
+
+
+# Partial index for D6 reconciler candidate selection (D6 §11).
+# Filters on state = 'PENDING' and orders by (pending_since ASC, id ASC).
+_RECONCILER_INDEX = Index(
+    "idx_workflow_runs_pending_since",
+    "pending_since",
+    "id",
+    postgresql_where=text("state = 'PENDING'"),
+)
 
 
 class WorkflowRun(Base):
@@ -64,6 +75,14 @@ class WorkflowRun(Base):
             being analysed by this workflow run.
         triggered_by: Username or system identifier that initiated the
             run. Nullable for system-initiated runs.
+        dispatch_generation: Non-null, non-negative integer dispatch
+            identity (D5). Initial value 0; incremented atomically on
+            each authorized retry transition. Used to construct the
+            deterministic ARQ job ID ``workflow:{run_id}:{dispatch_generation}``.
+        pending_since: Timestamp representing the beginning of the
+            run's current continuous stay in PENDING (D6). Set on
+            creation; reset to current UTC on FAILED_* → PENDING retry.
+            Used by the D6 reconciler for stale-candidate detection.
         error_code: Safe, bounded error classification code (e.g.
             "PROVIDER_TRANSIENT", "PROVIDER_PERMANENT",
             "INTERNAL_ERROR"). Never contains exception messages or
@@ -85,6 +104,10 @@ class WorkflowRun(Base):
             "'FAILED_INTERNAL')",
             name="ck_workflow_runs_state",
         ),
+        CheckConstraint(
+            "dispatch_generation >= 0",
+            name="ck_workflow_runs_dispatch_generation_nonneg",
+        ),
         Index("idx_workflow_runs_correlation_id", "correlation_id"),
         Index("idx_workflow_runs_plan_id", "plan_id"),
         Index(
@@ -94,6 +117,7 @@ class WorkflowRun(Base):
             postgresql_ops={"created_at": "DESC"},
         ),
         Index("idx_workflow_runs_state", "state"),
+        _RECONCILER_INDEX,
         {"comment": "Workflow run lifecycle records (WP-REC-03B)"},
     )
 
@@ -127,6 +151,22 @@ class WorkflowRun(Base):
     triggered_by: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
+    )
+
+    dispatch_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default=text("0"),
+        comment="Durable dispatch identity for ARQ job ID construction (D5). "
+        "Initial value 0; incremented atomically on each authorized retry.",
+    )
+
+    pending_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Beginning of the run's current continuous stay in PENDING (D6). "
+        "Set on creation; reset on FAILED_* → PENDING retry.",
     )
 
     error_code: Mapped[str | None] = mapped_column(
@@ -223,6 +263,7 @@ class WorkflowStep(Base):
         Index("idx_workflow_steps_run_id", "run_id"),
         Index("idx_workflow_steps_run_id_seq", "run_id", "seq"),
         Index("idx_workflow_steps_correlation_id", "correlation_id"),
+        UniqueConstraint("run_id", "seq", name="uq_workflow_steps_run_id_seq"),
         {"comment": "Workflow step audit trail (WP-REC-03B)"},
     )
 

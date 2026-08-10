@@ -29,6 +29,15 @@ Transition table:
     AWAITING_VALIDATION → FAILED_VALIDATION
     AWAITING_VALIDATION → FAILED_INTERNAL
 
+WP-REC-03F D1 retry transitions (user-initiated retry only):
+    FAILED_PROVIDER     → PENDING
+    FAILED_VALIDATION   → PENDING
+    FAILED_INTERNAL     → PENDING
+
+These retry transitions are explicit external actions authorized by the
+D1/D2 contract. The three failed states remain terminal for ordinary
+workflow execution and polling. COMPLETED has no outgoing transition.
+
 Self-transitions are not permitted: transitioning to the same state
 raises StateMachineError. This prevents no-op transitions from
 appearing in the audit trail.
@@ -92,6 +101,11 @@ TERMINAL_STATES: frozenset[WorkflowState] = frozenset({
 
 # Immutable transition table.
 # Maps each source state to the set of states it may transition to.
+#
+# WP-REC-03F D1: the three failed states gain an outgoing transition
+# to PENDING for user-initiated retry. These are explicit external
+# actions (authorized retry), not ordinary polling/execution transitions.
+# The failed states remain terminal for ordinary workflow execution.
 _TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
     WorkflowState.PENDING: frozenset({WorkflowState.RUNNING}),
     WorkflowState.RUNNING: frozenset({
@@ -104,11 +118,12 @@ _TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
         WorkflowState.FAILED_VALIDATION,
         WorkflowState.FAILED_INTERNAL,
     }),
-    # Terminal states have empty transition sets.
+    # Terminal states: COMPLETED has no outgoing transition.
     WorkflowState.COMPLETED: frozenset(),
-    WorkflowState.FAILED_VALIDATION: frozenset(),
-    WorkflowState.FAILED_PROVIDER: frozenset(),
-    WorkflowState.FAILED_INTERNAL: frozenset(),
+    # D1 retry transitions: FAILED_* → PENDING (user-initiated retry only).
+    WorkflowState.FAILED_VALIDATION: frozenset({WorkflowState.PENDING}),
+    WorkflowState.FAILED_PROVIDER: frozenset({WorkflowState.PENDING}),
+    WorkflowState.FAILED_INTERNAL: frozenset({WorkflowState.PENDING}),
 }
 
 # Public read-only view of the transition table.

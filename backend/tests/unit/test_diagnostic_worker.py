@@ -245,8 +245,13 @@ def test_registration_function_in_worker_settings() -> None:
 def test_registration_no_noop_functions() -> None:
     """functions must contain at least one real callable; no placeholders."""
     assert len(WorkerSettings.functions) >= 1
-    # Allow any real worker function (diagnostic, ingestion, etc.)
-    allowed_names = {"run_diagnostic_job", "run_document_ingestion"}
+    # Allow any real worker function (diagnostic, ingestion, workflow, etc.)
+    allowed_names = {
+        "run_diagnostic_job",
+        "run_document_ingestion",
+        "workflow_start",
+        "workflow_retry",
+    }
     for fn in WorkerSettings.functions:
         # Check if it's callable or wrapped
         if hasattr(fn, 'coroutine'):
