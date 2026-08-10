@@ -112,11 +112,11 @@ Release 1 = the complete Golden Scenario (13 steps from SoT 01 §2) deployed to 
 | Document access control | Step 6 (restricted docs) | AT-007 | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
 | AI provider adapter | Step 5 | — | Phase 5 (03A) | COMPLETE |
 | Workflow state machine + engine | Steps 5–7 | — | Phase 5 (03B) | COMPLETE |
-| Structured-output validation | Step 7 | AT-008 | Phase 5 (03C) | NOT IMPLEMENTED |
-| Provider outage handling | Resilience | AT-013 | Phase 5 (03D) | NOT IMPLEMENTED |
-| Workflow-run detail API + recommendation UI | Step 8 (AI part) | FR-07 | Phase 5 (03E) | NOT IMPLEMENTED |
-| Workflow start/retry API + ARQ worker | Step 5 (start) | AT-008, AT-013 | Phase 5 (03F) | NOT IMPLEMENTED |
-| Frontend start/retry UI | Step 5 (user action) | AT-013 | Phase 5 (03G) | NOT IMPLEMENTED |
+| Structured-output validation | Step 7 | AT-008 | Phase 5 (03C) | COMPLETE (PR #72) — formal AT-008 PASS requires 03F+03E |
+| Provider outage handling | Resilience | AT-013 | Phase 5 (03D) | COMPLETE (PR #73) — formal AT-013 PASS requires 03F+03G |
+| Workflow-run detail API + recommendation UI | Step 8 (AI part) | FR-07 | Phase 5 (03E) | COMPLETE (PR #74) |
+| Workflow start/retry API + ARQ worker | Step 5 (start) | AT-008, AT-013 | Phase 5 (03F) | NOT STARTED / NOT AUTHORIZED |
+| Frontend start/retry UI | Step 5 (user action) | AT-013 | Phase 5 (03G) | NOT AUTHORIZED |
 | Approval service + models | Steps 9–11 | AT-009, AT-010, AT-011 | Phase 6 | NOT IMPLEMENTED |
 | Audit event service | Step 13 | AT-012 | Phase 6 | NOT IMPLEMENTED |
 | Procurement task service | Step 12 | AT-010 | Phase 6 | NOT IMPLEMENTED |
@@ -193,13 +193,15 @@ This covers Golden Scenario steps 1–4 (deterministic core) plus partial step 8
 
 ### Phase 5 gaps (AI Workflow — WP-REC-03C through 03G)
 
-| Gap | Package | AT impact |
-|-----|---------|-----------|
-| Structured-output validation | WP-REC-03C | AT-008 validator clauses (unit-level); full PASS after 03F+03E |
-| Provider retry/outage handling | WP-REC-03D | AT-013 backend (partial); full PASS after 03F+03G |
-| Workflow-run detail API + recommendation UI | WP-REC-03E | FR-07 trace visibility; partial AT-012 foundation |
-| Backend start/retry API + ARQ worker | WP-REC-03F | AT-008 full PASS (with 03E); AT-013 backend PASS |
-| Frontend start/retry UI | WP-REC-03G | AT-013 UI clauses PASS |
+WP-REC-03C, 03D, and 03E are COMPLETE (merged via PRs #72, #73, #74). Their implementation gaps are closed. The remaining AT PASS gaps require 03F (and 03G for AT-013 UI clauses).
+
+| Gap | Package | Status | AT impact |
+|-----|---------|--------|-----------|
+| Structured-output validation | WP-REC-03C | COMPLETE (PR #72) | AT-008 validator clauses (unit-level); full PASS after 03F+03E |
+| Provider retry/outage handling | WP-REC-03D | COMPLETE (PR #73) | AT-013 backend (partial); full PASS after 03F+03G |
+| Workflow-run detail API + recommendation UI | WP-REC-03E | COMPLETE (PR #74) | FR-07 trace visibility; partial AT-012 foundation |
+| Backend start/retry API + ARQ worker | WP-REC-03F | NOT STARTED / NOT AUTHORIZED | AT-008 full PASS (with 03E); AT-013 backend PASS |
+| Frontend start/retry UI | WP-REC-03G | NOT AUTHORIZED | AT-013 UI clauses PASS |
 
 ### Phase 4 completion gaps
 
@@ -241,8 +243,8 @@ Demo video, screenshots, architecture diagram, CV-ready description, external us
 The accepted planning sequence is:
 
 1. **WP-STRAT-01** (this package) — product strategy and Release 1 alignment. COMPLETED.
-2. **WP-ARCH-01** — Architecture Hygiene and Agent Onboarding. NOT AUTHORIZED.
-3. **WP-REC-03C** → **WP-REC-03D** → **WP-REC-03E** → **WP-REC-03F** → **WP-REC-03G** — Phase 5 AI Workflow packages. Sequence preserved per SD-3. Each requires separate authorization.
+2. **WP-ARCH-01** — Architecture Hygiene and Agent Onboarding. COMPLETED and CLOSED (DEC-041, PR #69).
+3. **WP-REC-03A** → **WP-REC-03B** → **WP-REC-03C** → **WP-REC-03D** → **WP-REC-03E** → **WP-REC-03F** → **WP-REC-03G** — Phase 5 AI Workflow packages. Sequence preserved per SD-3. 03A through 03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74). 03F and 03G each require separate authorization. 03F is NOT STARTED / NOT AUTHORIZED; 03G is NOT AUTHORIZED.
 4. **WP-REC-05** — RAG integration into the AI workflow. Positioned after 03C–03G and before Phase 6 per SD-4. NOT AUTHORIZED.
 5. **Phase 6** — Approval and Audit. Not started.
 6. **Phase 7** — Public Deployment. Not started.
@@ -254,7 +256,7 @@ The accepted planning sequence is:
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
-**WP-REC-03C remains NOT AUTHORIZED** unless an already-authoritative document explicitly authorizes it. This document does not authorize it.
+**WP-REC-03C is COMPLETE** (merged via PR #72). WP-REC-03D is COMPLETE (merged via PR #73). WP-REC-03E is COMPLETE (merged via PR #74). WP-REC-03F and WP-REC-03G remain NOT AUTHORIZED. This document does not authorize 03F or 03G.
 
 ---
 
@@ -332,7 +334,7 @@ Formal direction is recorded in DEC-040. AT-007 verification remains required th
 
 ## 17. Relationship to WP-ARCH-01
 
-WP-ARCH-01 (Architecture Hygiene and Agent Onboarding) is a separate package that follows WP-STRAT-01. It is NOT authorized by this document.
+WP-ARCH-01 (Architecture Hygiene and Agent Onboarding) is a separate package that follows WP-STRAT-01. It is COMPLETED and CLOSED (DEC-041, PR #69 merge commit `3a2bc26`). This document did not authorize WP-ARCH-01; it was separately authorized and closed.
 
 WP-STRAT-01 records strategic inputs for WP-ARCH-01 to evaluate:
 - Architecture hygiene specifics (code structure, import patterns, module boundaries)

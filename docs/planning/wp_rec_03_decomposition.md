@@ -614,7 +614,7 @@ Each package below specifies the 15 required attributes.
 
 **Async execution contract (DEC-011 — ARQ + Redis, Accepted; N3 resolved — delivery contract):**
 
-The design uses a **database-first, conditional-transition** delivery contract. The `workflow_runs` row with its unique state-transition constraint is the durability anchor; the ARQ enqueue is a best-effort notification. The contract does **not** claim "no `PENDING` row without a job" — a `PENDING` row without a job is an expected transient state. Recovery of stuck `PENDING` rows is handled by the D6 reconciler contract (resolved — see D6 contract below). 03F defines only the durable dispatch facts needed for future recovery (committed `run_id`, committed `dispatch_generation`, deterministic `_job_id` reconstruction per D5 §3); 03F does not implement or register a reconciler function.
+The design uses a **database-first, conditional-transition** delivery contract. The `workflow_runs` row with its unique state-transition constraint is the durability anchor; the ARQ enqueue is a best-effort notification. The contract does **not** claim "no `PENDING` row without a job" — a `PENDING` row without a job is an expected transient state. Recovery of stuck `PENDING` rows is handled by the D6 reconciler contract (resolved — see D6 contract below). 03F defines the durable dispatch facts needed for future recovery (committed `run_id`, committed `dispatch_generation`, deterministic `_job_id` reconstruction per D5 §3) and implements the reconciler function specified by the D6 contract below. The reconciler is registered as an ARQ cron job in `WorkerSettings.cron_jobs` per D6 §4.
 
 | Concern | Behavior |
 |---------|----------|
@@ -775,7 +775,7 @@ No schema migration is required for `plan_id`: `WorkflowRun.plan_id` is already 
 
 **D5 worker registration and dispatch-identity contract (Product Owner decision, 2026-08-10):**
 
-**Decision D5 — Accept Candidate E: a persisted `dispatch_generation` integer counter on `WorkflowRun` provides the durable dispatch identity for ARQ `_job_id` construction. Worker registration uses `arq.func(...)` with `keep_result=0`, `max_tries=1`, and timeout from `settings.arq_job_timeout`. No reconciler is registered.**
+**Decision D5 — Accept Candidate E: a persisted `dispatch_generation` integer counter on `WorkflowRun` provides the durable dispatch identity for ARQ `_job_id` construction. Worker registration uses `arq.func(...)` with `keep_result=0`, `max_tries=1`, and timeout from `settings.arq_job_timeout`. No reconciler is registered.** (D5 boundary only — D5 did not authorize a reconciler. The later approved D6/DEC-042 contract supersedes this boundary for the final combined WP-REC-03F package; see the D6 contract below.)
 
 D5 supersedes the earlier no-migration/no-schema-change assumption recorded in D3 §7 and WP-REC-03F §4/§5/§14. Durable dispatch identity could not be satisfied by the existing `WorkflowRun` schema — no existing field is created atomically with the authorized dispatch transition, unique per dispatch attempt, recoverable after commit-before-enqueue failure, or guaranteed to differ for every later authorized retry. D5 does not reopen or weaken D1, D2, or D3. D1 §14 prohibits introducing a retry-count field "during this task"; `dispatch_generation` is a dispatch-identity field, not a retry-count field, and D5 is the separately approved decision that authorizes it.
 
@@ -890,7 +890,7 @@ The following test obligations are required to make D5 implementable. These test
 4. Worker registration:
    - `workflow_start` and `workflow_retry` are both registered;
    - ARQ can resolve both functions;
-   - no reconciler is registered;
+   - no reconciler is registered (D5 boundary — superseded by D6 for the final 03F package; see D6 §4 and the D6 test contract below);
    - the configured queue remains `forgemind-tasks`;
 
 5. Worker contract:
@@ -921,6 +921,8 @@ The following test obligations are required to make D5 implementable. These test
 **D5 §10. Compatibility:**
 
 D5 does not reopen or modify D1 retry transitions, same-`run_id` retry, duplicate-start idempotency, commit-before-enqueue, enqueue-failure `503`, reconciler recovery, D2 authentication/authorization/ownership, D3 plan-identifier contracts, or D4's superseded status. The `dispatch_generation` field is a dispatch-identity field, not a retry-count field. D5 is the separately approved decision that authorizes the new field and migration. D6 is resolved (see D6 contract below).
+
+**D5 §9 note — D5 test contract superseded by D6:** The D5 §9 test obligation "no reconciler is registered" is a D5 boundary assertion only. D6 (resolved, DEC-042) supersedes this boundary for the final combined WP-REC-03F package. The final 03F implementation must register the D6 reconciler cron job and must include reconciler tests. See the D6 contract below (§2–§7, §10) and the D6 exit criteria in §14.
 
 **D6 reconciler mechanism contract (Product Owner decision, 2026-08-10):**
 
@@ -1038,24 +1040,29 @@ The candidate predicate (`state = PENDING AND pending_since <= cutoff`) requires
 D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-identifier contracts, D4's superseded status, or D5 worker registration and dispatch identity. D6 defines the reconciler mechanism only. D6 resolution does not authorize WP-REC-03F implementation.
 
 **4. Exact included scope:**
-- `backend/app/models/workflow.py` — add the `dispatch_generation` column (non-null, non-negative integer, default `0`) per D5 §2
-- `backend/alembic/versions/XXX_add_dispatch_generation.py` — one new Alembic migration adding `workflow_runs.dispatch_generation` with `server_default=0` for existing rows per D5 §2
-- `backend/app/ai/workflow/state_machine.py` — extend the existing transition table with the three approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) per the D1 retry contract above. No new state, no `RETRY_PENDING`, no ORM CHECK-constraint change. The Alembic migration is for `dispatch_generation` only (D5 §2); no CHECK-constraint migration is required for the state-machine extension.
+- `backend/app/models/workflow.py` — add the `dispatch_generation` column (non-null, non-negative integer, default `0`) per D5 §2; add the `pending_since` timestamp column per D6 §1 (set on creation, reset on `FAILED_* → PENDING` retry, updated atomically with `dispatch_generation` increment)
+- `backend/alembic/versions/XXX_add_dispatch_generation.py` — one new Alembic migration adding both `workflow_runs.dispatch_generation` with `server_default=0` for existing rows per D5 §2 and `workflow_runs.pending_since` with a backfill policy for existing rows per D6 §1; the migration also creates the partial PENDING index `CREATE INDEX ... ON workflow_runs (pending_since ASC, id ASC) WHERE state = 'PENDING'` per D6 §11. (Alternatively, a justified migration split into two migrations may be used if the implementation plan provides rationale; the single-migration approach is the default.)
+- `backend/app/ai/workflow/state_machine.py` — extend the existing transition table with the three approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) per the D1 retry contract above. No new state, no `RETRY_PENDING`, no ORM CHECK-constraint change. No CHECK-constraint migration is required for the state-machine extension.
 - `backend/app/api/workflow.py` — extend with:
   - `POST /api/v1/workflow-runs` — requires `PRODUCTION_MANAGER` via `require_role({"PRODUCTION_MANAGER"})`; stores `current_user.username` in `triggered_by`; request body carries `plan_id` as a JSON string matching an exact `ProductionPlan.code` (see D3 contract); resolves the code to `ProductionPlan.id` UUID before `WorkflowRun` creation, returns `404 production_plan_not_found` if no plan matches; enqueues an ARQ job (`workflow_start`) identified by `run_id`, returns `202 Accepted` with `run_id`
-  - `POST /api/v1/workflow-runs/{run_id}/retry` — requires authentication; permits run creator (`triggered_by` match) OR `PRODUCTION_MANAGER`; performs the atomic conditional `→ PENDING` transition, then enqueues ARQ retry job (`workflow_retry`) identified by `run_id`, returns `202 Accepted`; does not modify `triggered_by`
+  - `POST /api/v1/workflow-runs/{run_id}/retry` — requires authentication; permits run creator (`triggered_by` match) OR `PRODUCTION_MANAGER`; performs the atomic conditional `→ PENDING` transition (including atomic increment of `dispatch_generation` and atomic update of `pending_since` per D5 §1 and D6 §1), then enqueues ARQ retry job (`workflow_retry`) identified by `run_id`, returns `202 Accepted`; does not modify `triggered_by`
 - `backend/app/ai/workflow/vertical.py` — vertical wiring executed **inside the ARQ worker**: risk engine → provider call → schema validation → recommendation persistence; distinguishes automatic retry (03D) from user-initiated retry (this package)
-- `backend/app/ai/workflow/worker.py` — ARQ worker functions `workflow_start(ctx, run_id, ...)` and `workflow_retry(ctx, run_id, ...)`; the start-worker input is `run_id` (not an untyped `plan_id`); the worker obtains the persisted plan UUID and the exact plan code through the committed `WorkflowRun` row and its related `ProductionPlan` record (D3 §5); the worker validates `dispatch_generation` by comparing the queued generation (from ARQ job identity/context) with the committed `WorkflowRun.dispatch_generation` and skips stale-generation jobs per D5 §4; `_job_id` is constructed as `workflow:{run_id}:{dispatch_generation}` per D5 §3; idempotency-key handling; enqueue-failure path; state transitions; conditional-transition guards (`UPDATE ... WHERE state = :expected` with `RETURNING id`)
+- `backend/app/ai/workflow/worker.py` — ARQ worker functions `workflow_start(ctx, run_id, ...)` and `workflow_retry(ctx, run_id, ...)`; the start-worker input is `run_id` (not an untyped `plan_id`); the worker obtains the persisted plan UUID and the exact plan code through the committed `WorkflowRun` row and its related `ProductionPlan` record (D3 §5); the worker validates `dispatch_generation` by comparing the queued generation (from ARQ job identity/context) with the committed `WorkflowRun.dispatch_generation` and skips stale-generation jobs per D5 §4; the execution-authorizing database transition must atomically require both `state = PENDING` AND `dispatch_generation = queued generation` per D6 §5; `_job_id` is constructed as `workflow:{run_id}:{dispatch_generation}` per D5 §3; idempotency-key handling; enqueue-failure path; state transitions; conditional-transition guards (`UPDATE ... WHERE state = :expected` with `RETURNING id`)
+- `backend/app/ai/workflow/reconciler.py` (new) — ARQ cron reconciler function implementing D6 §2–§7: bounded keyset pagination ordered by `pending_since ASC, id ASC` (no OFFSET); candidate predicate `state = PENDING AND pending_since <= cutoff`; generation-based dispatch target selection (`dispatch_generation = 0` → `workflow_start`, `> 0` → `workflow_retry` per D6 §4); per-candidate failure isolation; accepted/deduplicated/error enqueue outcome classification per D6 §6; must not increment `dispatch_generation`; harmless overlap between distinct cron occurrences; no advisory locks or scan-wide serialization; observability without raw exception text per D6 §10
+- `backend/app/worker.py` (extend — register `workflow_start` and `workflow_retry` in `WorkerSettings.functions` via `arq.func(...)` per D5 §5; register the D6 reconciler as an ARQ cron job in `WorkerSettings.cron_jobs` per D6 §4)
 - `backend/app/schemas/workflow.py` — update with the start request schema (`plan_id: str`, `min_length=1`, exact `ProductionPlan.code` domain, no UUID parsing, no trimming, no regex — see D3) and the retry request schema; accepted response schema (`run_id`, `state`, `location`)
 - Unit tests: `backend/tests/unit/test_workflow_api_start_retry.py` (HTTP-level: enqueue mocked, 202 response shape, idempotency, terminal-state check on retry, enqueue-failure 503, concurrent-retry 409)
 - State-machine tests: `backend/tests/unit/test_workflow_state_machine.py` (extend existing tests to verify the three new retry transitions `FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING` are accepted, `COMPLETED → PENDING` is rejected, and terminal-state behavior is updated for the three retry-eligible failed states)
-- Worker tests: `backend/tests/unit/test_workflow_worker.py` (worker logic: full lifecycle, risk-persistence-on-provider-failure, duplicate-key handling, retry-from-terminal-only, conditional-transition guards)
+- Worker tests: `backend/tests/unit/test_workflow_worker.py` (worker logic: full lifecycle, risk-persistence-on-provider-failure, duplicate-key handling, retry-from-terminal-only, conditional-transition guards, atomic `state = PENDING AND dispatch_generation = queued` authorization per D6 §5, stale-generation safe skip)
+- Dispatch-generation tests: `backend/tests/unit/test_dispatch_generation.py` (D5 §9 test contract: migration/model, retry increment, deterministic job ID, stale-generation skip, `pending_since` set on creation, `pending_since` reset on retry, `pending_since` updated atomically with `dispatch_generation`)
+- Reconciler tests: `backend/tests/unit/test_workflow_reconciler.py` (new — D6 §2–§7, §10: keyset pagination, candidate predicate, generation-based dispatch target, per-candidate failure isolation, accepted/deduplicated/error classification, `dispatch_generation` not incremented, harmless overlap, no raw exception text in observability, budget/pagination exhaustion observability, partial completion)
+- Migration tests: verify `pending_since` backfill for existing rows, partial PENDING index creation, `dispatch_generation` `server_default=0`, non-negative constraint, and downgrade removes both columns and drops the index
 - Integration tests: `backend/tests/integration/test_workflow_start_retry.py` (enqueue → worker → state transitions → recommendation persistence; retry → terminal-state check; enqueue failure → 503 without `run_id` exposed)
 
 **5. Explicit exclusions:**
 - No approval/audit/procurement logic (Phase 6 / WP-REC-04)
 - No document access control or RAG integration (WP-REC-05)
-- No new provider adapter logic (03A) and no unrelated state-machine redesign (03B) — **except** the three narrowly approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) added to the existing transition table in `backend/app/ai/workflow/state_machine.py` per the D1 retry contract below. This resolves reconnaissance contradiction **C2**: the WP-REC-03F retry requirement needed `FAILED_* → PENDING` transitions, but the former exclusion prohibited all new state-machine logic. C2 is resolved by permitting only these three approved transitions while continuing to prohibit unrelated state-machine redesign. No `RETRY_PENDING` state, no new state, no ORM CHECK-constraint change, and no other transition-table changes are introduced. The one Alembic migration authorized by D5 §2 is solely for the `dispatch_generation` column; no CHECK-constraint migration is required.
+- No new provider adapter logic (03A) and no unrelated state-machine redesign (03B) — **except** the three narrowly approved retry transitions (`FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`) added to the existing transition table in `backend/app/ai/workflow/state_machine.py` per the D1 retry contract below. This resolves reconnaissance contradiction **C2**: the WP-REC-03F retry requirement needed `FAILED_* → PENDING` transitions, but the former exclusion prohibited all new state-machine logic. C2 is resolved by permitting only these three approved transitions while continuing to prohibit unrelated state-machine redesign. No `RETRY_PENDING` state, no new state, no ORM CHECK-constraint change, and no other transition-table changes are introduced. The Alembic migration (D5 §2 + D6 §1/§11) adds the `dispatch_generation` and `pending_since` columns and the partial PENDING index; no CHECK-constraint migration is required.
 - No automatic retry policy (03D — this package provides user-initiated retry only)
 - No controlled write actions — no procurement task creation, no approval (Phase 6)
 - No frontend changes (that is 03G)
@@ -1063,18 +1070,20 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - No synchronous execution of risk calculation, provider call, validation, or persistence inside the HTTP request lifecycle
 
 **6. Permitted repository areas:**
-- `backend/app/models/workflow.py` (extend 03B — add `dispatch_generation` column per D5 §2)
-- `backend/alembic/versions/XXX_add_dispatch_generation.py` (new migration per D5 §2)
+- `backend/app/models/workflow.py` (extend 03B — add `dispatch_generation` column per D5 §2; add `pending_since` timestamp column per D6 §1)
+- `backend/alembic/versions/XXX_add_dispatch_generation.py` (new migration per D5 §2 and D6 §1 — adds `dispatch_generation`, `pending_since`, and partial PENDING index per D6 §11; or a justified migration split)
 - `backend/app/ai/workflow/state_machine.py` (extend 03B — add three retry transitions only)
 - `backend/app/api/workflow.py` (extend 03E)
 - `backend/app/ai/workflow/vertical.py` (new)
 - `backend/app/ai/workflow/worker.py` (new)
-- `backend/app/worker.py` (extend — register `workflow_start` and `workflow_retry` in `WorkerSettings.functions` via `arq.func(...)` per D5 §5)
+- `backend/app/ai/workflow/reconciler.py` (new — D6 reconciler function)
+- `backend/app/worker.py` (extend — register `workflow_start` and `workflow_retry` in `WorkerSettings.functions` via `arq.func(...)` per D5 §5; register D6 reconciler in `WorkerSettings.cron_jobs` per D6 §4)
 - `backend/app/schemas/workflow.py` (update)
 - `backend/tests/unit/test_workflow_state_machine.py` (extend 03B tests — verify new retry transitions)
 - `backend/tests/unit/test_workflow_api_start_retry.py` (new test)
 - `backend/tests/unit/test_workflow_worker.py` (new test)
-- `backend/tests/unit/test_dispatch_generation.py` (new test — D5 §9 test contract: migration/model, retry increment, deterministic job ID, stale-generation skip)
+- `backend/tests/unit/test_dispatch_generation.py` (new test — D5 §9 test contract: migration/model, retry increment, deterministic job ID, stale-generation skip, `pending_since` behavior)
+- `backend/tests/unit/test_workflow_reconciler.py` (new test — D6 §2–§7, §10 reconciler test contract)
 - `backend/tests/integration/test_workflow_start_retry.py` (new test)
 
 **7. Dependencies and predecessor gates:**
@@ -1110,7 +1119,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - Worker failure: exception in worker → run marked `FAILED_INTERNAL`; risk result (already persisted) remains queryable
 - Concurrency: retry is serialized by the database conditional-transition rule (`UPDATE ... WHERE state = :expected RETURNING id`); exactly one concurrent caller wins the `→ PENDING` transition; losing concurrent callers receive `409 Conflict`. ARQ `_job_id` deduplication is queue-level only.
 - No write actions created (by design — write actions are Phase 6)
-- Rollback: revert feature branch; Alembic downgrade removes the `dispatch_generation` column (D5 §2 migration). No other database changes beyond 03B.
+- Rollback: revert feature branch; Alembic downgrade removes the `dispatch_generation` column (D5 §2), the `pending_since` column (D6 §1), and drops the partial PENDING index (D6 §11). No other database changes beyond 03B.
 
 **11. Security and secrets constraints:**
 - Start API requires `PRODUCTION_MANAGER` role via `require_role({"PRODUCTION_MANAGER"})` (D2); unauthenticated → 401; authenticated non-`PRODUCTION_MANAGER` → 403
@@ -1135,7 +1144,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - Start-request `plan_id` validation (D3): missing, null, non-string, empty, whitespace-only, and leading/trailing-whitespace values return 422; a syntactically valid UUID string is never resolved through `ProductionPlan.id` — it is looked up only as an exact `ProductionPlan.code` and returns 404 when no such code exists; no trimming, case normalization, or `PLAN-*` regex is applied; an unknown plan code creates no `WorkflowRun`, no state transition, no commit, and no ARQ enqueue
 - `POST /api/v1/workflow-runs/{run_id}/retry` requires authentication; permits run creator (`triggered_by` match) OR `PRODUCTION_MANAGER`; performs one atomic conditional transition from an eligible failed state to `PENDING`, then enqueues an ARQ retry job and returns `202 Accepted`; rejects `COMPLETED`, `PENDING`, `RUNNING`, and `AWAITING_VALIDATION` with 409; does not modify `triggered_by`
 - Unauthenticated start/retry returns 401; authenticated non-`PRODUCTION_MANAGER` start returns 403; authenticated non-creator/non-`PRODUCTION_MANAGER` retry returns 403; `triggered_by IS NULL` retry by non-`PRODUCTION_MANAGER` returns 403
-- State machine transition table extended with `FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`; `COMPLETED` has no outgoing transition; no new state, no `RETRY_PENDING`, no ORM CHECK-constraint change. The one Alembic migration (D5 §2) adds the `dispatch_generation` column; no CHECK-constraint migration is required for the state-machine extension.
+- State machine transition table extended with `FAILED_PROVIDER → PENDING`, `FAILED_VALIDATION → PENDING`, `FAILED_INTERNAL → PENDING`; `COMPLETED` has no outgoing transition; no new state, no `RETRY_PENDING`, no ORM CHECK-constraint change. The Alembic migration (D5 §2 + D6 §1/§11) adds the `dispatch_generation` and `pending_since` columns and the partial PENDING index; no CHECK-constraint migration is required for the state-machine extension.
 - State-machine unit tests verify the three new retry transitions are accepted, `COMPLETED → PENDING` is rejected, and `TERMINAL_STATES` frozenset is unchanged
 - ARQ worker executes vertical wiring: risk engine → provider → validation → recommendation persistence
 - Duplicate start requests return the existing `run_id` under the existing start idempotency contract without re-executing; retry requests use the D1 atomic state transition, and any caller that does not win an eligible `FAILED_* → PENDING` transition receives `409 Conflict`
@@ -1146,12 +1155,30 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - Workflow job identified by `run_id` (D3 §5): the start-worker input is `run_id`, not an untyped `plan_id`; the worker obtains the persisted plan UUID and the exact plan code through the committed `WorkflowRun` row and its related `ProductionPlan` record; ARQ `_job_id` is constructed as `workflow:{run_id}:{dispatch_generation}` per D5 §3; `_job_id` remains queue-level deduplication only, as accepted by D1; D5 ensures that an earlier ARQ job record cannot prevent a later authorized retry of the same durable `run_id` from being enqueued — each authorized retry receives a new `dispatch_generation`, producing a different `_job_id`; `keep_result=0` ensures no result key blocks re-enqueue
 - Dispatch identity (D5 §1): `WorkflowRun.dispatch_generation` is non-null, non-negative, initialized to `0` on run creation, incremented atomically in the same conditional UPDATE that performs the `FAILED_* → PENDING` retry transition; existing rows receive `0` via migration; the generation is durable and recoverable from the committed row; duplicate enqueue calls or reconciler passes do not increment it; every later authorized retry receives a different generation
 - Worker stale-job validation (D5 §4): the worker compares the queued generation (from ARQ job identity/context) with the committed `WorkflowRun.dispatch_generation`; a stale-generation job does not execute provider work or regress state; no new state transition is introduced for stale-job behavior
-- Worker registration (D5 §5): `workflow_start` and `workflow_retry` are registered in `WorkerSettings.functions` via `arq.func(...)` with `keep_result=0`, `max_tries=1`, and timeout from `settings.arq_job_timeout`; no reconciler is registered; the queue remains `forgemind-tasks`; no additional worker role or queue is introduced
+- Worker registration (D5 §5): `workflow_start` and `workflow_retry` are registered in `WorkerSettings.functions` via `arq.func(...)` with `keep_result=0`, `max_tries=1`, and timeout from `settings.arq_job_timeout`; the D6 reconciler cron job is registered in `WorkerSettings.cron_jobs` per D6 §4; the queue remains `forgemind-tasks`; no additional worker role or queue is introduced
 - Deterministic risk result persisted and queryable even when provider fails after the risk engine succeeds
 - AT-013 backend clauses verifiable (risk engine result available, failed step visible in API trace)
 - All backend unit, worker, and integration tests pass (including extended `test_workflow_state_machine.py`)
 - Linter and type checks pass
 - DEC-011 (ARQ + Redis) explicitly preserved; no new orchestration technology introduced
+- `pending_since` column exists on `WorkflowRun` (D6 §1): set on creation, reset to current UTC timestamp on `FAILED_* → PENDING` retry, updated atomically with `dispatch_generation` increment; ordinary reconciliation scans do not modify it
+- Partial PENDING index exists: `CREATE INDEX ... ON workflow_runs (pending_since ASC, id ASC) WHERE state = 'PENDING'` per D6 §11
+- Migration/backfill for `pending_since` on existing rows is defined and applied per D6 §1
+- D6 reconciler cron job registered in `WorkerSettings.cron_jobs` per D6 §4
+- Reconciler uses bounded keyset pagination ordered by `pending_since ASC, id ASC`; no OFFSET pagination per D6 §2
+- Reconciler candidate predicate: `state = PENDING AND pending_since <= authoritative UTC cutoff` per D6 §6
+- Reconciler per-candidate failure isolation: one candidate's enqueue error does not prevent later candidates from being attempted per D6 §6
+- Reconciler does not increment `dispatch_generation` per D6 §3
+- Reconciler selects dispatch target from committed `dispatch_generation` (`0` → `workflow_start`, `> 0` → `workflow_retry`) per D6 §4
+- Reconciler overlap is harmless; no advisory locks or scan-wide serialization per D6 §3
+- Reconciler enqueue outcomes classified as accepted (`Job` instance), deduplicated (`None`), or error (approved exception class) per D6 §6
+- Reconciler observability events emitted without raw exception text per D6 §10
+- Reconciler budget or pagination exhaustion produces a structured observability event per D6 §2
+- PENDING-only reconciliation scope; stuck-RUNNING recovery remains excluded per D6 §8
+- No exactly-once provider-execution guarantee is claimed per D6 §7
+- No recovery progress is guaranteed during PostgreSQL, Redis, or worker outages per D6 §7
+- Reconciler tests pass (keyset pagination, candidate predicate, dispatch target selection, per-candidate isolation, enqueue classification, `dispatch_generation` not incremented, harmless overlap, observability without raw exception text, budget/pagination exhaustion)
+- Migration tests pass (`pending_since` backfill, partial PENDING index creation, `dispatch_generation` `server_default=0`, non-negative constraint, downgrade removes both columns and drops the index)
 
 **15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. Requires explicit Product Owner authorization.
 ---
