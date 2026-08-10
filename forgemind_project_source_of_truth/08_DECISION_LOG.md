@@ -171,8 +171,9 @@ Specifically:
    `workflow_runs` row and its `state` column are the source of truth
    for domain workflow state. The ARQ enqueue is a best-effort
    notification; a committed `PENDING` row is the durability anchor. A
-   periodic reconciler detects stuck `PENDING` rows and re-enqueues,
-   guaranteeing eventual completion via reconciliation — not via ARQ job
+   periodic reconciler (D6, resolved as an ARQ cron job in
+   `WorkerSettings`) detects stuck `PENDING` rows and re-enqueues,
+   providing best-effort recovery via reconciliation — not via ARQ job
    state.
 
 5. **Transitions are explicit and validated.** Every state change goes
@@ -245,8 +246,10 @@ Truth decomposition in `docs/planning/wp_rec_03_decomposition.md`.
   :expected` with `RETURNING id`).
 - ARQ-level idempotency keys deduplicate enqueue requests; they do not
   replace the database-level serialization primitive.
-- The reconciler (WP-REC-03F) detects stuck `PENDING` rows and re-enqueues
-  idempotently by `run_id`.
+- The reconciler (WP-REC-03F, D6 resolved) detects stuck `PENDING` rows
+  and re-enqueues using deterministic job identity
+  `workflow:{run_id}:{dispatch_generation}`. Reconciliation is
+  best-effort, not exactly-once.
 
 **Observability and audit implications:**
 
@@ -527,6 +530,48 @@ The sole `RECOMMENDED` item is Finding 4.5.1, the optional agent-onboarding docu
 **Affected documents:** `docs/planning/wp_arch_01_planning.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`. `docs/planning/wp_rec_03_decomposition.md` is NOT modified by this closure; its WP-ARCH-01 references will be synchronized during WP-REC-03 branch reconciliation.
 
 **Approved by:** Product Owner (2026-08-09)
+
+---
+
+## DEC-042 — WP-REC-03F D6 reconciler mechanism resolved
+
+**Date:** 2026-08-10
+
+**Status:** Accepted
+
+**Context:** WP-REC-03F planning required resolution of Decision D6: the mechanism for detecting and recovering durable `WorkflowRun` rows that remain in PENDING state after database commit but were not successfully dispatched or executed. An evidence-backed reconnaissance report (`/home/toha/forgemind-wp-rec-03f-d6-reconnaissance-report.md`) was produced and revised to correct material ARQ and concurrency errors from earlier drafts. The Product Owner reviewed the corrected report and approved all four D6 sub-decisions.
+
+**Decision:** Approve Option A — an ARQ cron job registered in the existing `WorkerSettings` provides periodic best-effort reconciliation of stuck PENDING rows. Four sub-decisions are approved:
+
+1. **Stale timestamp — dedicated `pending_since` field.** A dedicated `pending_since` timestamp column will be added to `WorkflowRun` during WP-REC-03F implementation. `pending_since` represents the beginning of the run's current continuous stay in PENDING. It is set on creation, reset on `FAILED_* → PENDING` retry transition, updated atomically with the dispatch_generation increment, and not modified by ordinary reconciliation scans. `created_at` must not be used for stale-candidate detection. `updated_at` must not be treated as the semantic stale-candidate timestamp. Adding `pending_since` requires a future schema migration. Migration/backfill behavior for existing rows must be defined in the implementation plan.
+
+2. **Pagination and bounded scan — keyset pagination.** Each reconciliation occurrence processes pages using keyset pagination ordered by `pending_since ASC, id ASC`. Do not use OFFSET pagination. The scan stops when no eligible candidates remain, the maximum-page limit is reached, or the time budget is exhausted. Partial completion is valid. No durable cross-occurrence cursor is approved. Absolute starvation freedom is not claimed — this is an accepted bounded-throughput operational risk. External monitoring may alert on repeated budget exhaustion or excessive candidate age. Proposed configurable defaults (not permanently fixed): page size 100, maximum pages 5, scan time budget 50 seconds.
+
+3. **Overlap policy — harmless overlap permitted.** ARQ cron `unique=True` deduplicates the same scheduled occurrence across workers; it does not serialize different scheduled occurrences. Distinct reconciliation occurrences may overlap. Do not add PostgreSQL advisory locks, distributed locks, or another scan-wide serialization mechanism. Correctness must not depend on a reconciliation-row claim or SELECT lock. The authoritative worker transition must atomically require `state = PENDING` AND `dispatch_generation = queued generation`. No exactly-once provider-execution guarantee is created. Reconciliation must not increment `dispatch_generation`.
+
+4. **Dispatch target — generation-based selection.** `dispatch_generation = 0` → `workflow_start`. `dispatch_generation > 0` → `workflow_retry`. Reconciliation selects the target exclusively from the committed `dispatch_generation`. The deterministic job identity remains `workflow:{run_id}:{dispatch_generation}`. `run_id` remains the only workflow-specific function argument. Queued generation is recovered and validated from the ARQ job identity/context. Malformed, mismatched, or stale job identity must not authorize provider execution.
+
+**Mandatory generation guard (D3/D5/D6 correctness contract, not an unresolved choice):** The execution-authorizing database transition must match both PENDING state and the queued `dispatch_generation`. A pre-read followed by an UPDATE filtered only by `state` is insufficient. Failure to match the committed generation produces a safe stale-generation skip. Stale-generation execution must not invoke the provider or regress workflow state.
+
+**Proposed configuration defaults (not permanently fixed):** Reconciliation interval 60 seconds; stale threshold 2 minutes; page size 100; maximum pages 5; scan time budget 50 seconds; cron timeout 60 seconds; age-event thresholds: warning 1 hour, error 24 hours, critical 7 days.
+
+**Guarantee statement:** Durable database workflow state survives queue loss. Initial enqueue and later reconciliation enqueue are best-effort. Repeated recovery attempts continue while infrastructure is available. No exactly-once provider-execution claim is created. No recovery progress is guaranteed while PostgreSQL, Redis, or workers are unavailable.
+
+**Scope boundary:** PENDING recovery only. Stuck RUNNING recovery remains outside D6 unless separately authorized. No implementation is authorized by this decision. WP-REC-03F implementation remains NOT STARTED / NOT AUTHORIZED.
+
+**Reason:** The reconnaissance report verified ARQ 0.28.0 source code and corrected material errors from earlier drafts (ARQ version, `unique=True` per-occurrence semantics, `minute={*}` invalid syntax, `created_at` stale-threshold invalidity, batch starvation, enqueue outcome classification, failure lifecycle, and correctness guarantee). The approved contracts use existing infrastructure (ARQ + Redis + PostgreSQL, DEC-011), introduce no new dependencies, and preserve D1-D5 contracts. The bounded-throughput risk is accepted as an operational characteristic, not a correctness defect.
+
+**Consequences:**
+- D6 is RESOLVED. All WP-REC-03F planning contracts (D1-D3, D5, D6) are resolved; D4 is superseded.
+- WP-REC-03F implementation remains NOT AUTHORIZED. A separate Product Owner authorization decision is required.
+- The D6 contract requires a future `pending_since` column migration during WP-REC-03F implementation.
+- The D6 contract requires a future partial index `WHERE state = 'PENDING'` on `(pending_since ASC, id ASC)`.
+- The generation guard is a mandatory correctness contract, not a parameter choice.
+- Proposed configuration defaults (page size, max pages, time budget, thresholds) are implementation defaults, not permanently fixed Product Owner decisions.
+
+**Affected documents:** `docs/planning/wp_rec_03_decomposition.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-10)
 
 ---
 

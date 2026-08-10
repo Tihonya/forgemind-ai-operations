@@ -14,7 +14,7 @@
 - WP-STRAT-01 (Product Strategy and Release 1 Alignment): COMPLETE — merged via PR #67 at `77d359c58cba43d310d2a532fda0836464adda2b` (2026-08-09)
 - WP-ARCH-01 (Architecture Hygiene and Agent Onboarding): COMPLETED and CLOSED — planning artifact merged via PR #69 at `3a2bc26028cac0352af2cdde8107df90f41f015c`; Product Owner acceptance and closure recorded by DEC-041 and synchronized via PR #70 at `0e0afd151098d85fdd9eaf12ba98147ed41b6336` (2026-08-09). Zero REQUIRED findings. One RECOMMENDED item (agent-onboarding document, Finding 4.5.1) DEFERRED and not authorized.
 - WP-REC-03C through 03E: COMPLETE — merged via PRs #72, #73, #74 respectively.
-- WP-REC-03F: Planning contracts D1-D3 and D5 resolved; D4 superseded; D6 unresolved; implementation NOT AUTHORIZED.
+- WP-REC-03F: Planning contracts D1-D3, D5, and D6 resolved; D4 superseded; implementation NOT AUTHORIZED.
 - WP-REC-03G: NOT AUTHORIZED.
 
 ---
@@ -614,7 +614,7 @@ Each package below specifies the 15 required attributes.
 
 **Async execution contract (DEC-011 — ARQ + Redis, Accepted; N3 resolved — delivery contract):**
 
-The design uses a **database-first, conditional-transition** delivery contract. The `workflow_runs` row with its unique state-transition constraint is the durability anchor; the ARQ enqueue is a best-effort notification. The contract does **not** claim "no `PENDING` row without a job" — a `PENDING` row without a job is an expected transient state. Recovery of stuck `PENDING` rows is a recognized need, but the reconciler mechanism, scheduling, thresholds, batching, locking, limits, and escalation remain **D6 unresolved**. 03F defines only the durable dispatch facts needed for future recovery (committed `run_id`, committed `dispatch_generation`, deterministic `_job_id` reconstruction per D5 §3); 03F does not implement or register a reconciler function.
+The design uses a **database-first, conditional-transition** delivery contract. The `workflow_runs` row with its unique state-transition constraint is the durability anchor; the ARQ enqueue is a best-effort notification. The contract does **not** claim "no `PENDING` row without a job" — a `PENDING` row without a job is an expected transient state. Recovery of stuck `PENDING` rows is handled by the D6 reconciler contract (resolved — see D6 contract below). 03F defines only the durable dispatch facts needed for future recovery (committed `run_id`, committed `dispatch_generation`, deterministic `_job_id` reconstruction per D5 §3); 03F does not implement or register a reconciler function.
 
 | Concern | Behavior |
 |---------|----------|
@@ -628,7 +628,7 @@ The design uses a **database-first, conditional-transition** delivery contract. 
 | Duplicate start requests | Duplicate start requests continue to follow the already recorded start idempotency contract. A duplicate start request returns the existing `run_id` with `202 Accepted` and does **not** re-execute. This start behavior does not define retry replay semantics. Retry requests are governed exclusively by the D1 atomic conditional transition. Once the run has left an eligible `FAILED_*` state, another retry request receives `409 Conflict`. ARQ `_job_id` remains queue-level deduplication only and does not replace database serialization (DEC-013 §5). |
 | **Duplicate delivery** | ARQ jobs are keyed by a stable `run_id`-derived `_job_id` constructed as `workflow:{run_id}:{dispatch_generation}` per D5 §3. If a job with that key is already queued (ARQ dedup at enqueue time), the second enqueue is a no-op. The worker additionally guards execution via the database conditional-transition rule, so even if ARQ somehow delivered the job twice, only the first execution would successfully transition the state. |
 | **Enqueue failure after the run exists (N3 scenario)** | If the ARQ enqueue raises (Redis unavailable, timeout, etc.), the endpoint returns `503 Service Unavailable` **without** `run_id` in the response body. The `PENDING` row is committed and durable but not exposed to the caller. For start enqueue failure, the `503` response must not expose the newly created `run_id`. A database failure before commit is a different failure category and must not be described as an enqueue failure. |
-| **Process crash between commit and enqueue** | Identical to the enqueue-failure scenario. The `PENDING` row is committed; no job was enqueued. The caller receives no `run_id`. Recovery of the stuck row is a recognized need but the reconciler mechanism remains D6 unresolved. |
+| **Process crash between commit and enqueue** | Identical to the enqueue-failure scenario. The `PENDING` row is committed; no job was enqueued. The caller receives no `run_id`. Recovery of the stuck row is handled by the D6 reconciler contract (resolved). |
 | **Concurrent retries for the same run** | Serialized by an **explicit database conditional-transition rule** — NOT by the idempotency key alone. The retry endpoint requires the run to be in a terminal failure state (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`) and uses a SQL `UPDATE ... WHERE id = :run_id AND state IN (:terminal_states)` with `RETURNING id`. Exactly one concurrent caller receives a non-empty result and is allowed to enqueue; all other concurrent callers receive an empty result and get `409 Conflict`. This is the serialization primitive — independent of the idempotency key. |
 | **Idempotency key role** | Deduplicates enqueue requests with the same `run_id` at the ARQ level (prevents duplicate jobs in the queue). Does **not** serialize concurrent requests with different keys — that is the database conditional-transition rule's job. |
 | No blocking of HTTP lifecycle | The HTTP request returns within the API latency budget. No synchronous provider call, no synchronous risk calculation longer than the API timeout, no synchronous persistence beyond the `PENDING` row. |
@@ -916,11 +916,126 @@ The following test obligations are required to make D5 implementable. These test
    - D2 authorization-before-lookup and `triggered_by` audit requirements remain unchanged;
    - D3 plan identifiers, `run_id` input, persistence rules, and exact start response remain unchanged;
    - D4 remains superseded;
-   - D6 remains unresolved.
+   - D6 is resolved (see D6 contract below).
 
 **D5 §10. Compatibility:**
 
-D5 does not reopen or modify D1 retry transitions, same-`run_id` retry, duplicate-start idempotency, commit-before-enqueue, enqueue-failure `503`, reconciler recovery, D2 authentication/authorization/ownership, D3 plan-identifier contracts, or D4's superseded status. The `dispatch_generation` field is a dispatch-identity field, not a retry-count field. D5 is the separately approved decision that authorizes the new field and migration. D6 remains unresolved.
+D5 does not reopen or modify D1 retry transitions, same-`run_id` retry, duplicate-start idempotency, commit-before-enqueue, enqueue-failure `503`, reconciler recovery, D2 authentication/authorization/ownership, D3 plan-identifier contracts, or D4's superseded status. The `dispatch_generation` field is a dispatch-identity field, not a retry-count field. D5 is the separately approved decision that authorizes the new field and migration. D6 is resolved (see D6 contract below).
+
+**D6 reconciler mechanism contract (Product Owner decision, 2026-08-10):**
+
+**Decision D6 — Approve Option A: an ARQ cron job registered in the existing `WorkerSettings` provides periodic best-effort reconciliation of stuck PENDING rows. The following four sub-decisions are approved: stale timestamp, pagination, overlap, and dispatch target.**
+
+D6 is resolved. WP-REC-03F implementation remains NOT AUTHORIZED — D6 resolution is a planning contract, not an implementation authorization.
+
+**D6 §1. Stale timestamp — dedicated `pending_since` field:**
+
+A dedicated `pending_since` timestamp column will be added to `WorkflowRun` during WP-REC-03F implementation. `created_at` must not be used for stale-candidate detection. `updated_at` must not be treated as the semantic stale-candidate timestamp.
+
+- `pending_since` represents the beginning of the run's current continuous stay in PENDING.
+- It is set when a new `WorkflowRun` is created in PENDING.
+- It is reset to the current authoritative UTC timestamp whenever an authorized retry transition moves a run from `FAILED_*` back to PENDING.
+- It is updated atomically with the PENDING transition and `dispatch_generation` increment.
+- Ordinary reconciliation scans do not modify `pending_since`.
+- Adding `pending_since` requires a future schema migration and ORM/schema updates during implementation.
+- Migration/backfill behavior for existing rows must be defined in the future implementation plan.
+
+**D6 §2. Pagination and bounded scan — keyset pagination:**
+
+Each reconciliation occurrence processes pages using keyset pagination ordered by `pending_since ASC, id ASC`. Do not use OFFSET pagination. Do not repeatedly query only the first page within the same occurrence.
+
+- The next page must continue strictly after the last processed tuple: `(pending_since, id)`.
+- The scan stops when: no eligible candidates remain; the configured maximum-page limit is reached; or the configured time budget is exhausted.
+- Partial completion is valid.
+- Pagination or time-budget exhaustion must produce a structured observability event.
+- Restart or cancellation may cause candidates to be scanned again and must remain harmless.
+- No durable cross-occurrence cursor is approved.
+- Therefore, do not claim absolute starvation freedom across an indefinitely persistent backlog larger than the per-occurrence bound. This is an accepted bounded-throughput operational risk.
+- External monitoring may alert on repeated budget exhaustion or excessive candidate age.
+
+Proposed configurable implementation defaults (not permanently fixed Product Owner decisions): page size 100; maximum pages per occurrence 5; scan time budget 50 seconds.
+
+**D6 §3. Overlap policy — harmless overlap permitted:**
+
+ARQ cron `unique=True` deduplicates the same scheduled occurrence across workers; it does not serialize different scheduled occurrences. Distinct reconciliation occurrences may overlap.
+
+- Do not add PostgreSQL advisory locks, distributed locks, or another scan-wide serialization mechanism.
+- Overlapping scans may attempt to enqueue the same candidate.
+- Correctness must not depend on a reconciliation-row claim or SELECT lock.
+- Deterministic workflow job identity provides queue-level same-generation deduplication while the relevant ARQ identity exists.
+- The authoritative worker transition must atomically require: `state = PENDING` AND `dispatch_generation = queued generation`.
+- Duplicate scans and duplicate enqueue attempts must be harmless.
+- No exactly-once provider-execution guarantee is created.
+- Reconciliation must not increment `dispatch_generation`.
+
+**D6 §4. Dispatch target — generation-based selection:**
+
+- `dispatch_generation = 0` → `workflow_start`.
+- `dispatch_generation > 0` → `workflow_retry`.
+- Reconciliation selects the target exclusively from the committed `dispatch_generation`.
+- Reconciliation does not invent, increment, or repair the generation.
+- The deterministic job identity remains: `workflow:{run_id}:{dispatch_generation}`.
+- `run_id` remains the only workflow-specific function argument.
+- Queued generation is recovered and validated from the ARQ job identity/context.
+- Malformed, mismatched, or stale job identity must not authorize provider execution.
+
+**D6 §5. Mandatory generation guard (D3/D5/D6 correctness contract):**
+
+The generation guard is not an unresolved Product Owner choice. It is a mandatory correctness contract:
+
+- The execution-authorizing database transition must match both PENDING state and the queued `dispatch_generation`.
+- A pre-read followed by an UPDATE filtered only by `state` is insufficient.
+- Failure to match the committed generation produces a safe stale-generation skip.
+- Stale-generation execution must not invoke the provider or regress workflow state.
+
+**D6 §6. Candidate predicate and enqueue outcomes:**
+
+Candidate predicate: `state = PENDING` AND `pending_since <= authoritative UTC cutoff` AND `dispatch_generation` is present and valid.
+
+Per-row enqueue outcomes:
+- `enqueue_job` returns a `Job` instance → accepted (increment `accepted_count`).
+- `enqueue_job` returns `None` → deduplicated/already present (increment `deduplicated_count`, do NOT increment `accepted_count`).
+- Approved exception class → enqueue error (increment `enqueue_error_count`).
+- Per-candidate isolation: one candidate's enqueue error must not prevent later candidates from being attempted, unless Redis is detected as globally unavailable and a documented fail-fast policy is selected.
+- Do not log raw exception text. Record only safe exception type or approved bounded error code.
+
+**D6 §7. Guarantee statement:**
+
+- Durable database workflow state survives queue loss.
+- Initial enqueue and later reconciliation enqueue are best-effort.
+- Repeated recovery attempts continue while infrastructure is available.
+- No exactly-once provider-execution claim is created.
+- No recovery progress is guaranteed while PostgreSQL, Redis, or workers are unavailable.
+
+**D6 §8. Scope boundary:**
+
+- PENDING recovery only.
+- Stuck RUNNING recovery remains outside D6 unless separately authorized.
+- No implementation is authorized by this documentation change. WP-REC-03F implementation remains NOT STARTED / NOT AUTHORIZED.
+
+**D6 §9. Proposed configuration defaults (not permanently fixed):**
+
+- Reconciliation interval: 60 seconds.
+- Stale threshold: 2 minutes.
+- Page size: 100.
+- Maximum pages per occurrence: 5.
+- Scan time budget: 50 seconds.
+- Cron timeout: 60 seconds.
+- Age-event thresholds: warning 1 hour, error 24 hours, critical 7 days.
+
+These are proposed implementation defaults, not approved architectural constants.
+
+**D6 §10. Observability:**
+
+The contract must include at least: scan/occurrence ID, cutoff, scanned count, accepted count, deduplicated count, enqueue-error count, skipped-invalid count, candidate age, run_id, dispatch_generation, selected target, safe error classification, scan duration, and pagination/budget exhaustion indicator. Do not promise "send alert" unless an alerting integration exists. External monitoring may alert on emitted structured events.
+
+**D6 §11. Index requirement:**
+
+The candidate predicate (`state = PENDING AND pending_since <= cutoff`) requires a future partial index: `CREATE INDEX ... ON workflow_runs (pending_since ASC, id ASC) WHERE state = 'PENDING'`. This index does not currently exist and must be added during WP-REC-03F implementation. Do not claim the query is indexed until the migration is applied.
+
+**D6 §12. Compatibility:**
+
+D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-identifier contracts, D4's superseded status, or D5 worker registration and dispatch identity. D6 defines the reconciler mechanism only. D6 resolution does not authorize WP-REC-03F implementation.
 
 **4. Exact included scope:**
 - `backend/app/models/workflow.py` — add the `dispatch_generation` column (non-null, non-negative integer, default `0`) per D5 §2
@@ -1024,7 +1139,7 @@ D5 does not reopen or modify D1 retry transitions, same-`run_id` retry, duplicat
 - State-machine unit tests verify the three new retry transitions are accepted, `COMPLETED → PENDING` is rejected, and `TERMINAL_STATES` frozenset is unchanged
 - ARQ worker executes vertical wiring: risk engine → provider → validation → recommendation persistence
 - Duplicate start requests return the existing `run_id` under the existing start idempotency contract without re-executing; retry requests use the D1 atomic state transition, and any caller that does not win an eligible `FAILED_* → PENDING` transition receives `409 Conflict`
-- Enqueue failure returns `503 Service Unavailable` (no `run_id` exposed to the caller); the committed `PENDING` run remains durable. Recovery of stuck `PENDING` rows is a recognized need but the reconciler mechanism remains D6 unresolved.
+- Enqueue failure returns `503 Service Unavailable` (no `run_id` exposed to the caller); the committed `PENDING` run remains durable. Recovery of stuck `PENDING` rows is handled by the D6 reconciler contract (resolved).
 - Concurrent retry requests for the same `run_id` are serialized by the database conditional-transition rule; exactly one caller wins, losing callers receive `409 Conflict`
 - Worker retains its database state guard (conditional `PENDING → RUNNING` UPDATE) before execution on a retried run
 - Read and response contracts unchanged (D3 §4): `WorkflowRun.plan_id` remains a UUID FK; `WorkflowRunSchema.plan_id` and `WorkflowRunSummarySchema.plan_id` remain UUID; `RecommendationData.plan_id` remains the external string code; the start response remains exactly `{run_id, state, location}` with no `plan_id`
@@ -1144,7 +1259,7 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
 | No implementation is described as already authorized | ✅ 03A, 03B, 03C, 03D, 03E are COMPLETE (merged); 03F and 03G say \"NOT AUTHORIZED\" in §15 |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E are now COMPLETE (merged via PRs #72, #73, #74). WP-REC-03F planning contracts D1-D3 and D5 resolved; D4 superseded; D6 unresolved; implementation NOT AUTHORIZED. WP-REC-03G NOT AUTHORIZED. |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E are now COMPLETE (merged via PRs #72, #73, #74). WP-REC-03F planning contracts D1-D3, D5, and D6 resolved; D4 superseded; implementation NOT AUTHORIZED. WP-REC-03G NOT AUTHORIZED. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
@@ -1160,7 +1275,7 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Recommendation UI has explicit package owner | ✅ 03E owns recommendation display; 03G adds start/retry UI actions |
 | Recommendation persistence has explicit package owner | ✅ 03B owns SQLAlchemy Recommendation model and migration; 03C owns Pydantic wire schema; 03F's worker writes; 03E reads |
 | Recommendation schema file ownership (N5) | ✅ `backend/app/schemas/recommendation.py` owned exclusively by 03C (Pydantic wire schema); 03B owns `backend/app/models/workflow.py` (SQLAlchemy ORM); no duplicate ownership |
-| DB/ARQ delivery contract (N3) | ✅ 03F defines commit-then-enqueue order, conditional-transition rule for concurrency, durable dispatch identity (D5 `dispatch_generation`), and eventual-completion need; reconciler mechanism remains D6 unresolved |
+| DB/ARQ delivery contract (N3) | ✅ 03F defines commit-then-enqueue order, conditional-transition rule for concurrency, durable dispatch identity (D5 `dispatch_generation`), and eventual-completion need; D6 reconciler contract resolved |
 | DEC-013 gate appears exactly once, no 03A dependency | ✅ Gate has no dependency on 03A |
 | DEC-011 (ARQ + Redis) explicitly preserved | ✅ 03F uses DEC-011's ARQ + Redis; DEC-011 not modified |
 | Start/retry endpoints enqueue rather than execute inline | ✅ 03F start/retry enqueue ARQ jobs; worker owns long-running execution |
@@ -1214,7 +1329,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 
 **WP-REC-03B (Workflow/State-Machine Foundation) is also COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).** The second candidate implementation package is complete.
 
-**Phase 5 implementation status (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74 respectively). WP-REC-03F planning contracts D1-D3 and D5 are resolved; D4 superseded; D6 (reconciler mechanism) remains unresolved. WP-REC-03F implementation is NOT AUTHORIZED pending D6 resolution and explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
+**Phase 5 implementation status (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74 respectively). WP-REC-03F planning contracts D1-D3, D5, and D6 are resolved; D4 superseded. WP-REC-03F implementation is NOT AUTHORIZED pending explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
 
 ---
 
@@ -1230,7 +1345,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03E (workflow-run detail + recommendation UI) | COMPLETE — merged via PR #74 |
 | WP-REC-03F (backend workflow start/retry API + ARQ worker) | NOT AUTHORIZED |
 | WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
-| WP-REC-03 implementation (as a whole) | MIXED LIFECYCLE — WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74); WP-REC-03F implementation is NOT AUTHORIZED (planning contracts D1-D3 and D5 resolved, D4 superseded, D6 unresolved); WP-REC-03G is NOT AUTHORIZED |
+| WP-REC-03 implementation (as a whole) | MIXED LIFECYCLE — WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74); WP-REC-03F implementation is NOT AUTHORIZED (planning contracts D1-D3, D5, and D6 resolved, D4 superseded); WP-REC-03G is NOT AUTHORIZED |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
