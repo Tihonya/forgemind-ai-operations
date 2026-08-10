@@ -13,7 +13,7 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | FR-03 | Seed Data — one command creates full synthetic dataset | `backend/app/seed/generator/main.py`, `backend/app/seed/generator/*.py` | `tests/seed/test_golden_dataset.py`, `tests/integration/test_risk_engine_with_seed.py` | — | **AT-003** |
 | FR-04 | Deterministic Risk Engine — risks calculated by Python/SQL | `backend/app/services/risk_engine.py`, `backend/app/services/bom_explosion.py`, `backend/app/services/inventory_service.py` | `tests/unit/test_risk_engine.py`, `tests/unit/test_bom_explosion.py`, `tests/unit/test_inventory_service.py` | — | **AT-004**, **AT-005** |
 | FR-05 | RAG — index synthetic docs, retrieval, cited fragments | `backend/app/services/ingestion.py`, `backend/app/ai/rag/retriever.py`, `backend/app/ai/rag/citations.py` | `tests/integration/test_at006_rag_retrieval.py`, `tests/integration/test_retriever_access_filtering.py` | — | **AT-006**, **AT-007** |
-| FR-06 | Structured AI Output — versioned JSON schema, validation | _Not yet implemented — WP-REC-03C_ | _Not yet implemented_ | — | **AT-008** |
+| FR-06 | Structured AI Output — versioned JSON schema, validation | `backend/app/ai/workflow/schema_validator.py`, `backend/app/schemas/recommendation.py`, `backend/app/ai/workflow/prompts.py` (WP-REC-03C, COMPLETE) | `tests/unit/test_schema_validator.py` | — | **AT-008** |
 | FR-07 | Workflow Trace — correlation ID, status, timestamps, steps, errors | `backend/app/ai/workflow/state_machine.py`, `backend/app/ai/workflow/engine.py`, `backend/app/core/correlation.py` | `tests/unit/test_workflow_state_machine.py`, `tests/unit/test_workflow_engine.py`, `tests/integration/test_workflow_run_lifecycle.py` | — | **AT-012**, **AT-013** |
 | FR-08 | Human Approval — procurement task needs explicit confirmation | _Not yet implemented — Phase 6_ | _Not yet implemented_ | _Not yet implemented_ | **AT-009**, **AT-010** |
 | FR-09 | Audit — critical reads, agent runs, approvals, writes logged | _Not yet implemented — Phase 6_ | _Not yet implemented_ | — | **AT-011**, **AT-012** |
@@ -34,12 +34,12 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | AT-005 — No hidden UI mocks | Phase 2 + Phase 3 | ✅ PASS |
 | AT-006 — RAG retrieval | Phase 4 | IMPLEMENTED — NOT VERIFIED AS PASS |
 | AT-007 — Document access control | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
-| AT-008 — Structured output validation | Phase 5 | NOT IMPLEMENTED |
+| AT-008 — Structured output validation | Phase 5 | IMPLEMENTED (unit-level via WP-REC-03C, PR #72) — formal PASS requires WP-REC-03F worker execution and WP-REC-03E trace rendering |
 | AT-009 — Human approval blocks write | Phase 6 | NOT IMPLEMENTED |
 | AT-010 — Approval executes action | Phase 6 | NOT IMPLEMENTED |
 | AT-011 — Reject path | Phase 6 | NOT IMPLEMENTED |
 | AT-012 — Audit trace completeness | Phase 5 + Phase 6 | NOT IMPLEMENTED |
-| AT-013 — Model outage | Phase 5 | NOT IMPLEMENTED |
+| AT-013 — Model outage | Phase 5 | IMPLEMENTED (backend partial via WP-REC-03D, PR #73) — formal PASS requires WP-REC-03F (backend clauses) and WP-REC-03G (UI clauses) |
 | AT-014 — Public HTTPS smoke test | Phase 7 | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 — Demo reset | Phase 7 | NOT IMPLEMENTED |
 
@@ -53,7 +53,11 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 |---------|--------|----------|
 | WP-REC-03A (AI Provider Adapter) | COMPLETE | PR #63 merged at `5c86000`; `backend/app/ai/provider/` (chat_provider, openai_chat_provider, fake_chat_provider, factory, exceptions) |
 | WP-REC-03B (Workflow/State-Machine Foundation) | COMPLETE | PR #65 merged at `fc48aed`; `backend/app/ai/workflow/` (state_machine, engine); `backend/app/models/workflow.py`; Alembic migration |
-| WP-REC-03C through 03G | NOT AUTHORIZED | See `docs/planning/wp_rec_03_decomposition.md` |
+| WP-REC-03C (Structured-Output Validation) | COMPLETE | PR #72 merged at `d82b9aa`; `backend/app/ai/workflow/schema_validator.py`, `backend/app/schemas/recommendation.py`, `backend/app/ai/workflow/prompts.py` |
+| WP-REC-03D (Automatic Provider Retry/Outage — Backend) | COMPLETE | PR #73 merged at `212735e`; automatic provider retry/outage handler, retry policy |
+| WP-REC-03E (Workflow-Run Detail + Recommendation UI) | COMPLETE | PR #74 merged at `82b4497`; read-only workflow-run detail API, recommendation UI, TanStack Query hook |
+| WP-REC-03F (Backend Workflow Start/Retry API + ARQ Worker) | NOT STARTED / NOT AUTHORIZED | See `docs/planning/wp_rec_03_decomposition.md` |
+| WP-REC-03G (Frontend Start/Retry UI Interaction) | NOT AUTHORIZED | See `docs/planning/wp_rec_03_decomposition.md` |
 | WP-REC-05 (Phase 4 completion) | NOT AUTHORIZED | Positioned after 03C–03G and before Phase 6 (SD-4) |
 
 ---
@@ -62,7 +66,8 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 
 - **12 functional requirements** mapped to implementation + tests.
 - **15 acceptance tests** mapped to phases.
-- FR-06, FR-08, FR-09, FR-12 reference capabilities not yet implemented — marked as such; no nonexistent file paths cited.
+- FR-06 now has implementation via WP-REC-03C (COMPLETE). FR-08, FR-09, FR-12 reference capabilities not yet implemented — marked as such; no nonexistent file paths cited.
 - AT-006 and AT-007 are not marked PASS.
 - AT-001, AT-002, AT-014 require deployment/environment verification.
-- AT-008 through AT-013 and AT-015 require capabilities not yet implemented.
+- AT-008 and AT-013 have partial implementation (03C/03D) but have not been formally executed as PASS — formal AT-008 PASS requires 03F+03E; formal AT-013 PASS requires 03F+03G.
+- AT-009, AT-010, AT-011, AT-012, AT-015 require capabilities that are not implemented.
