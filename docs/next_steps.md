@@ -109,7 +109,7 @@ The accepted planning sequence is:
 
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
 2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — COMPLETED and CLOSED (planning accepted, no execution required, 2026-08-09, PR #69 merge commit `3a2bc26`). Zero REQUIRED findings. Sole RECOMMENDED item (agent-onboarding document) deferred.
-3. **WP-REC-03A through 03E** (Phase 5 AI Workflow, packages A-E) — COMPLETE. Merged via PRs #63, #65, #72, #73, #74 on 2026-08-09. **WP-REC-03F** (backend start/retry API + ARQ worker) — Planning contracts D1-D3 and D5 resolved; D4 superseded; D6 unresolved; implementation NOT AUTHORIZED. **WP-REC-03G** (frontend start/retry UI) — NOT AUTHORIZED.
+3. **WP-REC-03A through 03E** (Phase 5 AI Workflow, packages A-E) — COMPLETE. Merged via PRs #63, #65, #72, #73, #74 on 2026-08-09. **WP-REC-03F** (backend start/retry API + ARQ worker) — Planning contracts D1-D3, D5, and D6 resolved; D4 superseded; implementation NOT AUTHORIZED. **WP-REC-03G** (frontend start/retry UI) — NOT AUTHORIZED.
 4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
 5. **Phase 6** (Approval and Audit) — NOT STARTED.
 6. **Phase 7** (Public Deployment) — NOT STARTED.
@@ -121,7 +121,7 @@ The accepted planning sequence is:
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
-**WP-REC-03 mixed lifecycle (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74). WP-REC-03F planning contracts D1-D3 and D5 are resolved; D4 superseded; D6 (reconciler mechanism) remains unresolved. WP-REC-03F implementation is NOT AUTHORIZED pending D6 resolution and explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
+**WP-REC-03 mixed lifecycle (2026-08-10 reconciliation):** WP-REC-03A through WP-REC-03E are COMPLETE (merged via PRs #63, #65, #72, #73, #74). WP-REC-03F planning contracts D1-D3, D5, and D6 are resolved; D4 superseded. WP-REC-03F implementation is NOT AUTHORIZED pending explicit Product Owner authorization. WP-REC-03G is NOT AUTHORIZED.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -183,6 +183,7 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 - DEC-001 through DEC-014, DEC-017, DEC-024, DEC-028, DEC-029, DEC-033
 - DEC-034 through DEC-040 (WP-STRAT-01 strategic and technical decisions)
 - DEC-041 (WP-ARCH-01 closure)
+- DEC-042 (WP-REC-03F D6 reconciler mechanism resolved)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
@@ -238,17 +239,16 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
 2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
-3. WP-REC-03F planning contracts (D1-D5) have been synced 2026-08-10 from reference branch `docs/wp-rec-03-controlled-decomposition`.
+3. WP-REC-03F planning contracts (D1-D5 and D6) have been synced and resolved 2026-08-10 from reference branch `docs/wp-rec-03-controlled-decomposition`.
 
 **Current planning status:**
 - **D1-D3 and D5:** RESOLVED — contracts integrated into `docs/planning/wp_rec_03_decomposition.md`
 - **D4:** SUPERSEDED
-- **D6:** UNRESOLVED — reconciler mechanism for stuck PENDING rows remains undetermined
+- **D6:** RESOLVED (DEC-042) — ARQ cron job reconciler; dedicated `pending_since` field; keyset pagination; harmless overlap; generation-based dispatch target; mandatory generation guard
 
 **Next Product Owner decision required:**
-1. **D6 Resolution:** Determine the reconciler mechanism for detecting and recovering stuck PENDING rows (database rows created before enqueue). Options include: (a) dedicated ARQ worker function, (b) separate reconciler process, (c) external scheduler (cron/systemd), (d) periodic task within existing worker. D6 resolution is required before 03F implementation authorization.
-2. **WP-REC-03F Authorization:** After D6 resolution, Product Owner must explicitly authorize 03F implementation. 03F remains NOT AUTHORIZED.
-3. **WP-REC-03G Authorization:** 03G (frontend start/retry UI) remains NOT AUTHORIZED and depends on 03F completion.
+1. **WP-REC-03F Authorization:** Product Owner must explicitly authorize 03F implementation. All planning contracts (D1-D6) are resolved; D6 resolution removes the planning blocker but does not authorize implementation. 03F remains NOT AUTHORIZED.
+2. **WP-REC-03G Authorization:** 03G (frontend start/retry UI) remains NOT AUTHORIZED and depends on 03F completion.
 
 **Not authorized:**
 - WP-REC-03F, WP-REC-03G
