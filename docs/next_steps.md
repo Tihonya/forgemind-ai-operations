@@ -230,8 +230,28 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 ---
 
-**Next Milestone:** Product Owner decision required:
+## Next Milestone
+
+**Last Updated:** 2026-08-10
+**Reconciled against:** origin/main @ `82b449743092477d280cb80f6dcfa37d6d038aeb` (PR #74 merge commit)
+
+**Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
 2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
-3. The next Product Owner decision is whether to reassess **WP-REC-03C** (Structured-Output Validation). WP-REC-03C remains **NOT AUTHORIZED**. Reassessment requires a separate Product Owner decision. No conclusion is made about the readiness of WP-REC-03D through 03G or later phases.
-4. **WP-REC-03C through 03G** remain **NOT AUTHORIZED**. WP-REC-05 (RAG integration into the AI workflow) and the bounded AT-006/AT-007 verification package remain NOT AUTHORIZED as separate packages — authorization of one must not authorize the other. SP-0B and forgemind-agent-runtime creation remain NOT AUTHORIZED. Agent automation activation remains deferred.
+3. WP-REC-03F planning contracts (D1-D5) have been synced 2026-08-10 from reference branch `docs/wp-rec-03-controlled-decomposition`.
+
+**Current planning status:**
+- **D1-D5:** RESOLVED — contracts integrated into `docs/planning/wp_rec_03_decomposition.md`
+- **D6:** UNRESOLVED — reconciler mechanism for stuck PENDING rows remains undetermined
+
+**Next Product Owner decision required:**
+1. **D6 Resolution:** Determine the reconciler mechanism for detecting and recovering stuck PENDING rows (database rows created before enqueue). Options include: (a) dedicated ARQ worker function, (b) separate reconciler process, (c) external scheduler (cron/systemd), (d) periodic task within existing worker. D6 resolution is required before 03F implementation authorization.
+2. **WP-REC-03F Authorization:** After D6 resolution, Product Owner must explicitly authorize 03F implementation. 03F remains NOT AUTHORIZED.
+3. **WP-REC-03G Authorization:** 03G (frontend start/retry UI) remains NOT AUTHORIZED and depends on 03F completion.
+
+**Not authorized:**
+- WP-REC-03F, WP-REC-03G
+- WP-REC-05 (RAG integration into the AI workflow)
+- Bounded AT-006/AT-007 verification package
+- SP-0B and forgemind-agent-runtime creation
+- Agent automation activation (deferred)
