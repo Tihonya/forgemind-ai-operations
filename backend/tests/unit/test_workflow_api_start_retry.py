@@ -144,7 +144,9 @@ async def plan_code_async(client: AsyncClient) -> str:
     resp = await client.get(f"{settings.api_v1_prefix}/production-plans")
     if resp.status_code != 200 or not resp.json().get("items"):
         pytest.skip("No production plans in database")
-    return resp.json()["items"][0]["code"]
+    plan_code = resp.json()["items"][0]["code"]
+    assert isinstance(plan_code, str)
+    return plan_code
 
 
 @pytest.fixture
