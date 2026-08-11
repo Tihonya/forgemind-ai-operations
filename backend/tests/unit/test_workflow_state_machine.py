@@ -65,6 +65,10 @@ class TestAllowedTransitions:
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.COMPLETED),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_VALIDATION),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_INTERNAL),
+            # WP-REC-03F D1: retry transitions from failed states.
+            (WorkflowState.FAILED_PROVIDER, WorkflowState.PENDING),
+            (WorkflowState.FAILED_VALIDATION, WorkflowState.PENDING),
+            (WorkflowState.FAILED_INTERNAL, WorkflowState.PENDING),
         ],
     )
     def test_valid_transition_accepted(
@@ -84,6 +88,10 @@ class TestAllowedTransitions:
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.COMPLETED),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_VALIDATION),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_INTERNAL),
+            # WP-REC-03F D1: retry transitions.
+            (WorkflowState.FAILED_PROVIDER, WorkflowState.PENDING),
+            (WorkflowState.FAILED_VALIDATION, WorkflowState.PENDING),
+            (WorkflowState.FAILED_INTERNAL, WorkflowState.PENDING),
         ],
     )
     def test_can_transition_returns_true(
@@ -115,6 +123,8 @@ class TestInvalidTransitions:
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.RUNNING),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.PENDING),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_PROVIDER),
+            # COMPLETED cannot be retried (D1: no outgoing transition).
+            (WorkflowState.COMPLETED, WorkflowState.PENDING),
         ],
     )
     def test_invalid_transition_raises(
@@ -176,16 +186,18 @@ class TestSelfTransitions:
 
 
 class TestTerminalStates:
-    """Terminal states have no outgoing transitions."""
+    """Terminal states behavior.
+
+    WP-REC-03F D1: the three failed states (FAILED_PROVIDER,
+    FAILED_VALIDATION, FAILED_INTERNAL) now have an outgoing
+    transition to PENDING for user-initiated retry. They remain
+    terminal for ordinary workflow execution (TERMINAL_STATES
+    frozenset unchanged). COMPLETED has no outgoing transition.
+    """
 
     @pytest.mark.parametrize(
         "terminal_state",
-        [
-            WorkflowState.COMPLETED,
-            WorkflowState.FAILED_VALIDATION,
-            WorkflowState.FAILED_PROVIDER,
-            WorkflowState.FAILED_INTERNAL,
-        ],
+        [WorkflowState.COMPLETED],
     )
     def test_terminal_state_has_no_transitions(
         self, terminal_state: WorkflowState
@@ -197,12 +209,6 @@ class TestTerminalStates:
         [
             (WorkflowState.COMPLETED, WorkflowState.PENDING),
             (WorkflowState.COMPLETED, WorkflowState.RUNNING),
-            (WorkflowState.FAILED_VALIDATION, WorkflowState.PENDING),
-            (WorkflowState.FAILED_VALIDATION, WorkflowState.RUNNING),
-            (WorkflowState.FAILED_PROVIDER, WorkflowState.PENDING),
-            (WorkflowState.FAILED_PROVIDER, WorkflowState.RUNNING),
-            (WorkflowState.FAILED_INTERNAL, WorkflowState.PENDING),
-            (WorkflowState.FAILED_INTERNAL, WorkflowState.RUNNING),
         ],
     )
     def test_terminal_state_transition_raises(
@@ -269,6 +275,19 @@ class TestTransitionTable:
             WorkflowState.FAILED_VALIDATION,
             WorkflowState.FAILED_INTERNAL,
         })
+
+    # WP-REC-03F D1: retry transitions from failed states to PENDING.
+    def test_allowed_transitions_for_failed_provider(self) -> None:
+        result = get_allowed_transitions(WorkflowState.FAILED_PROVIDER)
+        assert result == frozenset({WorkflowState.PENDING})
+
+    def test_allowed_transitions_for_failed_validation(self) -> None:
+        result = get_allowed_transitions(WorkflowState.FAILED_VALIDATION)
+        assert result == frozenset({WorkflowState.PENDING})
+
+    def test_allowed_transitions_for_failed_internal(self) -> None:
+        result = get_allowed_transitions(WorkflowState.FAILED_INTERNAL)
+        assert result == frozenset({WorkflowState.PENDING})
 
     def test_transition_frozensets_are_immutable(self) -> None:
         """Individual transition sets must be frozensets (immutable)."""

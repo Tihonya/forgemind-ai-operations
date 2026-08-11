@@ -773,12 +773,22 @@ def test_worker_wrapper_uses_keep_result_300() -> None:
 
 
 def test_worker_wrapper_uses_max_tries_3() -> None:
-    """Case 32: Worker wrapper uses max_tries=3."""
+    """Case 32: Ingestion worker wrapper uses max_tries=3.
+
+    WP-REC-03F workflow functions (workflow_start, workflow_retry) use
+    max_tries=1 per D5 §6 — they are excluded from this assertion.
+    """
     from app.worker import WorkerSettings
 
+    workflow_names = {"workflow_start", "workflow_retry"}
     for fn in WorkerSettings.functions:
         if hasattr(fn, "max_tries"):
-            assert fn.max_tries == 3
+            name = getattr(fn, "name", "") or getattr(fn.coroutine, "__name__", "")
+            if name in workflow_names:
+                # D5 §6: workflow functions use max_tries=1
+                assert fn.max_tries == 1
+            else:
+                assert fn.max_tries == 3
 
 
 # ---------------------------------------------------------------------------

@@ -92,8 +92,8 @@ class TestWorkerRegistration:
         assert "run_document_ingestion" in job_names
 
     def test_function_count(self) -> None:
-        """WorkerSettings.functions should have exactly 2 jobs."""
-        assert len(WorkerSettings.functions) == 2
+        """WorkerSettings.functions should have exactly 4 jobs (2 pre-03F + 2 workflow)."""
+        assert len(WorkerSettings.functions) == 4
 
 
 # --------------------------------------------------------------------------- #

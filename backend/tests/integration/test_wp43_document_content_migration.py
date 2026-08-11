@@ -510,7 +510,7 @@ Third paragraph with special chars: ñ é ü ß"""
                 rev_after = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 )
-                assert rev_after.scalar() == "f1a2b3c4d5e6", (
+                assert rev_after.scalar() == "a3b4c5d6e7f8", (
                     "Cleanup must restore head even after body failure"
                 )
         finally:
@@ -541,7 +541,7 @@ Third paragraph with special chars: ñ é ü ß"""
                 rev_after = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 )
-                assert rev_after.scalar() == "f1a2b3c4d5e6", (
+                assert rev_after.scalar() == "a3b4c5d6e7f8", (
                     "Cleanup must restore head after upgrade-path failure"
                 )
         finally:
