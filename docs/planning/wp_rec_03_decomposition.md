@@ -137,7 +137,7 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 
 **Current status:** Proposed (permanent choice). Phase 1 approach (React hooks + local state, no Zustand) approved by Product Owner.
 
-**Why no gate is required for Phase 5:** WP-REC-03E (recommendation UI) and 03F (retry UI) can use the approved Phase 1 approach (TanStack Query for server state, local component state for UI state). The permanent state-library decision does not block Phase 5 deliverables. The decision can be revisited when application-state complexity demonstrates a need.
+**Why no gate is required for Phase 5:** WP-REC-03E (recommendation UI) and 03G (start/retry UI) can use the approved Phase 1 approach (TanStack Query for server state, local component state for UI state). The permanent state-library decision does not block Phase 5 deliverables. The decision can be revisited when application-state complexity demonstrates a need.
 
 **Recommendation:** Defer DEC-015 permanent decision until after Phase 6, when the approval center and audit log UI may create sufficient state complexity to justify a state library.
 
@@ -1189,7 +1189,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 
 **2. Objective:** Add the frontend start/retry UI actions that complete AT-013's user-visible clauses: a "Start AI Analysis" button on the supply-risk detail page, a "Retry" button visible only when a run is in a terminal failure state, a non-freezing UI during long-running workflow execution, and polling-driven status updates until a terminal state is reached.
 
-**3. Outcome type:** Complete user-visible increment (frontend half) — the reviewer can start a workflow, observe non-blocking progress, and retry a failed run. Together with 03F (backend), this package completes AT-013.
+**3. Outcome type:** Complete user-visible increment (frontend half) — the reviewer can start a workflow, observe non-blocking progress, and retry a failed run. Together with 03F (backend), this package completes the AT-013 implementation path. Formal AT-013 PASS additionally requires accepted end-to-end acceptance evidence.
 
 **4. Exact included scope:**
 - `frontend/src/routes/supply-risk-detail.tsx` — update with "Start AI Analysis" button and "Retry" button (retry visible only when run is in a terminal failure state)
