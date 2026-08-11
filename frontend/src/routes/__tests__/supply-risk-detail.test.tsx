@@ -25,6 +25,66 @@ vi.mock('@/hooks/useRisks', () => ({
   }),
 }));
 
+// Mock auth context (WP-REC-03G: component now uses useAuth for role visibility)
+vi.mock('@/contexts/auth.context', () => ({
+  useAuth: () => ({
+    user: { id: 'u1', username: 'pm-user', roles: ['production_manager'] },
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    clearError: vi.fn(),
+  }),
+}));
+
+// Mock useQueryClient (WP-REC-03G: component uses it to invalidate
+// the workflow-run query after retry success).
+vi.mock('@tanstack/react-query', async () => {
+  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
+  return {
+    ...actual,
+    useQueryClient: () => ({
+      invalidateQueries: vi.fn(),
+    }),
+  };
+});
+
+// Mock workflow hooks (WP-REC-03G: component now uses these for start/retry/polling)
+vi.mock('@/hooks/use-workflow-run', () => ({
+  useWorkflowRun: () => ({
+    run: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
+vi.mock('@/hooks/use-workflow-start', () => ({
+  useWorkflowStart: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+    data: undefined,
+    reset: vi.fn(),
+  }),
+}));
+
+vi.mock('@/hooks/use-workflow-retry', () => ({
+  useWorkflowRetry: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+    data: undefined,
+    reset: vi.fn(),
+  }),
+}));
+
 vi.mock('@/hooks/useRiskDetail', () => ({
   useRiskDetail: ({ riskId }: { riskId: string }) => {
     if (riskId === 'RISK-001') {
