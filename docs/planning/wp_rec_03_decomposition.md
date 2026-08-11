@@ -464,7 +464,7 @@ Each package below specifies the 15 required attributes.
 
 **5. Explicit exclusions:**
 - No user-initiated retry API (that is 03F)
-- No frontend changes (UI non-freeze behavior and retry UI action are 03E+03F)
+- No frontend changes (UI non-freeze behavior and user-facing retry interaction are 03G; read-only trace visibility is 03E; backend start/retry execution is 03F)
 - No approval/audit logic
 - AT-013 is NOT PASS after 03D alone, and remains NOT PASS after 03F alone — AT-013 additionally requires failed-step visibility in UI (03E), workflow execution wiring (03F), and user-initiated retry UI (03G)
 
@@ -1180,7 +1180,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - Reconciler tests pass (keyset pagination, candidate predicate, dispatch target selection, per-candidate isolation, enqueue classification, `dispatch_generation` not incremented, harmless overlap, observability without raw exception text, budget/pagination exhaustion)
 - Migration tests pass (`pending_since` backfill, partial PENDING index creation, `dispatch_generation` `server_default=0`, non-negative constraint, downgrade removes both columns and drops the index)
 
-**15. Separate Product Owner authorization requirement:** YES — **NOT AUTHORIZED**. Requires explicit Product Owner authorization.
+**15. Separate Product Owner authorization requirement:** **SATISFIED.** WP-REC-03F was separately authorized and implemented. Merged via PR #78 at commit `aab132325b65123a8abee8787c013f70f0ab9b74` on 2026-08-11. Backend workflow start/retry API, ARQ worker, reconciler, and all D1-D6 contracts are complete. No new authorization is implied for WP-REC-03G or any later package.
 ---
 
 ### WP-REC-03G — Frontend Start/Retry UI Interaction
@@ -1285,7 +1285,7 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
 | Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
-| No implementation is described as already authorized | ✅ 03A, 03B, 03C, 03D, 03E are COMPLETE (merged); 03F and 03G say \"NOT AUTHORIZED\" in §15 |
+| Lifecycle and authorization states are current | ✅ WP-REC-03A through 03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78). WP-REC-03G remains NOT AUTHORIZED. Completed work is not represented as merely authorized or pending authorization. No future package is represented as authorized. |
 | Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E, 03F are now COMPLETE (merged via PRs #72, #73, #74, #78). WP-REC-03G NOT AUTHORIZED. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
