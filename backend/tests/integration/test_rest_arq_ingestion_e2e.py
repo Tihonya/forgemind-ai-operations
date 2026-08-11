@@ -12,32 +12,13 @@ import os
 import socket
 import subprocess
 import sys
+from collections.abc import Generator
 from uuid import uuid4
 
 import httpx
 import pytest
 
-# CRITICAL: Set environment BEFORE any app.* imports
-# Snapshot for restoration
-_SAVED_ENV = {
-    k: os.environ.get(k)
-    for k in [
-        "DATABASE_URL",
-        "TEST_DATABASE_URL",
-        "REDIS_URL",
-        "EMBEDDING_PROVIDER",
-        "EMBEDDING_DIMENSIONS",
-        "ENVIRONMENT",
-        "SECRET_KEY",
-    ]
-}
-
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
-os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
-os.environ.setdefault("EMBEDDING_DIMENSIONS", "1536")
-os.environ.setdefault("ENVIRONMENT", "development")
-
-# Now safe to import app.* modules (must come after env setup)
+# Import app modules first (before any env manipulation)
 from arq import create_pool  # noqa: E402
 from arq.connections import RedisSettings  # noqa: E402
 from arq.jobs import Job, JobStatus  # noqa: E402
@@ -54,20 +35,11 @@ from app.models.document import Document, DocumentVersion  # noqa: E402
 from app.models.knowledge import KnowledgeChunk  # noqa: E402
 from app.worker import WorkerSettings  # noqa: E402
 
-# CRITICAL: conftest.py imports app.main which instantiates Settings() at import time.
-# Our os.environ.setdefault runs AFTER Settings is already created with defaults.
-# We must patch the singleton directly for the in-process worker to use fake embeddings.
-app_settings.embedding_provider = "fake"
-app_settings.environment = "development"
-app_settings.embedding_dimensions = 1536
-
 # ---------------------------------------------------------------------------
 # Integration-gate: skip entire module when no DB/Redis reachable
 # ---------------------------------------------------------------------------
 
-INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get(
-    "DATABASE_URL"
-)
+INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 
 def _can_connect_postgres() -> bool:
@@ -150,11 +122,60 @@ async def wait_for_ready(client: httpx.AsyncClient, timeout: float = 15.0) -> No
 
 
 # ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_embedding_env(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, None]:
+    """Set up fake embedding provider environment for the test.
+
+    Uses monkeypatch to ensure automatic restoration of environment variables
+    after test completes. Also patches and restores the global settings singleton
+    and WorkerSettings.redis_settings to ensure the in-process worker connects
+    to the same Redis DB as the test's enqueue path.
+    """
+    monkeypatch.setenv("REDIS_URL", "redis://localhost:6379/15")
+    monkeypatch.setenv("EMBEDDING_PROVIDER", "fake")
+    monkeypatch.setenv("EMBEDDING_DIMENSIONS", "1536")
+    monkeypatch.setenv("ENVIRONMENT", "development")
+
+    # Patch the global settings singleton for the in-process worker
+    original_provider = app_settings.embedding_provider
+    original_environment = app_settings.environment
+    original_dimensions = app_settings.embedding_dimensions
+
+    app_settings.embedding_provider = "fake"
+    app_settings.environment = "development"
+    app_settings.embedding_dimensions = 1536
+
+    # Patch WorkerSettings.redis_settings to match the test's REDIS_URL.
+    # WorkerSettings is imported at module load time, so its redis_settings
+    # is bound to whatever REDIS_URL was in the environment at import time.
+    # The fixture runs AFTER import, so we must patch it here to ensure
+    # the in-process worker connects to the same Redis DB as the test.
+    original_worker_redis_settings = WorkerSettings.redis_settings
+    _host, _port, _db, _password = _get_redis_settings_from_env()
+    WorkerSettings.redis_settings = RedisSettings(
+        host=_host, port=_port, database=_db, password=_password
+    )
+
+    try:
+        yield
+    finally:
+        # Restore original settings
+        app_settings.embedding_provider = original_provider
+        app_settings.environment = original_environment
+        app_settings.embedding_dimensions = original_dimensions
+        WorkerSettings.redis_settings = original_worker_redis_settings
+
+
+# ---------------------------------------------------------------------------
 # Test
 # ---------------------------------------------------------------------------
 
 
-async def test_rest_arq_ingestion_e2e() -> None:
+async def test_rest_arq_ingestion_e2e(fake_embedding_env: None) -> None:
     """Scenario D: REST + ARQ ingestion full E2E flow."""
 
     # Proof 1: PostgreSQL and Redis reachable (skipif handles this)
@@ -170,9 +191,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
         db_url = db_url.replace("+psycopg", "+asyncpg")
 
     engine = create_async_engine(db_url, echo=False, pool_pre_ping=True)
-    session_factory = async_sessionmaker(
-        engine, class_=AsyncSession, expire_on_commit=False
-    )
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     uvicorn_process = None
     redis_pool = None
@@ -250,8 +269,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
 
             # Proof 8: Response is HTTP 202 with status "pending"
             assert ingest_response.status_code == 202, (
-                f"Expected 202, got {ingest_response.status_code}: "
-                f"{ingest_response.text}"
+                f"Expected 202, got {ingest_response.status_code}: {ingest_response.text}"
             )
             response_data = ingest_response.json()
             assert response_data["status"] == "pending"
@@ -263,6 +281,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
         # Proof 10: Job exists in Redis queue before worker execution
         # Parse the database number from REDIS_URL to ensure we check the correct DB
         from urllib.parse import urlparse
+
         redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
         parsed_url = urlparse(redis_url)
         db_from_url = int(parsed_url.path.lstrip("/") or "0")
@@ -294,6 +313,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
             WorkerSettings,  # type: ignore[arg-type]
             burst=True,
             handle_signals=False,
+            cron_jobs=[],  # Override to prevent cron scheduling hang in burst mode
         )
         try:
             await asyncio.wait_for(worker.async_run(), timeout=60)
@@ -303,9 +323,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
 
         # Proof 13: Job status becomes "complete"
         job_status_after = await job.status()
-        assert job_status_after == JobStatus.complete, (
-            f"Job not complete: {job_status_after}"
-        )
+        assert job_status_after == JobStatus.complete, f"Job not complete: {job_status_after}"
 
         # Proof 14: Job result contains status "completed" and version_id
         job_result = await job.result(timeout=5)
@@ -335,10 +353,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
 
             # Proof 18: Explicit cleanup removes only test-owned database rows
             await session.execute(
-                text(
-                    "DELETE FROM knowledge_chunks "
-                    "WHERE document_version_id = :vid"
-                ),
+                text("DELETE FROM knowledge_chunks WHERE document_version_id = :vid"),
                 {"vid": str(version_id)},
             )
             await session.execute(
@@ -353,10 +368,7 @@ async def test_rest_arq_ingestion_e2e() -> None:
 
             # Verify cleanup: query database to confirm zero rows remain
             chunk_row = await session.execute(
-                text(
-                    "SELECT COUNT(*) FROM knowledge_chunks "
-                    "WHERE document_version_id = :vid"
-                ),
+                text("SELECT COUNT(*) FROM knowledge_chunks WHERE document_version_id = :vid"),
                 {"vid": str(version_id)},
             )
             assert chunk_row.scalar() == 0, "Chunks not cleaned up"
@@ -395,14 +407,8 @@ async def test_rest_arq_ingestion_e2e() -> None:
         await engine.dispose()
 
         # Proof 21: Environment variables restored exactly
-        for key, value in _SAVED_ENV.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
+        # (Handled by monkeypatch in the fake_embedding_env fixture)
 
         # Proof 22: No background/orphan processes remain
         if uvicorn_process is not None:
-            assert uvicorn_process.returncode is not None, (
-                "Uvicorn process still running"
-            )
+            assert uvicorn_process.returncode is not None, "Uvicorn process still running"
