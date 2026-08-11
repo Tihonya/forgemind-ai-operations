@@ -154,12 +154,12 @@ Without explicit Product Owner authorization, do not:
 | AT-005 | No hidden UI mocks | ✅ PASS |
 | AT-006 | RAG retrieval | IMPLEMENTED — NOT VERIFIED AS PASS |
 | AT-007 | Document access control | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
-| AT-008 | Structured output validation | IMPLEMENTED (unit-level via WP-REC-03C, PR #72; backend execution wiring via WP-REC-03F, PR #78) — formal AT-008 PASS requires formal end-to-end acceptance execution with WP-REC-03E trace rendering evidence |
+| AT-008 | Structured output validation | IMPLEMENTATION COMPLETE (unit-level via WP-REC-03C, PR #72; trace rendering via WP-REC-03E, PR #74; backend execution wiring via WP-REC-03F, PR #78) — formal AT-008 PASS requires formal end-to-end acceptance execution and accepted evidence |
 | AT-009 | Human approval blocks write | NOT IMPLEMENTED |
 | AT-010 | Approval executes action | NOT IMPLEMENTED |
 | AT-011 | Reject path | NOT IMPLEMENTED |
 | AT-012 | Audit trace completeness | NOT IMPLEMENTED |
-| AT-013 | Model outage | IMPLEMENTED (backend automatic retry via WP-REC-03D, PR #73; backend start/retry/worker/reconciler via WP-REC-03F, PR #78) — formal AT-013 PASS requires WP-REC-03G (UI clauses) and formal acceptance evidence |
+| AT-013 | Model outage | PARTIALLY IMPLEMENTED (backend automatic retry via WP-REC-03D, PR #73; backend start/retry/worker/reconciler via WP-REC-03F, PR #78; read-only trace visibility via WP-REC-03E, PR #74) — implementation completion requires WP-REC-03G UI clauses; formal AT-013 PASS additionally requires formal end-to-end acceptance execution and accepted evidence |
 | AT-014 | Public HTTPS smoke | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 | Demo reset | NOT IMPLEMENTED |
 
