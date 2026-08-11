@@ -99,17 +99,17 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 | 1 | WP-REC-03A | AI provider adapter (chat/reasoning) | M | — | — | Internal architectural enablement |
 | Gate | WP-REC-03-DEC-GATE-1 | DEC-013 decision gate | — | — (no dependency on 03A) | Unblocks 03B | Decision |
 | 2 | WP-REC-03B | Workflow/state-machine foundation | M | 03A + GATE-1 | — | Internal architectural enablement |
-| 3 | WP-REC-03C | Structured-output validation | S | 03A + 03B | AT-008 validator clauses only (unit-level); full PASS after 03F+03E | Internal architectural enablement |
+| 3 | WP-REC-03C | Structured-output validation | S | 03A + 03B | AT-008 validator clauses only (unit-level); implementation complete after 03F+03E (formal PASS requires accepted evidence) | Internal architectural enablement |
 | 4 | WP-REC-03D | Automatic provider retry/outage (backend) | S | 03A + 03B + 03C | — (backend retry only; AT-013 NOT PASS) | Internal architectural enablement |
 | 5 | WP-REC-03E | Workflow-run detail + recommendation UI | S | 03A + 03B + 03C + 03D | FR-07, §3.6 (workflow trace); AT-008 trace-visibility clauses; partial foundation for AT-012 | Externally observable demo progress |
-| 6 | WP-REC-03F | Backend workflow start/retry API + ARQ worker | M | 03A + 03B + 03C + 03D + 03E | AT-008 full PASS (with 03E); AT-013 backend clauses (PASS after 03F; 03G adds UI clauses) | Complete user-visible increment (backend half) |
+| 6 | WP-REC-03F | Backend workflow start/retry API + ARQ worker | M | 03A + 03B + 03C + 03D + 03E | AT-008 implementation complete (with 03E; formal PASS requires evidence); AT-013 backend implementation complete (03G adds UI clauses; formal PASS requires evidence) | Complete user-visible increment (backend half) |
 | 7 | WP-REC-03G | Frontend start/retry UI interaction | S | 03A + 03B + 03C + 03D + 03E + 03F | AT-013 UI clauses (non-freeze, user retry action) | Complete user-visible increment (frontend half) |
 
-**Phase 5 exit criteria:** AT-008 PASS (full PASS after 03F wires worker execution + 03E renders trace; 03C owns only the validator), AT-013 PASS (after 03F + 03G), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5).
+**Phase 5 exit criteria:** AT-008 implementation complete (03F wires worker execution + 03E renders trace; 03C owns only the validator; formal PASS requires accepted end-to-end evidence), AT-013 implementation complete after 03F + 03G (formal PASS requires accepted evidence), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5). Phase 5 remains incomplete until 03G is implemented and exit criteria are formally verified.
 
-**AT-008 PASS requires (full):** provider adapter (03A) + workflow state-machine (03B) + structured-output validator (03C, defines `FAILED_VALIDATION` on invalid output) + worker execution wiring that invokes the validator (03F) + trace retrieval that exposes the error in the workflow run (03E). AT-008 is NOT fully PASS after 03C alone — 03C only owns the validator and its unit-level verification; the end-to-end flow (provider → validation → state transition → recommendation persistence → trace display) is completed only after 03F wires the worker and 03E exposes the trace via the API/UI.
+**AT-008 implementation requirements (full):** provider adapter (03A) + workflow state-machine (03B) + structured-output validator (03C, defines `FAILED_VALIDATION` on invalid output) + worker execution wiring that invokes the validator (03F) + trace retrieval that exposes the error in the workflow run (03E). AT-008 implementation is complete after 03F+03E (03A+03B+03C+03E+03F all COMPLETE). However, AT-008 is NOT formally recorded as PASS without accepted end-to-end acceptance evidence. 03C alone only owns the validator and its unit-level verification; the end-to-end implementation flow (provider → validation → state transition → recommendation persistence → trace display) is complete only after 03F wires the worker and 03E exposes the trace via the API/UI.
 
-**AT-013 PASS requires:** backend automatic retry (03D), workflow start/retry ARQ worker (03F — enqueues jobs, owns long-running execution), failed-step visibility in UI (03E), start/retry UI action (03G), non-freezing UI behavior during long-running workflows (03E+03G), and user retry action (03G). AT-013 is NOT PASS after 03D alone, and NOT PASS after 03F alone (UI clauses require 03G).
+**AT-013 implementation requirements:** backend automatic retry (03D), workflow start/retry ARQ worker (03F — enqueues jobs, owns long-running execution), failed-step visibility in UI (03E), start/retry UI action (03G), non-freezing UI behavior during long-running workflows (03E+03G), and user retry action (03G). AT-013 backend implementation is complete through 03D+03F (with trace visibility through 03E). However, AT-013 is NOT PASS — formal AT-013 PASS requires both WP-REC-03G UI implementation (NOT AUTHORIZED) and accepted end-to-end acceptance evidence.
 
 ---
 
@@ -1267,8 +1267,8 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 | AT | Description | Phase 5 Package(s) | PASS Point | Status After Phase 5 |
 |----|-------------|---------------------|------------|------------------------|
 | AT-007 | Document access control | WP-REC-05 only (NOT Phase 5) | After WP-REC-05 | NOT covered by Phase 5 |
-| AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E + 03F | Validator clauses after 03C (unit-level); full PASS after 03F wires worker + 03E renders trace | PASS (after 03F + 03E) |
-| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | After 03F + 03G (backend clauses after 03F; UI clauses require 03G) | PASS (after 03F + 03G) |
+| AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E + 03F | Implementation complete after 03F+03E (validator after 03C, trace after 03E, worker after 03F) | Implementation COMPLETE; formal PASS NOT RECORDED (requires accepted end-to-end evidence) |
+| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | Backend implementation after 03F (03D+03F); trace visibility after 03E; UI clauses require 03G | Implementation INCOMPLETE (03G NOT AUTHORIZED); formal PASS NOT RECORDED (requires 03G + accepted evidence) |
 
 AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Phase 5. 03E provides a partial foundation for AT-012 (workflow trace visibility) but AT-012 is NOT PASS during Phase 5.
 
@@ -1283,21 +1283,21 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | No package is oversized | ✅ All packages are M or S; no L packages; 03F split into backend (M) + frontend (S) |
 | Each package has independently reviewable scope | ✅ Each package has explicit included scope and exclusions |
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
-| Tests map to AT requirements | ✅ AT-008 validator clauses after 03C (unit-level); AT-008 full PASS after 03F+03E (end-to-end); AT-013 after 03F+03G |
+| Tests map to AT requirements | ✅ AT-008: validator after 03C (unit-level), implementation complete after 03F+03E (formal PASS requires evidence); AT-013: backend implementation after 03F, UI requires 03G (formal PASS requires evidence) |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
 | Lifecycle and authorization states are current | ✅ WP-REC-03A through 03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78). WP-REC-03G remains NOT AUTHORIZED. Completed work is not represented as merely authorized or pending authorization. No future package is represented as authorized. |
 | Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E, 03F are now COMPLETE (merged via PRs #72, #73, #74, #78). WP-REC-03G NOT AUTHORIZED. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
-| Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator clauses (unit-level) after 03C; full PASS after 03F+03E |
+| Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator (unit-level) after 03C; implementation complete after 03F+03E (formal PASS requires evidence) |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
 | Complete audit traceability | ✅ Workflow steps and correlation IDs (03B); full audit events in Phase 6 |
-| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03F (ARQ worker, persistence) + 03E (trace) + 03G (UI non-freeze, user retry); AT-013 PASS after 03F + 03G |
+| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03F (ARQ worker, persistence) + 03E (trace) + 03G (UI non-freeze, user retry); AT-013 backend implementation complete after 03F; UI implementation requires 03G (formal PASS requires evidence) |
 | Synthetic-data-only policy | ✅ DEC-003 preserved; fake provider uses no real data |
 | No runtime dependency on scripts/agent-loop | ✅ No package imports or depends on agent-loop code |
 | No coupling to forgemind-agent-runtime | ✅ Runtime separation (SP-0B) is NOT AUTHORIZED and not required |
 | AT-007 maps only to WP-REC-05 | ✅ AT-007 is NOT mapped to any Phase 5 package |
-| AT-008 ownership clear | ✅ 03C owns validator (unit-level); 03F wires worker execution; 03E renders trace; full PASS after 03F+03E |
-| AT-013 not PASS before full retry+UI | ✅ AT-013 PASS only after 03F + 03G (03D is backend-only; 03F is backend-only; 03G adds UI clauses) |
+| AT-008 ownership clear | ✅ 03C owns validator (unit-level); 03F wires worker execution; 03E renders trace; implementation complete after 03F+03E (formal PASS requires evidence) |
+| AT-013 not PASS before full retry+UI | ✅ AT-013 backend implementation complete after 03F (03D+03F+03E trace); UI implementation requires 03G (NOT AUTHORIZED); formal PASS requires 03G + accepted evidence |
 | Start/retry API has explicit package owner | ✅ 03F owns start/retry API + ARQ worker (backend half) |
 | Recommendation UI has explicit package owner | ✅ 03E owns recommendation display; 03G adds start/retry UI actions |
 | Recommendation persistence has explicit package owner | ✅ 03B owns SQLAlchemy Recommendation model and migration; 03C owns Pydantic wire schema; 03F's worker writes; 03E reads |
