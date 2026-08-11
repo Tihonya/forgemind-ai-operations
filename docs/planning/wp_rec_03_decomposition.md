@@ -100,10 +100,10 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 | Gate | WP-REC-03-DEC-GATE-1 | DEC-013 decision gate | — | — (no dependency on 03A) | Unblocks 03B | Decision |
 | 2 | WP-REC-03B | Workflow/state-machine foundation | M | 03A + GATE-1 | — | Internal architectural enablement |
 | 3 | WP-REC-03C | Structured-output validation | S | 03A + 03B | AT-008 validator clauses only (unit-level); implementation complete after 03F+03E (formal PASS requires accepted evidence) | Internal architectural enablement |
-| 4 | WP-REC-03D | Automatic provider retry/outage (backend) | S | 03A + 03B + 03C | — (backend retry only; AT-013 NOT PASS) | Internal architectural enablement |
+| 4 | WP-REC-03D | Automatic provider retry/outage (backend) | S | 03A + 03B + 03C | — (backend retry only; AT-013 implementation incomplete) | Internal architectural enablement |
 | 5 | WP-REC-03E | Workflow-run detail + recommendation UI | S | 03A + 03B + 03C + 03D | FR-07, §3.6 (workflow trace); AT-008 trace-visibility clauses; partial foundation for AT-012 | Externally observable demo progress |
 | 6 | WP-REC-03F | Backend workflow start/retry API + ARQ worker | M | 03A + 03B + 03C + 03D + 03E | AT-008 implementation complete (with 03E; formal PASS requires evidence); AT-013 backend implementation complete (03G adds UI clauses; formal PASS requires evidence) | Complete user-visible increment (backend half) |
-| 7 | WP-REC-03G | Frontend start/retry UI interaction | S | 03A + 03B + 03C + 03D + 03E + 03F | AT-013 UI clauses (non-freeze, user retry action) | Complete user-visible increment (frontend half) |
+| 7 | WP-REC-03G | Frontend start/retry UI interaction | S | 03A + 03B + 03C + 03D + 03E + 03F | AT-013 UI clauses (non-freeze, user retry action); formal PASS requires accepted evidence | Complete user-visible increment (frontend half) |
 
 **Phase 5 exit criteria:** AT-008 implementation complete (03F wires worker execution + 03E renders trace; 03C owns only the validator; formal PASS requires accepted end-to-end evidence), AT-013 implementation complete after 03F + 03G (formal PASS requires accepted evidence), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5). Phase 5 remains incomplete until 03G is implemented and exit criteria are formally verified.
 
@@ -416,7 +416,7 @@ Each package below specifies the 15 required attributes.
 
 **9. Acceptance tests and additional unit/integration tests:**
 - **AT-008 validator clauses (03C owns):** Invalid output → `FAILED_VALIDATION` state transition; no write actions created. These clauses are verifiable at the unit level via the validator and state-machine in isolation.
-- **AT-008 full PASS (requires 03F + 03E):** End-to-end flow: provider returns invalid structure → worker invokes validator (03C) → state machine transitions to `FAILED_VALIDATION` (03B) → error recorded in workflow step (03F) → trace retrieval exposes the error via API/UI (03E). AT-008 is NOT fully PASS after 03C alone.
+- **AT-008 full implementation (requires 03F + 03E):** End-to-end flow: provider returns invalid structure → worker invokes validator (03C) → state machine transitions to `FAILED_VALIDATION` (03B) → error recorded in workflow step (03F) → trace retrieval exposes the error via API/UI (03E). AT-008 implementation is complete after 03F+03E, but formal PASS is not recorded without accepted end-to-end acceptance evidence.
 - Additional unit tests: valid schema accepted, invalid schema rejected, missing fields rejected, wrong types rejected, extra fields rejected (strict mode), schema_version enforcement, source citation format validation
 
 **10. Failure and rollback behavior:**
@@ -440,7 +440,7 @@ Each package below specifies the 15 required attributes.
 - Validator accepts valid output, rejects invalid output
 - Versioned prompt template created
 - AT-008 validator clauses verifiable at unit level (FAILED_VALIDATION on invalid output, no write actions)
-- AT-008 full PASS deferred to 03F+03E (requires worker wiring and trace retrieval)
+- AT-008 full implementation deferred to 03F+03E (requires worker wiring and trace retrieval); formal PASS requires accepted end-to-end evidence
 - All unit tests pass
 - Linter and type checks pass
 
@@ -466,7 +466,7 @@ Each package below specifies the 15 required attributes.
 - No user-initiated retry API (that is 03F)
 - No frontend changes (UI non-freeze behavior and user-facing retry interaction are 03G; read-only trace visibility is 03E; backend start/retry execution is 03F)
 - No approval/audit logic
-- AT-013 is NOT PASS after 03D alone, and remains NOT PASS after 03F alone — AT-013 additionally requires failed-step visibility in UI (03E), workflow execution wiring (03F), and user-initiated retry UI (03G)
+- AT-013 implementation is NOT complete after 03D alone, and remains NOT complete after 03F alone — AT-013 additionally requires failed-step visibility in UI (03E), workflow execution wiring (03F), and user-initiated retry UI (03G). Backend implementation is complete after 03F, but formal PASS requires accepted end-to-end evidence.
 
 **6. Permitted repository areas:**
 - `backend/app/ai/workflow/outage_handler.py` (new)
@@ -485,7 +485,7 @@ Each package below specifies the 15 required attributes.
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "cloud and local endpoint must connect through same adapter contract"
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 is NOT PASS after 03D alone, and remains NOT PASS after 03F alone. This package covers only the **automatic** backend retry/outage mechanics. AT-013 additionally requires: failed AI step visible to user (03E), workflow start/retry execution (03F), and user-facing retry UI (03G). AT-013 becomes PASS only after 03F + 03G.
+- AT-013 implementation is NOT complete after 03D alone, and remains NOT complete after 03F alone. This package covers only the **automatic** backend retry/outage mechanics. AT-013 additionally requires: failed AI step visible to user (03E), workflow start/retry execution (03F), and user-facing retry UI (03G). AT-013 backend implementation is complete after 03F, but formal PASS requires both 03G UI implementation and accepted end-to-end evidence.
 - Additional unit tests: transient error retried N times then `FAILED_PROVIDER`, permanent error not retried, exponential backoff timing, retry exhausted then graceful failure
 - Additional integration tests: full outage scenario with mocked provider, partial outage (intermittent errors), retry-then-success
 
@@ -1098,7 +1098,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LLM is not the source of truth for arithmetic" — deterministic risk result is authoritative input to the workflow
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §6: structured recommendation schema — `"plan_id": "PLAN-2026-W31"` is the external plan identifier; D3 aligns the start request `plan_id` with this external identifier, not with the database UUID
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §8: "recommendation → draft action → approval request → human decision → procurement task → audit event" — no write action before approval (Phase 6)
-- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry" — AT-013 **backend clauses** PASS after 03F; UI clauses require 03G.
+- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry" — AT-013 **backend clauses** implementation complete after 03F; UI clauses require 03G; formal PASS requires accepted end-to-end evidence.
 - `03_DEFINITION_OF_DONE.md` Gate C: "When model unavailable, system shows controlled failure state"
 - DEC-004: deterministic business logic; LLM explains
 - DEC-005: AI creates draft action only; write requires approval
@@ -1106,7 +1106,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - DEC-012: HTTP polling (3s interval) for run progress
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 backend clauses (PASS after 03F, pending all clauses verified): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). The UI clauses (non-freezing UI, user can retry in UI) require 03G.
+- AT-013 backend clauses implementation complete after 03F (pending formal acceptance evidence): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). The UI clauses (non-freezing UI, user can retry in UI) require 03G. Formal AT-013 PASS requires both 03G implementation and accepted end-to-end evidence.
 - Additional unit tests (HTTP): start returns 202 with `run_id` (as `PRODUCTION_MANAGER`); start returns 403 for authenticated non-`PRODUCTION_MANAGER`; start returns 401 for unauthenticated; `triggered_by` is set to `current_user.username` on start; retry returns 202 only on eligible failed states (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`) for run creator or `PRODUCTION_MANAGER`; retry on `COMPLETED` returns 409 (non-retryable terminal); retry on non-terminal (`RUNNING`, `AWAITING_VALIDATION`) returns 409; retry on `PENDING` returns 409; retry by non-creator/non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by `PRODUCTION_MANAGER` returns 202; retry does not modify `triggered_by`; duplicate start with same idempotency key returns existing `run_id`; enqueue failure returns 503; concurrent retry — losing caller receives 409.
 - Additional D3 unit tests (start-request `plan_id` validation): valid exact `ProductionPlan.code` accepted and resolves to the persisted `WorkflowRun.plan_id` UUID; missing `plan_id` returns 422; `plan_id: null` returns 422; JSON number/boolean/array/object `plan_id` returns 422; empty-string `plan_id` returns 422; whitespace-only `plan_id` returns 422; `plan_id` with leading or trailing whitespace returns 422; a syntactically valid UUID string is NOT resolved through `ProductionPlan.id` — it is looked up only as an exact `ProductionPlan.code` and returns 404 when no such code exists; unknown exact code returns 404 `production_plan_not_found` and creates no `WorkflowRun`, no state transition, no commit, and no ARQ enqueue; persisted `WorkflowRun.plan_id` is the resolved UUID; the start response remains exactly `{run_id, state, location}` with no `plan_id`; no trimming, case normalization, or `PLAN-*` regex is applied.
 - Additional state-machine unit tests: `FAILED_PROVIDER → PENDING` accepted; `FAILED_VALIDATION → PENDING` accepted; `FAILED_INTERNAL → PENDING` accepted; `COMPLETED → PENDING` rejected (non-retryable terminal); `get_allowed_transitions` for the three failed states now includes `PENDING`; `get_allowed_transitions` for `COMPLETED` remains empty; `is_terminal` for the three failed states still returns `True` (terminal for ordinary execution); `TERMINAL_STATES` frozenset unchanged (the three failed states remain in it — retry is an explicit external action, not a polling/ordinary transition).
@@ -1223,13 +1223,13 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - WP-REC-03F is complete (backend workflow start/retry API + ARQ worker — HTTP contract consumed by this package); WP-REC-03F was merged via PR #78 on 2026-08-11
 
 **8. Relevant Source-of-Truth requirements:**
-- `04_ACCEPTANCE_TESTS.md` AT-013 UI clauses: "UI does not freeze, user can retry" — PASS after 03G (combined with 03F backend)
+- `04_ACCEPTANCE_TESTS.md` AT-013 UI clauses: "UI does not freeze, user can retry" — implementation requires 03G (combined with 03F backend); formal PASS requires accepted end-to-end evidence.
 - `01_PRODUCT_AND_MVP_SCOPE.md` §3.6: Workflow Run Details screen — start and retry actions
 - DEC-012: HTTP polling (3s interval) for run progress
 - FR-07: "Every workflow step must be traceable by correlation ID" (displayed via 03E's trace)
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 UI clauses (PASS after 03G, pending all clauses verified): UI does not freeze during long-running workflow; user can click retry; retry button visible only when run is in terminal failure state; after retry, polling resumes and shows updated state.
+- AT-013 UI clauses implementation requires 03G (pending formal acceptance evidence): UI does not freeze during long-running workflow; user can click retry; retry button visible only when run is in terminal failure state; after retry, polling resumes and shows updated state. Formal AT-013 PASS requires 03G implementation plus accepted end-to-end evidence.
 - Additional frontend tests: "Start AI Analysis" button POSTs to 03F's start endpoint; "Retry" button POSTs to 03F's retry endpoint; "Retry" button hidden when run is not in a terminal failure state; polling starts after successful start/retry and stops at terminal state; loading, error, and non-freezing states implemented.
 
 **10. Failure and rollback behavior:**
