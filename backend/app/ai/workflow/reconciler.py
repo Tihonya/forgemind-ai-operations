@@ -290,9 +290,14 @@ async def _process_candidate(
     Per-candidate isolation: one candidate's enqueue error must not
     prevent later candidates from being attempted (D6 §6).
 
-    The candidate is re-checked against the committed state before
-    enqueue. If the row was concurrently changed (no longer PENDING or
-    generation changed), it is skipped.
+    The candidate is processed from the selected snapshot without a
+    reconciler-side re-read (D6 §3). Deterministic job identity
+    limits duplicate queue entries while that identity exists.
+    Authoritative execution safety does not depend on a reconciler-
+    side re-read: the worker atomically checks current PENDING state
+    and the queued dispatch_generation before execution-authorizing
+    side effects (D6 §5). Stale or duplicate enqueue attempts are
+    therefore harmless under the D6 at-least-once contract.
 
     Args:
         pool: ARQ Redis pool for enqueue.
