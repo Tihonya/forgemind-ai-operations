@@ -166,7 +166,8 @@ Without explicit Product Owner authorization, do not:
 **Summary:**
 - 3 ATs are PASS: AT-003, AT-004, AT-005.
 - 2 ATs have relevant implementation but lack accepted PASS evidence: AT-006, AT-007.
-- 2 ATs have partial implementation but have not been formally executed as PASS: AT-008 (unit-level validator via 03C, backend execution wiring via 03F), AT-013 (backend automatic retry via 03D, backend start/retry/worker via 03F). Formal AT-008 PASS requires formal acceptance evidence with 03E trace rendering; formal AT-013 PASS additionally requires 03G UI clauses and formal acceptance evidence.
+- 1 AT has complete implementation but has not been formally executed as PASS: AT-008 (unit-level validator via 03C, backend execution wiring via 03F, and trace rendering via 03E). Formal AT-008 PASS requires formal end-to-end acceptance execution and accepted evidence.
+- 1 AT has partial implementation and has not been formally executed as PASS: AT-013 (backend automatic retry via 03D, backend start/retry/worker via 03F, and read-only trace visibility via 03E). Formal AT-013 PASS additionally requires 03G UI clauses and formal end-to-end acceptance execution with accepted evidence.
 - 3 ATs require deployment/environment verification: AT-001, AT-002, AT-014.
 - 5 ATs require capabilities that are not implemented: AT-009, AT-010, AT-011, AT-012, AT-015.
 
