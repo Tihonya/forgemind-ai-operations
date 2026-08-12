@@ -17,6 +17,8 @@ mechanics are correct.  It does NOT declare AT-008 PASS.
 from __future__ import annotations
 
 import os
+from typing import cast
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select, text
@@ -37,10 +39,10 @@ _INTEGRATION_DB_URL = (
 # do not require a database and should always run.
 
 
-async def _get_plan_id(session: AsyncSession):
+async def _get_plan_id(session: AsyncSession) -> UUID:
     """Get the first plan ID from the database for testing."""
     from tests.integration.conftest import _get_seed_plan_id
-    return await _get_seed_plan_id(session)
+    return cast(UUID, await _get_seed_plan_id(session))
 
 
 class TestAT008AcceptanceInvalidOutput:
