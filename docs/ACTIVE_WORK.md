@@ -1,8 +1,8 @@
 # ForgeMind Active Work
 
-**Last Updated:** 2026-08-11
-**Reconciled against:** origin/main @ `aab132325b65123a8abee8787c013f70f0ab9b74` (PR #78 merge commit)
-**Status:** WP-REC-03A through WP-REC-03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78). WP-REC-03F backend workflow execution is live on main. WP-REC-03G remains NOT AUTHORIZED.
+**Last Updated:** 2026-08-12
+**Reconciled against:** origin/main @ `1582c394c1a82775b77259983a0dce364d42023a` (PR #80 merge commit)
+**Status:** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). Phase 5 implementation packages are all merged. AT-008 and AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence.
 
 ---
 
@@ -57,9 +57,7 @@ WP-REC-03F planning contracts D1-D6 were synced and resolved on 2026-08-10. Impl
 
 ## Next Governance Step
 
-**WP-REC-03F** (Backend Workflow Execution) is COMPLETE — merged via PR #78 on 2026-08-11. All D1-D6 contracts are implemented and live on main. Backend workflow start/retry API, ARQ worker with dispatch generation, reconciler, and conditional UPDATE state transitions are operational.
-
-**WP-REC-03G** (Frontend Start/Retry UI Interaction) is the next candidate package. It requires user-facing start/retry buttons, progress indicators, and error display. WP-REC-03G is **NOT AUTHORIZED** and requires a separate Product Owner authorization decision.
+**WP-REC-03A through WP-REC-03G** (Phase 5 AI Workflow) are COMPLETE — all merged via PRs #63, #65, #72, #73, #74, #78, #80. Phase 5 implementation packages are all delivered. AT-008 and AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence.
 
 No conclusion is made about the readiness of WP-REC-05 or later phases.
 
@@ -79,7 +77,7 @@ No conclusion is made about the readiness of WP-REC-05 or later phases.
 - WP-REC-03D (Automatic Provider Retry/Outage — Backend): COMPLETE — MERGED via PR #73 at `212735e9389060e0ceabbd6da51515efdd70817f` (two-parent merge commit, 2026-08-09). Automatic provider retry/outage handler, retry policy, unit and integration tests are live on main.
 - WP-REC-03E (Workflow-Run Detail + Recommendation UI): COMPLETE — MERGED via PR #74 at `82b449743092477d280cb80f6dcfa37d6d038aeb` (two-parent merge commit, 2026-08-09). Read-only workflow-run detail API, recommendation UI, TanStack Query hook, and tests are live on main.
 - WP-REC-03F (Backend Workflow Start/Retry API + ARQ Worker): COMPLETE — MERGED via PR #78 at `aab132325b65123a8abee8787c013f70f0ab9b74` (two-parent merge commit, 2026-08-11). Backend workflow start/retry API, ARQ worker functions, reconciler cron job, dispatch generation, and all D1-D6 contracts are live on main.
-- WP-REC-03G (Frontend Start/Retry UI Interaction): NOT AUTHORIZED. Next candidate package after 03F completion.
+- WP-REC-03G (Frontend Start/Retry UI Interaction): COMPLETE — MERGED via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` (two-parent merge commit, 2026-08-12). Frontend workflow start and retry controls implemented with stale-mutation protection, role-based authorization, and deterministic polling lifecycle. AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 - Bounded AT-006/AT-007 verification package: NOT AUTHORIZED — separate from WP-ARCH-01 (SD-2).
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
@@ -151,9 +149,8 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
 3. WP-REC-03C, WP-REC-03D, WP-REC-03E are COMPLETE (merged via PRs #72, #73, #74 on 2026-08-09).
 4. WP-REC-03F is COMPLETE and MERGED via PR #78 at `aab132325b65123a8abee8787c013f70f0ab9b74` (2026-08-11). Backend workflow start/retry API, ARQ worker, reconciler, and all D1-D6 contracts are live on main.
-5. The next Product Owner decision concerns whether to authorize WP-REC-03G implementation (frontend start/retry UI). WP-REC-03G depends on WP-REC-03F (now complete).
-6. WP-REC-03G: **NOT AUTHORIZED** — requires separate Product Owner authorization.
-7. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
-8. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
-9. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
-10. Do not begin any implementation until authorized.
+5. WP-REC-03G is COMPLETE and MERGED via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` (2026-08-12). Frontend workflow start and retry controls implemented with stale-mutation protection, role-based authorization, and deterministic polling lifecycle.
+6. WP-REC-05 and bounded AT-006/AT-007 verification package: **NOT AUTHORIZED**.
+7. SP-0B and forgemind-agent-runtime creation: NOT AUTHORIZED.
+8. Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker).
+9. Do not begin any implementation until authorized.
