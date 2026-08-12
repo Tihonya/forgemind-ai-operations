@@ -2,7 +2,7 @@
 
 **Status:** PLANNING PACKAGE — implementation-ready specification (corrected)
 **Date:** 2026-08-12
-**Corrected:** 2026-08-12 (remediation of independent review findings 1–8)
+**Corrected:** 2026-08-12 (remediation of independent review findings 1–8, then remediation of final re-review findings 1–5)
 **Baseline:** `origin/main` @ `8392ba8fccdafd1ba966019d4301676344b9e3cb` (PR #81 merge commit)
 **Authorizes:** This document is an implementation-ready **specification only**. It does not authorize harness implementation, harness execution, evidence collection, or any code changes.
 **Does NOT authorize:** Harness implementation, harness execution, formal AT-008 or AT-013 execution, Phase 5 acceptance declaration, Source of Truth changes, or any other action.
@@ -245,10 +245,23 @@ This module:
 
 **Proposed change to `backend/app/ai/provider/factory.py`:**
 
-Add after the existing provider selection logic (before the final `raise`):
+**Insertion point:** After the `name` and `effective_config` variables are resolved (after line 140: `name = provider_name if provider_name is not None else effective_config.embedding_provider`) and **before** the first normal-provider branch (`if name == "fake":` at line 142). This ensures the acceptance override is evaluated before any supported-provider return path.
+
+The current control flow is:
+
+```
+line 138: effective_config = config if config is not None else application_settings
+line 140: name = provider_name if provider_name is not None else effective_config.embedding_provider
+line 142: if name == "fake":        ← returns from here
+line 150: if name == "openai":      ← returns from here
+line 154: raise ChatProviderConfigurationError(...)
+```
+
+The override must be inserted **between line 140 and line 142**, so that when `FORGEMIND_ACCEPTANCE_SCENARIO` is set, the factory returns the acceptance provider before reaching any normal provider branch:
 
 ```python
-# Acceptance scenario override (development-only, fail-closed).
+# --- Acceptance scenario override (development-only, fail-closed). ---
+# Inserted after line 140 (name resolution), before line 142 (first branch).
 import os as _os
 _acceptance_scenario = _os.environ.get("FORGEMIND_ACCEPTANCE_SCENARIO")
 if _acceptance_scenario:
@@ -261,15 +274,17 @@ if _acceptance_scenario:
     from app.ai.provider.acceptance_scenarios import get_acceptance_provider
     delegate = get_acceptance_provider(_acceptance_scenario, effective_config)
     return _wrap_with_retry(delegate, effective_config)
+# --- End acceptance override. Normal provider selection continues below. ---
 ```
 
 **Fail-closed guarantees:**
 
 1. **Unknown scenario name:** `get_acceptance_provider()` raises `ChatProviderConfigurationError` if the name is not recognized. No fallback to normal provider.
 2. **Environment guard:** If `FORGEMIND_ACCEPTANCE_SCENARIO` is set but `environment` is `production` or `staging`, the factory raises before importing the module.
-3. **No real provider call possible:** When the env var is set and environment is `development`, the factory returns the acceptance provider. The normal `openai` path is never reached.
+3. **No real provider call possible:** When the env var is set and environment is `development`, the factory returns the acceptance provider before reaching the `if name == "fake"` or `if name == "openai"` branches. No external provider client is constructed.
 4. **Import guard:** The `acceptance_scenarios` module is imported lazily (only when env var is set), so production deployments without the env var never load it.
 5. **Deterministic:** Scenario selection is determined entirely by the env var value. No mutable global registry.
+6. **Normal behavior unchanged:** When `FORGEMIND_ACCEPTANCE_SCENARIO` is not set, the override block is skipped entirely and the existing `fake`/`openai` selection logic runs unchanged.
 
 **Concurrency safety:**
 
@@ -402,6 +417,37 @@ def prepare_acceptance_database(db_url: str) -> None:
 2. **Propagation:** All processes receive `REDIS_URL` in their environment.
 3. **Separate port:** Avoids accidental collision with development Redis on 6379.
 
+**Mandatory fail-closed checks (before backend API startup, ARQ worker startup, or any enqueue operation):**
+
+```python
+# Proposed: orchestration script fail-closed checks
+def validate_acceptance_redis_url(redis_url: str) -> None:
+    """Fail-closed validation of acceptance Redis URL."""
+    from urllib.parse import urlparse
+    parsed = urlparse(redis_url)
+
+    # 1. Scheme must be redis:// or rediss://
+    if parsed.scheme not in ("redis", "rediss"):
+        raise RuntimeError(f"Acceptance Redis scheme must be redis:// or rediss://, got {parsed.scheme}")
+
+    # 2. Host must be localhost or 127.0.0.1
+    if parsed.hostname not in ("localhost", "127.0.0.1"):
+        raise RuntimeError(f"Acceptance Redis host must be localhost, got {parsed.hostname}")
+
+    # 3. Port must be exactly 6380 (acceptance port), not 6379 (development port)
+    if parsed.port == 6379:
+        raise RuntimeError("Acceptance Redis must not use development port 6379")
+    if parsed.port != 6380:
+        raise RuntimeError(f"Acceptance Redis port must be 6380, got {parsed.port}")
+
+    # 4. Must not reference production or staging
+    if "production" in redis_url or "staging" in redis_url:
+        raise RuntimeError("Acceptance Redis URL must not reference production or staging")
+
+    # 5. Confirm the URL is propagated to all consumers
+    #    (verified by querying Redis INFO from each subprocess)
+```
+
 ### 4.4 Process Orchestration
 
 **Decision:** Python orchestration script with subprocess management, run-scoped resource identity, and health checks.
@@ -424,19 +470,26 @@ All resources created by the harness are tagged with this run ID:
 
 **Ownership verification before teardown:**
 
-Before stopping or removing any resource, the orchestration script must verify that the resource was created by the current run:
+Before stopping or removing any resource, the orchestration script must verify that the resource was created by the current run using **exact label matching**, not substring or name matching:
 
 ```python
-# Proposed: ownership check
+# Proposed: ownership check (exact label match)
 def owns_container(container_name: str, run_id: str) -> bool:
-    """Verify the container was created by this run."""
-    # Check container label or name contains run_id.
+    """Verify the container was created by this run via exact label match."""
     result = subprocess.run(
-        ["docker", "inspect", "--format", "{{.Name}}", container_name],
+        [
+            "docker", "inspect",
+            "--format", "{{index .Config.Labels \"forgemind-run\"}}",
+            container_name,
+        ],
         capture_output=True, text=True,
     )
-    return run_id in result.stdout
+    label_value = result.stdout.strip()
+    # Exact equality — no substring, prefix, or fuzzy matching.
+    return label_value == run_id
 ```
+
+The `forgemind-run` label is set at container creation time (see §4.4.2). If the label is absent, empty, or does not exactly equal the current `run_id`, the container is **not owned** by this run and must not be stopped or removed.
 
 **Port conflict handling:** If the preferred port (5433 or 6380) is already occupied, the orchestration script must:
 
@@ -551,7 +604,7 @@ async def test_at013_outage_retry_via_worker(
 
 **Decision:** Two independently reviewable Playwright scenarios with real backend, worker, database, and frontend.
 
-**AT-008 Playwright scenario** (proposed: `frontend/e2e/at008-acceptance.spec.ts`):
+**AT-008 Playwright scenario** (proposed: `frontend/acceptance-e2e/at008-acceptance.spec.ts`):
 
 ```typescript
 test("AT-008: validation failure visible in trace", async ({ page }) => {
@@ -571,7 +624,7 @@ test("AT-008: validation failure visible in trace", async ({ page }) => {
 });
 ```
 
-**AT-013 Playwright scenario** (proposed: `frontend/e2e/at013-acceptance.spec.ts`):
+**AT-013 Playwright scenario** (proposed: `frontend/acceptance-e2e/at013-acceptance.spec.ts`):
 
 ```typescript
 test("AT-013: provider outage and user retry", async ({ page }) => {
@@ -616,21 +669,64 @@ test("AT-013: provider outage and user retry", async ({ page }) => {
 
 The acceptance test proves the **workflow behavior** (state transitions, error handling, retry logic, trace persistence, UI rendering) — not the external provider's actual API. The scenario provider exercises the same code paths as a real provider (same exceptions, same result structure, same factory wrapping) without network dependency or secret exposure.
 
-**Playwright configuration** (proposed change to `frontend/playwright.config.ts`):
+**Playwright configuration** (proposed new file `frontend/playwright.acceptance.config.ts`):
 
-Add an `acceptance` project that uses a different base URL and does **not** start a webServer (the orchestration script manages all services):
+The existing `frontend/playwright.config.ts` is **not modified**. It remains responsible for ordinary E2E tests and its top-level `webServer` configuration (which starts `npm run preview` on port 4173) is preserved unchanged.
+
+Instead, a dedicated acceptance configuration is created. This configuration:
+
+- Sets `testDir` to `./acceptance-e2e` (outside the ordinary `./e2e` discovery tree).
+- Does **not** define a `webServer` — the orchestration script owns frontend startup.
+- Reads the frontend URL from `PLAYWRIGHT_ACCEPTANCE_BASE_URL` (fail-closed: aborts if unset or invalid).
+- Preserves trace, screenshot, and timeout settings from the ordinary configuration.
 
 ```typescript
-// Proposed addition to projects array:
-{
-  name: 'acceptance',
+// Proposed new file: frontend/playwright.acceptance.config.ts
+import { defineConfig, devices } from '@playwright/test';
+
+const baseURL = process.env.PLAYWRIGHT_ACCEPTANCE_BASE_URL;
+if (!baseURL) {
+  throw new Error('PLAYWRIGHT_ACCEPTANCE_BASE_URL must be set for acceptance tests');
+}
+
+export default defineConfig({
+  testDir: './acceptance-e2e',
+  fullyParallel: false,
+  forbidOnly: true,
+  retries: 0,
+  workers: 1,
+  reporter: 'html',
   use: {
-    ...devices['Desktop Chrome'],
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5174',
+    baseURL,
+    trace: 'on-first-retry',
+    ignoreHTTPSErrors: true,
   },
-  // No webServer — orchestration script manages services.
-},
+  projects: [
+    {
+      name: 'acceptance',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+  // No webServer — orchestration script manages frontend startup.
+});
 ```
+
+**Ordinary E2E isolation:**
+
+The existing `frontend/playwright.config.ts` has `testDir: './e2e'` (line 4). The proposed acceptance specs are placed in `frontend/acceptance-e2e/`, which is **outside** the ordinary discovery tree. Therefore:
+
+- `npm run test:e2e` (which runs `playwright test` with the default config) discovers only `frontend/e2e/*.spec.ts`.
+- Acceptance specs in `frontend/acceptance-e2e/` are not discovered by the ordinary config.
+- Acceptance specs are executed only via the dedicated config: `npx playwright test --config=playwright.acceptance.config.ts`.
+- The dedicated config does not start a webServer — the orchestration script starts the frontend dev server on a dynamic port and sets `PLAYWRIGHT_ACCEPTANCE_BASE_URL` before invoking Playwright.
+
+**Acceptance invocation** (proposed):
+
+```bash
+cd frontend && npx playwright test --config=playwright.acceptance.config.ts
+```
+
+This command is invoked by the orchestration script after the frontend dev server is started and ready.
 
 ### 4.7 Evidence Collection
 
@@ -758,24 +854,28 @@ The evidence lifecycle must not contradict the repository cleanliness invariant.
 
 ### 5.3 Playwright Test Files
 
-**File:** `frontend/e2e/at008-acceptance.spec.ts` (proposed, new)
+**File:** `frontend/acceptance-e2e/at008-acceptance.spec.ts` (proposed, new)
 **Purpose:** AT-008 browser scenario.
 **Key symbols:** `test("AT-008: validation failure visible in trace")`.
 **AT clauses:** AT-008 (UI clauses).
 **Scope:** End-to-end test.
 **Expected coverage:** 1 test, ~80 lines.
 
-**File:** `frontend/e2e/at013-acceptance.spec.ts` (proposed, new)
+**File:** `frontend/acceptance-e2e/at013-acceptance.spec.ts` (proposed, new)
 **Purpose:** AT-013 browser scenario.
 **Key symbols:** `test("AT-013: provider outage and user retry")`.
 **AT clauses:** AT-013 (UI clauses).
 **Scope:** End-to-end test.
 **Expected coverage:** 1 test, ~120 lines.
 
-**File:** `frontend/playwright.config.ts`
-**Change:** Add `acceptance` project with dedicated base URL.
-**Lines:** ~10 lines added.
+**File:** `frontend/playwright.acceptance.config.ts` (proposed, new)
+**Purpose:** Dedicated Playwright configuration for acceptance tests. No webServer, reads `PLAYWRIGHT_ACCEPTANCE_BASE_URL`, testDir set to `./acceptance-e2e`.
+**Key symbols:** `defineConfig`, `testDir: './acceptance-e2e'`, `baseURL` from environment.
 **Scope:** Test configuration.
+**Expected coverage:** ~30 lines.
+
+**File:** `frontend/playwright.config.ts`
+**Change:** None. This file is **not modified**. It remains responsible for ordinary E2E tests only.
 
 ### 5.4 Orchestration Script
 
@@ -1199,13 +1299,20 @@ See Section 5. Summary:
 | 4 | `backend/tests/integration/test_at008_acceptance.py` | Create | Test |
 | 5 | `backend/tests/integration/test_at013_acceptance.py` | Create | Test |
 | 6 | `backend/tests/integration/conftest.py` | Modify | Test infrastructure |
-| 7 | `frontend/e2e/at008-acceptance.spec.ts` | Create | Test |
-| 8 | `frontend/e2e/at013-acceptance.spec.ts` | Create | Test |
-| 9 | `frontend/playwright.config.ts` | Modify | Test configuration |
+| 7 | `frontend/acceptance-e2e/at008-acceptance.spec.ts` | Create | Acceptance E2E (isolated from ordinary `e2e/`) |
+| 8 | `frontend/acceptance-e2e/at013-acceptance.spec.ts` | Create | Acceptance E2E (isolated from ordinary `e2e/`) |
+| 9 | `frontend/playwright.acceptance.config.ts` | Create | Acceptance test configuration (no webServer) |
 | 10 | `scripts/acceptance_harness.py` | Create | Orchestration |
 | 11 | `.gitignore` | Modify | Configuration |
 | 12 | `Makefile` | Modify | Build automation |
 | 13 | `docs/ACCEPTANCE_HARNESS.md` | Create (optional) | Documentation |
+
+**Notes:**
+
+- `frontend/playwright.config.ts` is **not** modified — ordinary E2E remains unchanged.
+- Acceptance specs live in `frontend/acceptance-e2e/` (not `frontend/e2e/`) so ordinary `npm run test:e2e` cannot discover them.
+- `frontend/playwright.acceptance.config.ts` sets `testDir: './acceptance-e2e'` and reads `PLAYWRIGHT_ACCEPTANCE_BASE_URL` (fail-closed).
+- 12 required files + 1 optional documentation file = 13 total (12 mandatory).
 
 ### 14.6 Deterministic Scenario-Control Design
 
@@ -1342,7 +1449,7 @@ Both processes inherit the same `FORGEMIND_ACCEPTANCE_SCENARIO` environment vari
 
 ### 15.12 What is the exact implementation file list?
 
-See Section 14.5. Summary: 13 files (3 production, 3 backend tests, 3 Playwright tests, 3 orchestration/config, 1 optional docs).
+See Section 14.5. Summary: 13 files (3 production, 3 backend tests, 3 acceptance test files [2 specs + 1 config], 3 orchestration/config, 1 optional docs).
 
 ### 15.13 What is the exact validation command sequence?
 
