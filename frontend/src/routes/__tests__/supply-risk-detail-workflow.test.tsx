@@ -965,16 +965,32 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
       });
     });
 
-    // Phase 4: Deterministically wait for mutation completion — the Start
-    // button becomes enabled again when isPending goes false, proving the
-    // onSuccess callback has executed.
+    // Phase 4: Deterministically wait for the Start mutation to reach
+    // terminal 'success' state in the mutation cache. This proves that the
+    // onSuccess callback has been invoked — not just that the HTTP call
+    // resolved. The button state alone is insufficient because after plan
+    // change the Start button may already be visible+enabled for plan B
+    // before the mutation callback fires.
     await waitFor(() => {
-      const btn = screen.queryByTestId('start-workflow-button');
-      // If the button is in the DOM, it must be enabled (mutation settled).
-      expect(!btn || !btn.hasAttribute('disabled')).toBe(true);
+      const mutations = queryClient.getMutationCache().getAll();
+      const completedStart = mutations.find(
+        (m) => m.state.status === 'success',
+      );
+      expect(completedStart).toBeDefined();
     });
 
-    // Phase 5: The stale run_id must NOT be installed — no polling for it.
+    // Flush remaining React notifications after the mutation succeeded.
+    await act(async () => {});
+
+    // Phase 5: Affirmative evidence — plan-B Start button is present and
+    // enabled, confirming the component has fully processed the plan change.
+    await waitFor(() => {
+      const btn = screen.getByTestId('start-workflow-button');
+      expect(btn).toBeInTheDocument();
+      expect(btn).not.toBeDisabled();
+    });
+
+    // Phase 6: The stale run_id must NOT be installed — no polling for it.
     const fetchCalls = vi.mocked(workflowApi.fetchWorkflowRun).mock.calls;
     const staleCallFound = fetchCalls.some(
       (call) => call[0] === 'run-plan-a-stale',
@@ -1007,8 +1023,27 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
       return { data: {} };
     });
 
+    // Capture existing mutations before clicking Retry to identify the NEW
+    // mutation created by the Retry action (cache-delta mechanism).
+    const mutationsBeforeRetry = new Set(
+      queryClient.getMutationCache().getAll(),
+    );
+
     // Click retry while on plan A.
     await user.click(screen.getByTestId('retry-workflow-button'));
+
+    // Identify the newly created Retry mutation by finding cache entries
+    // that weren't present before the Retry click.
+    const newMutations = queryClient
+      .getMutationCache()
+      .getAll()
+      .filter((mutation) => !mutationsBeforeRetry.has(mutation));
+
+    expect(newMutations).toHaveLength(1);
+    const retryMutation = newMutations[0];
+
+    // Affirmatively assert the Retry mutation is pending before resolution.
+    expect(retryMutation.state.status).toBe('pending');
 
     // Phase 3: Plan changes to plan B — trigger a rerender so the component
     // sees the new plan and updates currentPlanCodeRef.
@@ -1042,14 +1077,15 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
       });
     });
 
-    // Phase 5: Deterministically wait for mutation completion — the Retry
-    // button becomes enabled again when isPending goes false, proving the
-    // onSuccess callback has executed.
+    // Phase 5: Deterministically wait for the CAPTURED Retry mutation to reach
+    // terminal 'success' state. This proves that the onSuccess callback has been
+    // invoked for THIS specific mutation — not the earlier Start mutation.
     await waitFor(() => {
-      const btn = screen.queryByTestId('retry-workflow-button');
-      // If the button is in the DOM, it must be enabled (mutation settled).
-      expect(!btn || !btn.hasAttribute('disabled')).toBe(true);
+      expect(retryMutation.state.status).toBe('success');
     });
+
+    // Flush remaining React notifications after the mutation succeeded.
+    await act(async () => {});
 
     // Phase 6: The stale retry must NOT have installed the run_id for plan A.
     // Check that fetchWorkflowRun was never called with the plan-A run_id.
