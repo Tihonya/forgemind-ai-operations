@@ -32,13 +32,13 @@ _INTEGRATION_DB_URL = (
     os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 )
 
-pytestmark = pytest.mark.skipif(
-    _INTEGRATION_DB_URL is None,
-    reason="DATABASE_URL or TEST_DATABASE_URL not set",
-)
+# Note: No module-level skipif. Tests requiring acceptance_db_session will fail
+# fast via the fixture's database URL validation. Factory-only tests (test_factory_*)
+# do not require a database and should always run.
 
 
 async def _get_plan_id(session: AsyncSession):
+    """Get the first plan ID from the database for testing."""
     from tests.integration.conftest import _get_seed_plan_id
     return await _get_seed_plan_id(session)
 
@@ -103,6 +103,30 @@ class TestAT008AcceptanceInvalidOutput:
             select(Recommendation).where(Recommendation.run_id == run.id)
         )
         assert len(list(rec_count.scalars().all())) == 0
+
+    async def test_factory_returns_at008_provider_with_env_var(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R5: Verify factory selects AT008 scenario via FORGEMIND_ACCEPTANCE_SCENARIO."""
+        from app.ai.provider.acceptance_scenarios import InvalidOutputProvider
+        from app.ai.provider.factory import create_chat_provider
+
+        # Set environment variable to trigger factory selection
+        monkeypatch.setenv("FORGEMIND_ACCEPTANCE_SCENARIO", "AT008_INVALID_OUTPUT")
+
+        # Create provider through factory (real production path)
+        provider = create_chat_provider()
+
+        # Verify it's wrapped in RetryingChatProvider
+        from app.ai.workflow.outage_handler import RetryingChatProvider
+        assert isinstance(provider, RetryingChatProvider)
+
+        # Verify the wrapped provider is InvalidOutputProvider
+        assert isinstance(provider._delegate, InvalidOutputProvider)
+
+        # Verify it produces invalid output
+        result = await provider.complete("test prompt")
+        assert "invalid" in result.content or "INVALID" in result.content
 
     async def test_at008_deterministic_risk_available_after_validation_failure(
         self, acceptance_db_session: AsyncSession

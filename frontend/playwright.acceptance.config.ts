@@ -16,24 +16,51 @@ const baseURL = process.env.PLAYWRIGHT_ACCEPTANCE_BASE_URL
 if (!baseURL) {
   throw new Error(
     'PLAYWRIGHT_ACCEPTANCE_BASE_URL must be set for acceptance tests. ' +
-    'The orchestration script sets this automatically.',
+      'The orchestration script sets this automatically.',
   )
 }
 
-// Fail-closed: reject unsafe URLs.
-try {
-  const parsed = new URL(baseURL)
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`Acceptance base URL must use http or https, got ${parsed.protocol}`)
-  }
-  if (parsed.hostname === '' || parsed.hostname === 'localhost' && parsed.port === '') {
-    throw new Error('Acceptance base URL must specify a port')
-  }
-} catch (e) {
-  if (e instanceof TypeError) {
-    throw new Error(`Invalid PLAYWRIGHT_ACCEPTANCE_BASE_URL: ${baseURL}`)
-  }
-  throw e
+// Fail-closed URL validation: only accept exact local acceptance boundary
+const parsed = new URL(baseURL)
+
+// Protocol must be http (local development only)
+if (parsed.protocol !== 'http:') {
+  throw new Error(`Acceptance base URL must use http: protocol, got ${parsed.protocol}`)
+}
+
+// Hostname must be localhost or 127.0.0.1 (reject all external hosts)
+if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+  throw new Error(
+    `Acceptance base URL must use localhost or 127.0.0.1, got ${parsed.hostname}`,
+  )
+}
+
+// Port must match expected acceptance frontend port
+const expectedPort = process.env.ACCEPTANCE_FRONTEND_PORT || '5174'
+if (parsed.port !== expectedPort) {
+  throw new Error(
+    `Acceptance base URL port must be ${expectedPort}, got ${parsed.port}`,
+  )
+}
+
+// Path must be root or empty
+if (parsed.pathname !== '/' && parsed.pathname !== '') {
+  throw new Error(`Acceptance base URL must have root path, got ${parsed.pathname}`)
+}
+
+// No query parameters allowed
+if (parsed.search) {
+  throw new Error(`Acceptance base URL must not have query parameters, got ${parsed.search}`)
+}
+
+// No hash/fragment allowed
+if (parsed.hash) {
+  throw new Error(`Acceptance base URL must not have fragment, got ${parsed.hash}`)
+}
+
+// No authentication credentials allowed
+if (parsed.username || parsed.password) {
+  throw new Error('Acceptance base URL must not contain authentication credentials')
 }
 
 export default defineConfig({

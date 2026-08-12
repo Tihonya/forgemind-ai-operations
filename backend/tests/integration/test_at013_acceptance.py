@@ -33,13 +33,13 @@ _INTEGRATION_DB_URL = (
     os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 )
 
-pytestmark = pytest.mark.skipif(
-    _INTEGRATION_DB_URL is None,
-    reason="DATABASE_URL or TEST_DATABASE_URL not set",
-)
+# Note: No module-level skipif. Tests requiring acceptance_db_session will fail
+# fast via the fixture's database URL validation. Factory-only tests (test_factory_*)
+# do not require a database and should always run.
 
 
 async def _get_plan_id(session: AsyncSession):
+    """Get the first plan ID from the database for testing."""
     from tests.integration.conftest import _get_seed_plan_id
     return await _get_seed_plan_id(session)
 
@@ -190,3 +190,40 @@ class TestAT013AcceptanceOutageRetry:
         from app.services.risk_engine import analyze_plan
         risks = await analyze_plan(session, plan_code)
         assert len(risks) > 0, "Deterministic risks must remain available"
+
+    async def test_factory_returns_at013_provider_with_env_var(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R5: Verify factory selects AT013 scenario via FORGEMIND_ACCEPTANCE_SCENARIO."""
+        from app.ai.provider.acceptance_scenarios import OutageUntilRetryProvider
+        from app.ai.provider.exceptions import TransientChatProviderError
+        from app.ai.provider.factory import create_chat_provider
+
+        # Set environment variable to trigger factory selection
+        monkeypatch.setenv("FORGEMIND_ACCEPTANCE_SCENARIO", "AT013_OUTAGE_UNTIL_RETRY")
+
+        # Create provider through factory (real production path)
+        provider = create_chat_provider()
+
+        # Verify it's wrapped in RetryingChatProvider
+        from app.ai.workflow.outage_handler import RetryingChatProvider
+        assert isinstance(provider, RetryingChatProvider)
+
+        # Verify the wrapped provider is OutageUntilRetryProvider
+        assert isinstance(provider._delegate, OutageUntilRetryProvider)
+
+        # Verify it raises TransientChatProviderError on generation 0
+        # (RetryingChatProvider will retry and eventually exhaust retries)
+        with pytest.raises(TransientChatProviderError):
+            await provider.complete(
+                "test prompt",
+                context={"run_id": "test", "dispatch_generation": 0},
+            )
+
+        # Verify it succeeds on generation 1
+        result = await provider.complete(
+            "test prompt",
+            context={"run_id": "test", "dispatch_generation": 1},
+        )
+        assert result.content is not None
+        assert len(result.content) > 0

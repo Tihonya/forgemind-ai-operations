@@ -1,100 +1,82 @@
-/**
- * AT-008 acceptance harness — Playwright scenario (WP-REC-03H Phase B).
- *
- * Exercises the real browser → frontend → backend → worker path with the
- * AT008_INVALID_OUTPUT acceptance scenario active.  Verifies that the
- * workflow trace renders the validation failure and that no recommendation
- * is displayed.
- *
- * This is an implementation-verification spec.  It does NOT declare
- * AT-008 PASS.
- */
+import { test, expect } from '@playwright/test';
 
-import { test, expect } from '@playwright/test'
+test.describe('AT-008: Structured Output Validation Failure', () => {
+  test('workflow reaches FAILED_VALIDATION with correct trace', async ({ page }) => {
+    // Login as manager.demo (PRODUCTION_MANAGER)
+    await page.goto('/login');
+    await page.getByLabel(/username/i).fill('manager.demo');
+    await page.getByLabel(/password/i).fill('ManagerPass123!');
+    await page.getByRole('button', { name: /sign in/i }).click();
+    await expect(page).toHaveURL('/', { timeout: 10000 });
 
-const WORKFLOW_POLL_INTERVAL_MS = 2000
-const WORKFLOW_POLL_TIMEOUT_MS = 60_000
+    // Navigate to supply risk list
+    await page.goto('/supply-risk');
+    await expect(page.getByTestId('risk-list')).toBeVisible({ timeout: 10000 });
 
-async function waitForTerminalState(
-  page: import('@playwright/test').Page,
-  runId: string,
-): Promise<{ state: string; dispatch_generation: number }> {
-  const terminalStates = new Set([
-    'COMPLETED',
-    'FAILED_VALIDATION',
-    'FAILED_PROVIDER',
-    'FAILED_INTERNAL',
-  ])
-  const deadline = Date.now() + WORKFLOW_POLL_TIMEOUT_MS
-  while (Date.now() < deadline) {
-    const resp = await page.request.get(`/api/v1/workflow-runs/${runId}`)
-    expect(resp.ok()).toBeTruthy()
-    const body = await resp.json()
-    if (terminalStates.has(body.state)) {
-      return { state: body.state, dispatch_generation: body.dispatch_generation }
+    // Click into RISK-001 detail page
+    await page.getByRole('link', { name: /View RISK-001/i }).click();
+    await expect(page).toHaveURL('/supply-risk/RISK-001', { timeout: 5000 });
+
+    // Start workflow and capture the run_id from the API response
+    const startResponse = page.waitForResponse(
+      (resp) => resp.url().includes('/api/v1/workflow-runs') && resp.request().method() === 'POST',
+    );
+    const startButton = page.getByTestId('start-workflow-button');
+    await expect(startButton).toBeVisible({ timeout: 5000 });
+    await startButton.click();
+    const response = await startResponse;
+    const responseBody = await response.json();
+    const runId = responseBody.run_id;
+    expect(runId).toBeTruthy();
+
+    // Wait for workflow to reach FAILED_VALIDATION (polling happens automatically on supply-risk page)
+    const stateBadge = page.getByTestId('workflow-state');
+    await expect(stateBadge).toHaveAttribute('data-state', 'FAILED_VALIDATION', {
+      timeout: 30000,
+    });
+
+    // Navigate to workflow run detail page to verify step trace
+    await page.goto(`/workflow-runs/${runId}`);
+    await expect(page.getByTestId('run-detail')).toBeVisible({ timeout: 10000 });
+
+    // Verify step trace shows provider_call succeeded and validation failed
+    const steps = page.locator('[data-testid^="step-"]');
+    const stepCount = await steps.count();
+    expect(stepCount).toBeGreaterThan(0);
+
+    let providerCallFound = false;
+    let validationFailedFound = false;
+
+    for (let i = 0; i < stepCount; i++) {
+      const step = steps.nth(i);
+      const stepText = await step.textContent();
+
+      if (stepText?.includes('provider_call')) {
+        const statusBadge = step.getByTestId('step-status-badge');
+        await expect(statusBadge).toHaveAttribute('data-status', 'completed');
+        providerCallFound = true;
+      }
+
+      if (stepText?.includes('validation')) {
+        const statusBadge = step.getByTestId('step-status-badge');
+        await expect(statusBadge).toHaveAttribute('data-status', 'failed');
+
+        const errorCode = step.getByTestId('step-error-code');
+        await expect(errorCode).toContainText('VALIDATION_FAILED');
+
+        validationFailedFound = true;
+      }
     }
-    await page.waitForTimeout(WORKFLOW_POLL_INTERVAL_MS)
-  }
-  throw new Error(`Workflow ${runId} did not reach terminal state within timeout`)
-}
 
-test.describe('AT-008 Acceptance: Invalid Output → FAILED_VALIDATION', () => {
-  test('validation failure visible in workflow trace', async ({ page }) => {
-    // 1. Authenticate.
-    await page.goto('/login')
-    await page.fill('[data-testid="email-input"]', 'production_manager@demo.com')
-    await page.fill('[data-testid="password-input"]', 'demo')
-    await page.click('[data-testid="login-button"]')
-    await page.waitForURL('**/dashboard')
+    expect(providerCallFound).toBe(true);
+    expect(validationFailedFound).toBe(true);
 
-    // 2. Navigate to supply-risk detail for PLAN-2026-W31.
-    await page.goto('/supply-risk/PLAN-2026-W31')
+    // Verify NO recommendation is rendered
+    await expect(page.getByTestId('no-recommendation')).toBeVisible({ timeout: 5000 });
 
-    // 3. Verify deterministic risks are visible.
-    await expect(page.locator('[data-testid="risk-list"]')).toBeVisible({ timeout: 15_000 })
-
-    // 4. Start AI analysis.
-    const startBtn = page.locator('[data-testid="start-workflow-button"]')
-    if (await startBtn.isVisible()) {
-      await startBtn.click()
-    }
-
-    // 5. Extract run_id from the page or API.
-    //    The frontend navigates to the run detail or exposes the ID.
-    //    Poll the latest run for this plan.
-    await page.waitForTimeout(1000)
-    const runsResp = await page.request.get(
-      '/api/v1/workflow-runs?plan_code=PLAN-2026-W31&limit=1',
-    )
-    expect(runsResp.ok()).toBeTruthy()
-    const runs = await runsResp.json()
-    expect(runs.length).toBeGreaterThan(0)
-    const runId = runs[0].id
-
-    // 6. Wait for terminal state.
-    const result = await waitForTerminalState(page, runId)
-    expect(result.state).toBe('FAILED_VALIDATION')
-
-    // 7. Navigate to the workflow detail and verify trace.
-    await page.goto(`/workflow-runs/${runId}`)
-    await expect(page.locator('[data-testid="workflow-trace"]')).toBeVisible({
-      timeout: 10_000,
-    })
-
-    // 8. Verify validation failure step is visible.
-    const validationStep = page.locator(
-      '[data-testid="workflow-step-validation"]',
-    )
-    await expect(validationStep).toBeVisible()
-
-    // 9. Verify no recommendation section is rendered.
-    const recSection = page.locator('[data-testid="recommendation-section"]')
-    await expect(recSection).toHaveCount(0)
-
-    // 10. Screenshot for evidence.
-    await page.screenshot({
-      path: `test-results/at008-failed-validation.png`,
-      fullPage: true,
-    })
-  })
-})
+    // Verify deterministic risks remain available by navigating back to supply-risk
+    await page.goto('/supply-risk');
+    await expect(page.getByTestId('risk-list')).toBeVisible();
+    await expect(page.getByTestId('risk-count')).toBeVisible();
+  });
+});

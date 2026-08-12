@@ -6,7 +6,6 @@ Manages an isolated acceptance environment:
 - Dedicated Redis (port 6380)
 - Backend API + ARQ worker + frontend dev server
 - Backend integration tests + Playwright acceptance tests
-- Evidence collection (Phase C only)
 
 Modes:
   --mode=verify    Implementation-verification (Phase B)
@@ -22,97 +21,103 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import time
 import uuid
 from pathlib import Path
-from urllib.parse import urlparse
 
-# Repository root (parent of scripts/).
+# Repository root (parent of scripts/)
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
-# Acceptance environment ports and database.
-ACCEPTANCE_PG_PORT = 5433
+
+def _resolve_venv_dir() -> Path:
+    """Resolve the Python virtual environment directory.
+
+    Search order:
+    1. VENV_DIR environment variable (explicit override).
+    2. VIRTUAL_ENV environment variable (active virtualenv).
+    3. {REPO_ROOT}/.venv (worktree-local).
+    4. Primary tree venv (known path for linked worktrees).
+    """
+    # 1. Explicit override
+    if venv_env := os.environ.get("VENV_DIR"):
+        p = Path(venv_env)
+        if p.is_dir():
+            return p
+
+    # 2. Active virtualenv
+    if virtual_env := os.environ.get("VIRTUAL_ENV"):
+        p = Path(virtual_env)
+        if p.is_dir():
+            return p
+
+    # 3. Worktree-local .venv
+    local_venv = REPO_ROOT / ".venv"
+    if local_venv.is_dir():
+        return local_venv
+
+    # 4. Primary tree venv (for linked worktrees)
+    primary_venv = Path("/home/toha/Projects/forgemind-ai-operations/.venv")
+    if primary_venv.is_dir():
+        return primary_venv
+
+    raise AcceptanceHarnessError(
+        "Cannot find Python virtual environment. "
+        "Set VENV_DIR or create a .venv symlink in the repository root."
+    )
+
+
+VENV_DIR = _resolve_venv_dir()
+VENV_BIN = VENV_DIR / "bin"
+
+# Acceptance environment constants
+ACCEPTANCE_DB_PORT = 5433
 ACCEPTANCE_REDIS_PORT = 6380
 ACCEPTANCE_DB_NAME = "forgemind_acceptance"
-ACCEPTANCE_DB_USER = "forgemind"
-ACCEPTANCE_DB_PASSWORD = "forgemind"
 ACCEPTANCE_BACKEND_PORT = 8001
 ACCEPTANCE_FRONTEND_PORT = 5174
 
 ACCEPTANCE_DATABASE_URL = (
-    f"postgresql+asyncpg://{ACCEPTANCE_DB_USER}:{ACCEPTANCE_DB_PASSWORD}"
-    f"@localhost:{ACCEPTANCE_PG_PORT}/{ACCEPTANCE_DB_NAME}"
+    f"postgresql+asyncpg://forgemind:forgemind@localhost:{ACCEPTANCE_DB_PORT}/{ACCEPTANCE_DB_NAME}"
 )
 ACCEPTANCE_REDIS_URL = f"redis://localhost:{ACCEPTANCE_REDIS_PORT}/0"
+ACCEPTANCE_FRONTEND_URL = f"http://localhost:{ACCEPTANCE_FRONTEND_PORT}"
 
 
 class AcceptanceHarnessError(Exception):
-    """Base error for acceptance harness failures."""
+    """Raised when acceptance harness encounters a fatal error."""
+    pass
 
 
-def validate_acceptance_database_url(db_url: str) -> None:
-    """Fail-closed validation of acceptance database URL."""
-    parsed = urlparse(db_url)
-
+def validate_acceptance_database_url(url: str) -> None:
+    """Fail-closed validation: must be localhost:5433/forgemind_acceptance."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
     if parsed.hostname not in ("localhost", "127.0.0.1"):
-        raise AcceptanceHarnessError(
-            f"Acceptance DB host must be localhost, got {parsed.hostname}"
-        )
-
-    if parsed.port == 5432:
-        raise AcceptanceHarnessError(
-            "Acceptance DB must not use development port 5432"
-        )
-
-    db_name = parsed.path.lstrip("/")
-    if db_name != ACCEPTANCE_DB_NAME:
-        raise AcceptanceHarnessError(
-            f"Acceptance DB name must be '{ACCEPTANCE_DB_NAME}', got '{db_name}'"
-        )
-
-    if "production" in db_url or "staging" in db_url:
-        raise AcceptanceHarnessError(
-            "Acceptance DB URL must not reference production or staging"
-        )
+        raise AcceptanceHarnessError(f"Database host must be localhost, got {parsed.hostname}")
+    if parsed.port != ACCEPTANCE_DB_PORT:
+        raise AcceptanceHarnessError(f"Database port must be {ACCEPTANCE_DB_PORT}, got {parsed.port}")
+    if parsed.path.lstrip("/") != ACCEPTANCE_DB_NAME:
+        raise AcceptanceHarnessError(f"Database name must be {ACCEPTANCE_DB_NAME}, got {parsed.path}")
 
 
-def validate_acceptance_redis_url(redis_url: str) -> None:
-    """Fail-closed validation of acceptance Redis URL."""
-    parsed = urlparse(redis_url)
-
+def validate_acceptance_redis_url(url: str) -> None:
+    """Fail-closed validation: must be redis://localhost:6380/0."""
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
     if parsed.scheme not in ("redis", "rediss"):
-        raise AcceptanceHarnessError(
-            f"Acceptance Redis scheme must be redis:// or rediss://, got {parsed.scheme}"
-        )
-
+        raise AcceptanceHarnessError(f"Redis scheme must be redis/rediss, got {parsed.scheme}")
     if parsed.hostname not in ("localhost", "127.0.0.1"):
-        raise AcceptanceHarnessError(
-            f"Acceptance Redis host must be localhost, got {parsed.hostname}"
-        )
-
-    if parsed.port == 6379:
-        raise AcceptanceHarnessError(
-            "Acceptance Redis must not use development port 6379"
-        )
-
+        raise AcceptanceHarnessError(f"Redis host must be localhost, got {parsed.hostname}")
     if parsed.port != ACCEPTANCE_REDIS_PORT:
-        raise AcceptanceHarnessError(
-            f"Acceptance Redis port must be {ACCEPTANCE_REDIS_PORT}, got {parsed.port}"
-        )
-
-    if "production" in redis_url or "staging" in redis_url:
-        raise AcceptanceHarnessError(
-            "Acceptance Redis URL must not reference production or staging"
-        )
+        raise AcceptanceHarnessError(f"Redis port must be {ACCEPTANCE_REDIS_PORT}, got {parsed.port}")
 
 
 def check_port_available(port: int) -> bool:
-    """Check if a port is available for binding."""
+    """Check if a TCP port is available (not listening)."""
     import socket
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(1)
@@ -132,26 +137,28 @@ def wait_for_postgres(port: int, timeout: int = 30) -> None:
         if result.returncode == 0:
             return
         time.sleep(1)
-    raise AcceptanceHarnessError(
-        f"PostgreSQL on port {port} did not become ready within {timeout}s"
-    )
+    raise AcceptanceHarnessError(f"PostgreSQL on port {port} did not become ready within {timeout}s")
 
 
 def wait_for_redis(port: int, timeout: int = 10) -> None:
-    """Poll redis-cli ping until Redis is ready."""
+    """Poll Redis PING/PONG via raw socket (no redis-cli dependency)."""
+    import socket
+
     deadline = time.time() + timeout
     while time.time() < deadline:
-        result = subprocess.run(
-            ["redis-cli", "-p", str(port), "ping"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0 and "PONG" in result.stdout:
-            return
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                sock.settimeout(2)
+                sock.connect(("localhost", port))
+                # Send PING command (RESP protocol)
+                sock.sendall(b"PING\r\n")
+                response = sock.recv(16)
+                if b"PONG" in response:
+                    return
+        except (socket.error, OSError):
+            pass
         time.sleep(1)
-    raise AcceptanceHarnessError(
-        f"Redis on port {port} did not become ready within {timeout}s"
-    )
+    raise AcceptanceHarnessError(f"Redis on port {port} did not become ready within {timeout}s")
 
 
 def wait_for_http(url: str, timeout: int = 30) -> None:
@@ -168,9 +175,7 @@ def wait_for_http(url: str, timeout: int = 30) -> None:
         except (urllib.error.URLError, OSError):
             pass
         time.sleep(1)
-    raise AcceptanceHarnessError(
-        f"HTTP endpoint {url} did not become ready within {timeout}s"
-    )
+    raise AcceptanceHarnessError(f"HTTP endpoint {url} did not become ready within {timeout}s")
 
 
 class AcceptanceEnvironment:
@@ -187,25 +192,21 @@ class AcceptanceEnvironment:
         """Start PostgreSQL, Redis, prepare database."""
         print(f"[{self.run_id}] Setting up acceptance environment...")
 
-        # Validate URLs.
+        # Validate URLs
         validate_acceptance_database_url(ACCEPTANCE_DATABASE_URL)
         validate_acceptance_redis_url(ACCEPTANCE_REDIS_URL)
 
-        # Check ports.
-        if not check_port_available(ACCEPTANCE_PG_PORT):
-            raise AcceptanceHarnessError(
-                f"Port {ACCEPTANCE_PG_PORT} is already in use"
-            )
+        # Check ports
+        if not check_port_available(ACCEPTANCE_DB_PORT):
+            raise AcceptanceHarnessError(f"Port {ACCEPTANCE_DB_PORT} is already in use")
         if not check_port_available(ACCEPTANCE_REDIS_PORT):
-            raise AcceptanceHarnessError(
-                f"Port {ACCEPTANCE_REDIS_PORT} is already in use"
-            )
+            raise AcceptanceHarnessError(f"Port {ACCEPTANCE_REDIS_PORT} is already in use")
 
-        # Create evidence directory.
+        # Create evidence directory
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         (self.evidence_dir / "logs").mkdir(exist_ok=True)
 
-        # Start PostgreSQL.
+        # Start PostgreSQL
         pg_container = f"forgemind-{self.run_id}-pg"
         print(f"  Starting PostgreSQL container: {pg_container}")
         subprocess.run(
@@ -213,19 +214,19 @@ class AcceptanceEnvironment:
                 "docker", "run", "-d",
                 "--name", pg_container,
                 "--label", f"forgemind-run={self.run_id}",
-                "-p", f"{ACCEPTANCE_PG_PORT}:5432",
+                "-p", f"{ACCEPTANCE_DB_PORT}:5432",
                 "-e", f"POSTGRES_DB={ACCEPTANCE_DB_NAME}",
-                "-e", f"POSTGRES_USER={ACCEPTANCE_DB_USER}",
-                "-e", f"POSTGRES_PASSWORD={ACCEPTANCE_DB_PASSWORD}",
-                "postgres:16",
+                "-e", "POSTGRES_USER=forgemind",
+                "-e", "POSTGRES_PASSWORD=forgemind",
+                "pgvector/pgvector:pg16",
             ],
             check=True,
             capture_output=True,
         )
         self.containers.append(pg_container)
-        wait_for_postgres(ACCEPTANCE_PG_PORT)
+        wait_for_postgres(ACCEPTANCE_DB_PORT)
 
-        # Start Redis.
+        # Start Redis
         redis_container = f"forgemind-{self.run_id}-redis"
         print(f"  Starting Redis container: {redis_container}")
         subprocess.run(
@@ -242,12 +243,12 @@ class AcceptanceEnvironment:
         self.containers.append(redis_container)
         wait_for_redis(ACCEPTANCE_REDIS_PORT)
 
-        # Prepare database (migrations + seed).
+        # Prepare database (migrations + seed)
         print("  Running Alembic migrations...")
         env = os.environ.copy()
         env["DATABASE_URL"] = ACCEPTANCE_DATABASE_URL
         subprocess.run(
-            ["../.venv/bin/alembic", "upgrade", "head"],
+            [str(VENV_BIN / "alembic"), "upgrade", "head"],
             cwd=BACKEND_DIR,
             env=env,
             check=True,
@@ -256,7 +257,7 @@ class AcceptanceEnvironment:
 
         print("  Running seed generator...")
         subprocess.run(
-            ["../.venv/bin/python", "-m", "app.seed.generator.main"],
+            [str(VENV_BIN / "python3.12"), "-m", "app.seed.generator.main"],
             cwd=BACKEND_DIR,
             env=env,
             check=True,
@@ -275,12 +276,14 @@ class AcceptanceEnvironment:
         env["FORGEMIND_ACCEPTANCE_SCENARIO"] = scenario
         env["ENVIRONMENT"] = "development"
         env["SECRET_KEY"] = "acceptance-test-secret-key-must-be-32-chars"
+        import json
+        env["CORS_ORIGINS"] = json.dumps([f"http://localhost:{ACCEPTANCE_FRONTEND_PORT}"])
 
-        # Backend API.
-        log_backend = self.evidence_dir / "logs" / "backend.log"
+        # Backend API
+        log_backend = self.evidence_dir / "logs" / f"backend-{scenario}.log"
         backend_proc = subprocess.Popen(
             [
-                "../.venv/bin/uvicorn",
+                str(VENV_BIN / "uvicorn"),
                 "app.main:app",
                 "--host", "0.0.0.0",
                 "--port", str(ACCEPTANCE_BACKEND_PORT),
@@ -294,23 +297,25 @@ class AcceptanceEnvironment:
         wait_for_http(f"http://localhost:{ACCEPTANCE_BACKEND_PORT}/health")
         print(f"  Backend API started on port {ACCEPTANCE_BACKEND_PORT}")
 
-        # ARQ worker.
-        log_worker = self.evidence_dir / "logs" / "worker.log"
+        # ARQ worker — use python3.12 -m arq to avoid shebang picking up
+        # system python3.14 which lacks the installed packages.
+        log_worker = self.evidence_dir / "logs" / f"worker-{scenario}.log"
         worker_proc = subprocess.Popen(
-            ["../.venv/bin/arq", "app.worker.WorkerSettings"],
+            [str(VENV_BIN / "python3.12"), "-m", "arq", "app.worker.WorkerSettings"],
             cwd=BACKEND_DIR,
             env=env,
             stdout=open(log_worker, "w"),
             stderr=subprocess.STDOUT,
         )
         self.processes.append(worker_proc)
-        time.sleep(3)  # Allow worker to connect.
+        # Wait for worker to connect and start polling
+        time.sleep(5)  # Increased from 3 to 5 seconds
         print("  ARQ worker started")
 
-        # Frontend dev server.
-        log_frontend = self.evidence_dir / "logs" / "frontend.log"
+        # Frontend dev server
+        log_frontend = self.evidence_dir / "logs" / f"frontend-{scenario}.log"
         frontend_env = os.environ.copy()
-        frontend_env["VITE_API_BASE_URL"] = f"http://localhost:{ACCEPTANCE_BACKEND_PORT}"
+        frontend_env["VITE_API_BASE_URL"] = f"http://localhost:{ACCEPTANCE_BACKEND_PORT}/api/v1"
         frontend_proc = subprocess.Popen(
             ["npm", "run", "dev", "--", "--port", str(ACCEPTANCE_FRONTEND_PORT)],
             cwd=FRONTEND_DIR,
@@ -319,21 +324,40 @@ class AcceptanceEnvironment:
             stderr=subprocess.STDOUT,
         )
         self.processes.append(frontend_proc)
-        wait_for_http(f"http://localhost:{ACCEPTANCE_FRONTEND_PORT}")
+        wait_for_http(ACCEPTANCE_FRONTEND_URL)
         print(f"  Frontend dev server started on port {ACCEPTANCE_FRONTEND_PORT}")
 
-    def run_backend_tests(self) -> int:
-        """Run backend integration tests for AT-008 and AT-013."""
-        print(f"[{self.run_id}] Running backend acceptance tests...")
+    def stop_services(self) -> None:
+        """Stop all running services (backend, worker, frontend)."""
+        print(f"[{self.run_id}] Stopping services...")
+        for proc in self.processes:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+        self.processes.clear()
+        time.sleep(2)  # Allow ports to be released
+
+    def run_backend_tests(self, scenario: str) -> int:
+        """Run backend integration tests for AT-008 or AT-013."""
+        print(f"[{self.run_id}] Running backend acceptance tests for {scenario}...")
         env = os.environ.copy()
         env["DATABASE_URL"] = ACCEPTANCE_DATABASE_URL
         env["REDIS_URL"] = ACCEPTANCE_REDIS_URL
 
+        if scenario == "AT008_INVALID_OUTPUT":
+            test_file = "tests/integration/test_at008_acceptance.py"
+        elif scenario == "AT013_OUTAGE_UNTIL_RETRY":
+            test_file = "tests/integration/test_at013_acceptance.py"
+        else:
+            raise AcceptanceHarnessError(f"Unknown scenario: {scenario}")
+
         result = subprocess.run(
             [
-                "../.venv/bin/pytest",
-                "tests/integration/test_at008_acceptance.py",
-                "tests/integration/test_at013_acceptance.py",
+                str(VENV_BIN / "pytest"),
+                test_file,
                 "-v",
             ],
             cwd=BACKEND_DIR,
@@ -341,17 +365,26 @@ class AcceptanceEnvironment:
         )
         return result.returncode
 
-    def run_playwright_tests(self) -> int:
-        """Run Playwright acceptance scenarios."""
-        print(f"[{self.run_id}] Running Playwright acceptance tests...")
+    def run_playwright_tests(self, scenario: str) -> int:
+        """Run Playwright acceptance scenarios for the given scenario only."""
+        print(f"[{self.run_id}] Running Playwright acceptance tests for {scenario}...")
         env = os.environ.copy()
-        env["PLAYWRIGHT_ACCEPTANCE_BASE_URL"] = (
-            f"http://localhost:{ACCEPTANCE_FRONTEND_PORT}"
-        )
+        env["PLAYWRIGHT_ACCEPTANCE_BASE_URL"] = ACCEPTANCE_FRONTEND_URL
+        env["ACCEPTANCE_FRONTEND_PORT"] = str(ACCEPTANCE_FRONTEND_PORT)
+
+        # Map scenario to its specific spec file so only the matching
+        # acceptance test runs for each scenario's service configuration.
+        if scenario == "AT008_INVALID_OUTPUT":
+            spec_file = "acceptance-e2e/at008-acceptance.spec.ts"
+        elif scenario == "AT013_OUTAGE_UNTIL_RETRY":
+            spec_file = "acceptance-e2e/at013-acceptance.spec.ts"
+        else:
+            raise AcceptanceHarnessError(f"Unknown scenario: {scenario}")
 
         result = subprocess.run(
             [
                 "npx", "playwright", "test",
+                spec_file,
                 "--config=playwright.acceptance.config.ts",
             ],
             cwd=FRONTEND_DIR,
@@ -363,7 +396,7 @@ class AcceptanceEnvironment:
         """Stop processes and remove owned containers."""
         print(f"[{self.run_id}] Tearing down environment...")
 
-        # Stop subprocesses.
+        # Stop subprocesses
         for proc in self.processes:
             if proc.poll() is None:
                 proc.terminate()
@@ -372,9 +405,9 @@ class AcceptanceEnvironment:
                 except subprocess.TimeoutExpired:
                     proc.kill()
 
-        # Remove owned containers.
+        # Remove owned containers
         for container in self.containers:
-            # Verify ownership via label.
+            # Verify ownership via label
             result = subprocess.run(
                 [
                     "docker", "inspect",
@@ -427,21 +460,31 @@ def main() -> int:
     try:
         env.setup()
 
-        # For Phase B verification, run tests with AT008_INVALID_OUTPUT scenario.
-        # AT-013 tests use OutageUntilRetryProvider directly in the test code.
-        env.start_services(scenario="AT008_INVALID_OUTPUT")
+        # Phase B verification: run both scenarios sequentially
+        scenarios = ["AT008_INVALID_OUTPUT", "AT013_OUTAGE_UNTIL_RETRY"]
 
-        backend_rc = env.run_backend_tests()
-        if backend_rc != 0:
-            print(f"Backend tests failed (exit code {backend_rc})")
-            return backend_rc
+        for scenario in scenarios:
+            print(f"\n{'='*70}")
+            print(f"Scenario: {scenario}")
+            print('='*70)
 
-        # Playwright tests are optional for Phase B (require full UI flow).
-        # Skip if the UI does not yet have the required data-testid attributes.
-        print(
-            "Note: Playwright acceptance tests are defined for Phase C. "
-            "Skipping in Phase B verification mode."
-        )
+            # Start services with this scenario
+            env.start_services(scenario)
+
+            # Run backend tests
+            backend_rc = env.run_backend_tests(scenario)
+            if backend_rc != 0:
+                print(f"Backend tests failed for {scenario} (exit code {backend_rc})")
+                return backend_rc
+
+            # Run Playwright tests
+            playwright_rc = env.run_playwright_tests(scenario)
+            if playwright_rc != 0:
+                print(f"Playwright tests failed for {scenario} (exit code {playwright_rc})")
+                return playwright_rc
+
+            # Stop services before next scenario
+            env.stop_services()
 
         print(f"\n[{run_id}] Phase B verification complete.")
         print(f"Evidence directory: {env.evidence_dir}")
