@@ -16,7 +16,7 @@
  * - Long-running workflow does not block unrelated detail content
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -924,7 +924,7 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
   });
 
   // -----------------------------------------------------------------------
-  // Target C: Stale start response after plan change does not install run_id
+  // Target C: Stale mutation responses after plan change are discarded
   // -----------------------------------------------------------------------
 
   it('stale start response arriving after plan change is discarded (Target C)', async () => {
@@ -935,26 +935,214 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
       () => new Promise((resolve) => { resolveStart = resolve; }),
     );
 
-    const { user } = renderDetail();
+    const { user, rerender, queryClient } = renderDetail();
+
+    // Start the workflow while on plan A.
     await user.click(screen.getByTestId('start-workflow-button'));
 
-    // Phase 2: Plan changes to plan B while start is pending.
+    // Phase 2: Plan changes to plan B — trigger a rerender so the component
+    // sees the new plan and updates currentPlanCodeRef.
     activePlanMock = { code: 'PLAN-2026-W99', status: 'ACTIVE' };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
 
     // Phase 3: The stale start response arrives with run_id for plan A.
-    resolveStart({
-      data: {
-        run_id: 'run-plan-a-stale',
-        state: 'PENDING',
-        location: '/api/v1/workflow-runs/run-plan-a-stale',
-      },
+    // Wrap in act to ensure React processes the onSuccess callback.
+    await act(async () => {
+      resolveStart({
+        data: {
+          run_id: 'run-plan-a-stale',
+          state: 'PENDING',
+          location: '/api/v1/workflow-runs/run-plan-a-stale',
+        },
+      });
     });
 
-    // The stale run_id must NOT be installed — no polling for it.
+    // Phase 4: Deterministically wait for mutation completion — the Start
+    // button becomes enabled again when isPending goes false, proving the
+    // onSuccess callback has executed.
     await waitFor(() => {
-      expect(workflowApi.fetchWorkflowRun).not.toHaveBeenCalledWith(
-        'run-plan-a-stale',
-      );
+      const btn = screen.queryByTestId('start-workflow-button');
+      // If the button is in the DOM, it must be enabled (mutation settled).
+      expect(!btn || !btn.hasAttribute('disabled')).toBe(true);
     });
+
+    // Phase 5: The stale run_id must NOT be installed — no polling for it.
+    const fetchCalls = vi.mocked(workflowApi.fetchWorkflowRun).mock.calls;
+    const staleCallFound = fetchCalls.some(
+      (call) => call[0] === 'run-plan-a-stale',
+    );
+    expect(staleCallFound).toBe(false);
+
+    // No workflow status should appear because the stale run_id was rejected.
+    expect(screen.queryByTestId('workflow-status')).not.toBeInTheDocument();
+  });
+
+  it('stale retry response arriving after plan change is discarded (Target C)', async () => {
+    // Phase 1: Start with plan A, reach a retry-eligible state.
+    setStartResponse('run-plan-a-001', 'PENDING');
+    vi.mocked(workflowApi.fetchWorkflowRun).mockResolvedValue(
+      makeRun({ id: 'run-plan-a-001', state: 'FAILED_PROVIDER' }),
+    );
+    const { user, rerender, queryClient } = renderDetail();
+
+    await user.click(screen.getByTestId('start-workflow-button'));
+    await waitFor(() => {
+      expect(screen.getByTestId('retry-workflow-button')).toBeInTheDocument();
+    });
+
+    // Phase 2: Make retry hang so we can change the plan before it resolves.
+    let resolveRetry!: (value: { data: unknown }) => void;
+    apiPostMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/workflow-runs/') && url.endsWith('/retry')) {
+        return new Promise((resolve) => { resolveRetry = resolve; });
+      }
+      return { data: {} };
+    });
+
+    // Click retry while on plan A.
+    await user.click(screen.getByTestId('retry-workflow-button'));
+
+    // Phase 3: Plan changes to plan B — trigger a rerender so the component
+    // sees the new plan and updates currentPlanCodeRef.
+    activePlanMock = { code: 'PLAN-2026-W99', status: 'ACTIVE' };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Spy on invalidateQueries to verify it's not called with stale run_id
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    invalidateSpy.mockClear();
+
+    // Clear mocks to track new calls after the plan change.
+    vi.mocked(workflowApi.fetchWorkflowRun).mockClear();
+
+    // Phase 4: The stale retry response arrives.
+    // Wrap in act to ensure React processes the onSuccess callback.
+    await act(async () => {
+      resolveRetry({
+        data: {
+          run_id: 'run-plan-a-001',
+          state: 'PENDING',
+          location: '/api/v1/workflow-runs/run-plan-a-001',
+        },
+      });
+    });
+
+    // Phase 5: Deterministically wait for mutation completion — the Retry
+    // button becomes enabled again when isPending goes false, proving the
+    // onSuccess callback has executed.
+    await waitFor(() => {
+      const btn = screen.queryByTestId('retry-workflow-button');
+      // If the button is in the DOM, it must be enabled (mutation settled).
+      expect(!btn || !btn.hasAttribute('disabled')).toBe(true);
+    });
+
+    // Phase 6: The stale retry must NOT have installed the run_id for plan A.
+    // Check that fetchWorkflowRun was never called with the plan-A run_id.
+    const fetchCalls = vi.mocked(workflowApi.fetchWorkflowRun).mock.calls;
+    const staleCallFound = fetchCalls.some(
+      (call) => call[0] === 'run-plan-a-001',
+    );
+    expect(staleCallFound).toBe(false);
+
+    // Phase 7: Explicitly prove that plan-A invalidation did NOT occur.
+    // Check that queryClient.invalidateQueries was never called with the
+    // plan-A run_id after the plan change.
+    const invalidateCalls = invalidateSpy.mock.calls;
+    const staleInvalidationFound = invalidateCalls.some(
+      (call: unknown[]) => {
+        const filters = call[0];
+        if (filters && typeof filters === 'object' && 'queryKey' in filters) {
+          const queryKey = (filters as { queryKey: unknown[] }).queryKey;
+          return Array.isArray(queryKey) && queryKey[1] === 'run-plan-a-001';
+        }
+        return false;
+      },
+    );
+    expect(staleInvalidationFound).toBe(false);
+  });
+
+  it('valid start response for unchanged plan installs run_id correctly', async () => {
+    // This test proves that a non-stale response still works as expected.
+    setStartResponse('run-valid-001', 'PENDING');
+    const { user } = renderDetail();
+
+    await user.click(screen.getByTestId('start-workflow-button'));
+
+    // The run_id should be installed and polling should start.
+    await waitFor(() => {
+      expect(workflowApi.fetchWorkflowRun).toHaveBeenCalledWith('run-valid-001');
+    });
+    expect(screen.getByTestId('workflow-status')).toBeInTheDocument();
+  });
+
+  it('valid retry response for unchanged plan resumes polling correctly', async () => {
+    // This test proves that a non-stale retry response still works.
+    setStartResponse('run-valid-retry-001', 'PENDING');
+    vi.mocked(workflowApi.fetchWorkflowRun).mockResolvedValue(
+      makeRun({ id: 'run-valid-retry-001', state: 'FAILED_INTERNAL' }),
+    );
+    const { user, queryClient } = renderDetail();
+
+    await user.click(screen.getByTestId('start-workflow-button'));
+    await waitFor(() => {
+      expect(screen.getByTestId('retry-workflow-button')).toBeInTheDocument();
+    });
+
+    // Clear polling calls from the start phase.
+    vi.mocked(workflowApi.fetchWorkflowRun).mockClear();
+
+    // Spy on invalidateQueries to verify it's called with correct run_id
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    invalidateSpy.mockClear();
+
+    // Make retry succeed.
+    apiPostMock.mockImplementation(async (url: string) => {
+      if (url.startsWith('/workflow-runs/') && url.endsWith('/retry')) {
+        return {
+          data: {
+            run_id: 'run-valid-retry-001',
+            state: 'PENDING',
+            location: '/api/v1/workflow-runs/run-valid-retry-001',
+          },
+        };
+      }
+      return { data: {} };
+    });
+
+    await user.click(screen.getByTestId('retry-workflow-button'));
+
+    // Polling should resume for the same run_id.
+    await waitFor(() => {
+      expect(workflowApi.fetchWorkflowRun).toHaveBeenCalledWith('run-valid-retry-001');
+    });
+
+    // Verify invalidation was called with the correct run_id
+    const invalidateCalls = invalidateSpy.mock.calls;
+    const validInvalidationFound = invalidateCalls.some(
+      (call: unknown[]) => {
+        const filters = call[0];
+        if (filters && typeof filters === 'object' && 'queryKey' in filters) {
+          const queryKey = (filters as { queryKey: unknown[] }).queryKey;
+          return Array.isArray(queryKey) && queryKey[1] === 'run-valid-retry-001';
+        }
+        return false;
+      },
+    );
+    expect(validInvalidationFound).toBe(true);
   });
 });

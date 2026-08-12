@@ -89,6 +89,12 @@ export default function SupplyRiskDetail() {
   // activeRunId) so no stale run is fetched.
   // -----------------------------------------------------------------------
   const currentPlanCode = activePlan?.code;
+  // Live ref updated every render — mutation callbacks read this to detect
+  // plan changes that occurred after the mutation was initiated. Using a ref
+  // (instead of the closure-captured activePlan) ensures the callback sees
+  // the current plan, not the plan from the render that started the mutation.
+  const currentPlanCodeRef = useRef<string | undefined>(currentPlanCode);
+  currentPlanCodeRef.current = currentPlanCode;
   const prevPlanCodeRef = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -159,7 +165,9 @@ export default function SupplyRiskDetail() {
         onSuccess: (data) => {
           // Guard against stale completion after plan navigation (Target C):
           // only install the run_id if the active plan hasn't changed.
-          if (activePlan?.code !== startedPlanCode) return;
+          // Read the live plan code from the ref — the closure-captured
+          // activePlan is frozen at the render that initiated the mutation.
+          if (currentPlanCodeRef.current !== startedPlanCode) return;
           setActiveRunId(data.run_id);
         },
       },
@@ -171,13 +179,17 @@ export default function SupplyRiskDetail() {
     const retryPlanCode = activePlan?.code;
     workflowRetry.mutate(activeRunId, {
       onSuccess: (data) => {
+        // Guard against stale completion after plan navigation (Target C).
+        // Read the live plan code from the ref — the closure-captured
+        // activePlan is frozen at the render that initiated the mutation.
+        // MUST check staleness BEFORE invalidation — a stale response must
+        // not trigger query invalidation for the old plan's run.
+        if (retryPlanCode !== undefined && currentPlanCodeRef.current !== retryPlanCode) return;
         // Invalidate the cached workflow-run query so polling resumes
         // with fresh data after the D1 FAILED_* → PENDING transition.
         void queryClient.invalidateQueries({
           queryKey: ['workflow-run', data.run_id],
         });
-        // Guard against stale completion after plan navigation (Target C).
-        if (retryPlanCode !== undefined && activePlan?.code !== retryPlanCode) return;
         setActiveRunId(data.run_id);
       },
     });
