@@ -1,18 +1,59 @@
 # WP-REC-03H — Phase 5 AT-008 / AT-013 Acceptance Harness
 
-**Status:** PLANNING PACKAGE — implementation-ready specification  
-**Date:** 2026-08-12  
-**Baseline:** `origin/main` @ `8392ba8fccdafd1ba966019d4301676344b9e3cb` (PR #81 merge commit)  
-**Authorizes:** This document authorizes harness implementation only.  
-**Does NOT authorize:** Formal AT-008 or AT-013 execution, Phase 5 acceptance declaration, Source of Truth changes, production code changes beyond the minimal acceptance-only injection point.
+**Status:** PLANNING PACKAGE — implementation-ready specification (corrected)
+**Date:** 2026-08-12
+**Corrected:** 2026-08-12 (remediation of independent review findings 1–8)
+**Baseline:** `origin/main` @ `8392ba8fccdafd1ba966019d4301676344b9e3cb` (PR #81 merge commit)
+**Authorizes:** This document is an implementation-ready **specification only**. It does not authorize harness implementation, harness execution, evidence collection, or any code changes.
+**Does NOT authorize:** Harness implementation, harness execution, formal AT-008 or AT-013 execution, Phase 5 acceptance declaration, Source of Truth changes, or any other action.
+
+---
+
+## 0. Lifecycle Phases
+
+This plan defines five strictly separated lifecycle phases. No earlier phase authorizes a later phase.
+
+### Phase A — Planning (this document)
+
+- Produce an implementation-ready specification.
+- No code, no tests, no containers, no evidence.
+- Ends when this planning PR is reviewed and merged.
+
+### Phase B — Harness Implementation (requires separate authorization after Phase A merge)
+
+- Implement the harness code, tests, orchestration, and configuration.
+- Run ordinary unit, integration, lint, type, and implementation-verification tests.
+- Prove that orchestration, deterministic controls, and evidence utilities are correctly implemented.
+- Create a draft implementation PR.
+- **Must NOT:** collect formal acceptance evidence, declare AT-008/AT-013 PASS, declare Phase 5 accepted, or run the harness in formal-evidence mode.
+- Ends when the implementation PR is reviewed and merged.
+
+### Phase C — Formal Acceptance Execution (requires separate authorization after Phase B merge)
+
+- Run the reviewed and merged harness against the approved isolated environment in formal-evidence mode.
+- Collect the authoritative evidence package.
+- **Must NOT:** itself declare AT-008 or AT-013 PASS.
+- Ends when evidence is submitted for Product Owner review.
+
+### Phase D — Product Owner Evidence Review and Acceptance Declaration
+
+- Product Owner reviews the evidence package.
+- Product Owner explicitly declares AT-008 and/or AT-013 PASS.
+- Product Owner declares Phase 5 acceptance.
+- **Must NOT:** be automated or assumed from test results.
+
+### Phase E — Documentation Lifecycle Reconciliation (requires separate authorization after Phase D)
+
+- Update ACTIVE_WORK, next_steps, requirements_traceability_matrix, wp_rec_03_decomposition, and other lifecycle documents.
+- Separate package.
 
 ---
 
 ## 1. Objective
 
-Design and specify an implementation-ready acceptance harness that provides formal end-to-end evidence for:
+Design and specify an implementation-ready acceptance harness that can later provide formal end-to-end evidence for:
 
-- **AT-008 (Structured output validation):** Deterministic invalid provider output → `FAILED_VALIDATION` transition → failed workflow-step persistence → workflow detail API → frontend trace rendering → absence of persisted `Recommendation` → absence of approval/procurement write actions → continued deterministic risk availability.
+- **AT-008 (Structured output validation):** Deterministic invalid provider output → `FAILED_VALIDATION` transition → failed workflow-step persistence → workflow detail API → frontend trace rendering → absence of persisted `Recommendation` → absence of controlled write actions → continued deterministic risk availability.
 
 - **AT-013 (Model outage):** Deterministic provider unavailability → production error classification → automatic retry attempts and exhaustion → `FAILED_PROVIDER` transition → failed-step persistence → workflow detail API → continued risk availability → frontend usability while polling → polling termination → authorized Retry → dispatch-generation increment → ARQ retry execution → post-Retry success or terminal result → resumed polling → stale Start/Retry and plan-change protections.
 
@@ -34,12 +75,11 @@ The harness must exercise the **real production workflow path** through ARQ work
 
 ### Excluded
 
-- Production code changes beyond the minimal acceptance-only provider injection point.
-- Formal AT-008 or AT-013 PASS declaration (requires Product Owner acceptance of evidence).
+- Formal AT-008 or AT-013 PASS declaration (requires Phase D).
 - Phase 5 acceptance declaration.
 - WP-REC-05 (Phase 4 completion), AT-006/AT-007 verification, Phase 6, SP-0B, or any unrelated package.
 - Source of Truth or Decision Log changes.
-- Documentation lifecycle reconciliation (deferred).
+- Documentation lifecycle reconciliation (Phase E).
 
 ---
 
@@ -49,67 +89,98 @@ The harness must exercise the **real production workflow path** through ARQ work
 
 **Current production path:**
 
-1. `backend/app/config.py` line 75: `embedding_provider: Literal["openai", "fake"] = "openai"`
-2. `backend/app/ai/provider/factory.py` line 140: `name = provider_name if provider_name is not None else effective_config.embedding_provider`
-3. Line 142-148: When `name == "fake"`, creates `FakeChatProvider` wrapped in `RetryingChatProvider`.
-4. `backend/app/ai/workflow/worker.py` line 146: `provider = create_chat_provider()` — uses global settings.
+1. `backend/app/config.py` line 75: `embedding_provider: Literal["openai", "fake"] = "openai"` — the setting named `embedding_provider` controls the chat provider selection (WP-REC-03A naming convention, functionally correct).
+2. `backend/app/ai/provider/factory.py` line 140: `name = provider_name if provider_name is not None else effective_config.embedding_provider`.
+3. Lines 142–148: When `name == "fake"`, creates `FakeChatProvider` wrapped in `RetryingChatProvider`.
+4. `backend/app/ai/workflow/worker.py` line 146: `provider = create_chat_provider()` — uses global settings singleton.
 
-**Critical finding:** The setting is named `embedding_provider` but controls the **chat provider** selection. This is a naming quirk from WP-REC-03A but functionally correct.
+**FakeChatProvider behavior** (`backend/app/ai/provider/fake_chat_provider.py`):
 
-**FakeChatProvider behavior:**
-- Returns deterministic JSON: `{"prompt_hash": "...", "model": "fake-chat-model", "schema_requested": true}`
+- Returns deterministic JSON: `{"prompt_hash": "...", "model": "fake-chat-model", "schema_requested": true}`.
 - **Does NOT return valid `RecommendationData` schema** — will fail validation at `validate_structured_output()`.
-- Perfect for AT-008 invalid-output path.
+- Suitable for AT-008 invalid-output path.
 
 ### 3.2 Workflow Execution Path
 
 **Vertical execution sequence** (`backend/app/ai/workflow/vertical.py`):
 
-1. Load `WorkflowRun` (lines 117-128).
-2. Generation-guarded `PENDING → RUNNING` transition (lines 131-143).
-3. Load `ProductionPlan` (lines 146-164).
-4. Deterministic risk calculation via `analyze_plan()` (lines 169-211) — persisted independently of provider.
-5. Build prompt and call provider (lines 219-257).
+1. Load `WorkflowRun` (lines 117–128).
+2. Generation-guarded `PENDING → RUNNING` transition (lines 131–143).
+3. Load `ProductionPlan` (lines 146–164).
+4. Deterministic risk calculation via `analyze_plan()` (lines 169–211) — persisted independently of provider.
+5. Build prompt and call provider (lines 219–257).
+   - **Provider context is constructed at `vertical.py` lines 242–245**, not in `worker.py`.
+   - Context dict: `{"correlation_id": str(run.correlation_id), "run_id": str(run.id)}`.
+   - `dispatch_generation` is **not** currently included in the context.
 6. **On provider success:**
    - Transition `RUNNING → AWAITING_VALIDATION` (line 270).
-   - Validate structured output (lines 282-284).
-   - **On validation success:** Persist `Recommendation` (lines 315-323), transition `AWAITING_VALIDATION → COMPLETED` (line 339).
-   - **On validation failure:** Record validation step (lines 287-299), transition to `FAILED_VALIDATION` (lines 301-305).
+   - Validate structured output (lines 282–284).
+   - **On validation success:** Persist `Recommendation` (lines 315–323), transition `AWAITING_VALIDATION → COMPLETED` (line 339).
+   - **On validation failure:** Record validation step (lines 287–299), transition to `FAILED_VALIDATION` (lines 301–305).
 7. **On provider failure:**
-   - Record failed step (lines 352-356).
-   - Transition to `FAILED_PROVIDER` or `FAILED_INTERNAL` (lines 363-368).
+   - Record failed step (lines 352–356).
+   - Transition to `FAILED_PROVIDER` or `FAILED_INTERNAL` (lines 363–368).
 
-**Retry path** (`backend/app/api/workflow.py` lines 379-500):
+**Retry path** (`backend/app/api/workflow.py` lines 379–545):
 
-1. Authorization check: run creator OR `PRODUCTION_MANAGER` (lines 431-453).
-2. State eligibility check: `FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL` (lines 456-469).
-3. Atomic conditional `FAILED_* → PENDING` transition with dispatch-generation increment (lines 472-498).
-4. Enqueue ARQ retry job with deterministic job ID `workflow:{run_id}:{dispatch_generation}` (lines 501-545).
+1. Authorization check: run creator OR `PRODUCTION_MANAGER` (lines 431–453).
+2. State eligibility check: `FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL` (lines 456–469).
+3. Atomic conditional `FAILED_* → PENDING` transition with dispatch-generation increment (lines 472–498).
+4. Enqueue ARQ retry job with deterministic job ID `workflow:{run_id}:{dispatch_generation}` (lines 501–545).
 
 ### 3.3 Database and Session Management
 
 **Application database singleton** (`backend/app/database.py`):
 
-- Module-level `engine` and `async_session_factory` read `settings.database_url` at import time (lines 21-36).
-- `get_async_session()` FastAPI dependency yields sessions from the factory (lines 39-52).
+- Module-level `engine` and `async_session_factory` read `settings.database_url` at import time (lines 21–36).
+- `settings.database_url` is populated from the `DATABASE_URL` environment variable (Pydantic BaseSettings).
+- `get_async_session()` FastAPI dependency yields sessions from the factory (lines 39–52).
 
 **Worker database usage** (`backend/app/ai/workflow/worker.py`):
 
-- Line 143: `async with async_session_factory() as session:` — uses the same module-level factory.
+- Line 143: `async with async_session_factory() as session:` — uses the same module-level factory from `database.py`.
+- The factory is initialized at module import from `settings.database_url`, which reads `DATABASE_URL`.
+
+**Alembic environment** (`backend/alembic/env.py`):
+
+- Line 46: `config.set_main_option("sqlalchemy.url", _to_sync_url(settings.database_url))`.
+- Alembic reads `settings.database_url`, which reads `DATABASE_URL`.
+
+**Seed loader** (`backend/app/seed/generator/loader.py`):
+
+- Line 56: `sync_url = settings.database_url`.
+- The loader reads `settings.database_url`, which reads `DATABASE_URL`.
+- Module-level `_sync_engine` is created at import time (line 64).
+
+**Critical finding:** All production processes (backend API, ARQ worker, Alembic, seed loader) consume `DATABASE_URL` through `settings.database_url`. The environment variable `TEST_DATABASE_URL` is **not** automatically consumed by any of these production processes. Integration tests read `TEST_DATABASE_URL` directly via `os.environ.get("TEST_DATABASE_URL")` and create their own engines — they do not use the application's module-level engine.
 
 **Integration test pattern** (`backend/tests/integration/conftest.py`):
 
-- `reset_app_db_pool` fixture disposes the app engine before/after each test (lines 13-26).
-- Integration tests create their own engines via `TEST_DATABASE_URL` or `DATABASE_URL`.
+- `reset_app_db_pool` fixture disposes the app engine before/after each test (lines 13–26).
+- Integration tests create their own engines via `os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")`.
 
-### 3.4 Existing Test Coverage
+### 3.4 ARQ Worker Configuration
+
+**Entry point** (`backend/app/worker.py`):
+
+- `WorkerSettings` class (line 72) registers functions via `arq.func(...)`.
+- Redis connection from `settings.redis_url` (populated from `REDIS_URL` env var).
+- Worker started via: `arq app.worker.WorkerSettings`.
+
+**Worker execution path** (`backend/app/ai/workflow/worker.py`):
+
+- `_do_execute()` (line 115) creates a fresh session and provider per job.
+- Line 146: `provider = create_chat_provider()` — creates provider through the production factory using the global settings singleton.
+- Line 149: `result = await execute_workflow(session=session, provider=provider, run_id=run_uuid, queued_generation=queued_generation)`.
+
+### 3.5 Existing Test Coverage
 
 **AT-008 partial coverage:**
 
 - ✅ Unit tests: `backend/tests/unit/test_schema_validator.py` — validator logic.
-- ✅ Integration tests: `backend/tests/integration/test_workflow_start_retry.py` — `FAILED_VALIDATION` path via `_SuccessProvider` (but no invalid-output fixture).
+- ✅ Integration tests: `backend/tests/integration/test_workflow_start_retry.py` — `FAILED_VALIDATION` path via `_SuccessProvider` (but no invalid-output fixture exercising the real factory path).
 - ❌ No end-to-end test through ARQ worker + API + browser.
-- ❌ No deterministic fixture exercising real workflow path with invalid output.
+- ❌ No deterministic fixture exercising real workflow path with invalid output through the production factory.
 - ❌ No browser-level evidence showing trace rendering.
 
 **AT-013 partial coverage:**
@@ -120,20 +191,33 @@ The harness must exercise the **real production workflow path** through ARQ work
 - ❌ No end-to-end test through ARQ worker + API + browser.
 - ❌ No browser-level evidence showing outage, retry exhaustion, user Retry, dispatch-generation increment, post-retry success, polling termination/resumption.
 
-### 3.5 Frontend Workflow Interaction
+### 3.6 Frontend Workflow Interaction
 
-**Workflow polling and retry** (`frontend/src/hooks/useWorkflowRun.tsx`):
+**Workflow hooks** (`frontend/src/hooks/`):
 
-- Polls `GET /api/v1/workflow-runs/{run_id}` every 2 seconds when state is `PENDING` or `RUNNING`.
-- Stops polling when state reaches terminal state (`COMPLETED`, `FAILED_*`).
-- Retry button visible only to run creator or `PRODUCTION_MANAGER`.
-- Plan-change guard: suppresses stale Start/Retry completions.
+- `use-workflow-run.ts`: Polls `GET /api/v1/workflow-runs/{run_id}` every 2 seconds when state is `PENDING` or `RUNNING`. Stops polling when state reaches terminal state (`COMPLETED`, `FAILED_*`).
+- `use-workflow-start.ts`: POST `/api/v1/workflow-runs` to start a workflow.
+- `use-workflow-retry.ts`: POST `/api/v1/workflow-runs/{run_id}/retry` to retry a failed workflow.
 
 **Workflow detail rendering** (`frontend/src/routes/supply-risk-detail.tsx`):
 
 - Displays workflow trace with steps, states, timestamps, error codes.
 - Shows recommendation when present.
-- Shows retry button when eligible.
+- Shows retry button when eligible (run creator or `PRODUCTION_MANAGER`).
+
+**Playwright configuration** (`frontend/playwright.config.ts`):
+
+- `baseURL`: `process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:4173'`.
+- `webServer`: `npm run preview` on port 4173 (uses Vite preview, not dev server).
+- Existing E2E tests (`golden-scenario.spec.ts`) run against the preview server.
+
+### 3.7 API Response Verification
+
+**`dispatch_generation` in API responses:** Confirmed. `WorkflowRunSchema` (`backend/app/schemas/workflow.py` line 130) includes `dispatch_generation: int`. `WorkflowRunDetailResponse` extends `WorkflowRunSchema` and inherits this field. `WorkflowRunSummarySchema` also includes it (line 248).
+
+**Workflow steps as audit trail:** Confirmed. `WorkflowStep` model (`backend/app/models/workflow.py` line 223) provides persistent append-only step records with `seq`, `step_name`, `status`, `error_code`, `error_detail`, `started_at`, `completed_at`.
+
+**Log event for retry attempts:** `chat_provider.retry.attempt` (verified at `backend/app/ai/workflow/outage_handler.py` line 289).
 
 ---
 
@@ -141,187 +225,284 @@ The harness must exercise the **real production workflow path** through ARQ work
 
 ### 4.1 Deterministic Scenario Control
 
-**Decision:** Add a test-only scenario registry in `backend/app/ai/provider/factory.py` guarded by environment check.
+**Decision:** Create a dedicated acceptance-scenarios module inside the application package, guarded by environment check, loaded by the production factory.
 
-**Rationale:**
+**Rationale:** The independently started ARQ worker process imports `backend/app/ai/provider/factory.py` through the normal import chain. It does **not** import test packages (`backend/tests/`). Therefore, scenario provider implementations must reside in a module the worker actually loads. A test-only bootstrap cannot safely provide the seam because the worker process has no mechanism to import from `backend/tests/acceptance/`.
 
-- Minimal production code change (one conditional block).
-- Clearly guarded: `if settings.environment not in ("production", "staging")`.
-- Test-only path: inaccessible in production/staging.
-- Concurrency-safe: scenario state is per-process, not global mutable state.
-- Observable in evidence: scenario name logged in worker startup.
+**Design: Guarded acceptance-only provider module**
 
-**Implementation:**
+Create a new production module (guarded, not test-only):
+
+**Proposed file:** `backend/app/ai/provider/acceptance_scenarios.py`
+
+This module:
+
+- Defines scenario provider classes (`InvalidOutputProvider`, `OutageUntilRetryProvider`, `ValidOutputProvider`).
+- Exports a `get_acceptance_provider(scenario_name: str, settings: Settings) -> ChatProvider` function.
+- Is imported by `factory.py` only when `FORGEMIND_ACCEPTANCE_SCENARIO` is set.
+- Raises `ChatProviderConfigurationError` for unknown scenario names (fail closed).
+- Is guarded by an environment check: the import and usage only occur when `settings.environment` is `"development"`.
+
+**Proposed change to `backend/app/ai/provider/factory.py`:**
+
+Add after the existing provider selection logic (before the final `raise`):
 
 ```python
-# backend/app/ai/provider/factory.py (proposed addition after line 156)
-
-# Acceptance-test scenario registry (test-only, guarded by environment check).
-# Maps scenario names to provider factory callables.
-_ACCEPTANCE_SCENARIOS: dict[str, Callable[[Settings], ChatProvider]] = {}
-
-def register_acceptance_scenario(
-    name: str,
-    factory: Callable[[Settings], ChatProvider],
-) -> None:
-    """Register a test-only provider scenario for acceptance harness."""
-    if settings.environment in ("production", "staging"):
+# Acceptance scenario override (development-only, fail-closed).
+import os as _os
+_acceptance_scenario = _os.environ.get("FORGEMIND_ACCEPTANCE_SCENARIO")
+if _acceptance_scenario:
+    if effective_config.environment in ("production", "staging"):
         raise ChatProviderConfigurationError(
-            f"Acceptance scenarios not allowed in {settings.environment}"
+            "Acceptance scenarios are not available in "
+            f"{effective_config.environment}"
         )
-    _ACCEPTANCE_SCENARIOS[name] = factory
-
-def create_chat_provider(
-    config: Settings | None = None,
-    *,
-    provider_name: str | None = None,
-) -> ChatProvider:
-    effective_config = config if config is not None else application_settings
-    
-    # Check for acceptance scenario override (test-only).
-    scenario_name = os.environ.get("FORGEMIND_ACCEPTANCE_SCENARIO")
-    if scenario_name and scenario_name in _ACCEPTANCE_SCENARIOS:
-        if effective_config.environment in ("production", "staging"):
-            raise ChatProviderConfigurationError(
-                f"Acceptance scenarios not allowed in {effective_config.environment}"
-            )
-        delegate = _ACCEPTANCE_SCENARIOS[scenario_name](effective_config)
-        return _wrap_with_retry(delegate, effective_config)
-    
-    # ... existing provider selection logic ...
+    # Import only when the env var is set — no import cost in production.
+    from app.ai.provider.acceptance_scenarios import get_acceptance_provider
+    delegate = get_acceptance_provider(_acceptance_scenario, effective_config)
+    return _wrap_with_retry(delegate, effective_config)
 ```
 
-**Scenarios to register:**
+**Fail-closed guarantees:**
 
-1. **`AT008_INVALID_OUTPUT`:** Provider returns invalid JSON or schema-invalid output.
-   - Use existing `FakeChatProvider` (already returns invalid schema).
-   - Or create `_InvalidOutputProvider` that returns `{"invalid": "data"}`.
+1. **Unknown scenario name:** `get_acceptance_provider()` raises `ChatProviderConfigurationError` if the name is not recognized. No fallback to normal provider.
+2. **Environment guard:** If `FORGEMIND_ACCEPTANCE_SCENARIO` is set but `environment` is `production` or `staging`, the factory raises before importing the module.
+3. **No real provider call possible:** When the env var is set and environment is `development`, the factory returns the acceptance provider. The normal `openai` path is never reached.
+4. **Import guard:** The `acceptance_scenarios` module is imported lazily (only when env var is set), so production deployments without the env var never load it.
+5. **Deterministic:** Scenario selection is determined entirely by the env var value. No mutable global registry.
 
-2. **`AT013_OUTAGE_UNTIL_RETRY`:** Provider fails transiently on first dispatch generation (0), succeeds on retry generation (1+).
-   - Create `_OutageUntilRetryProvider` that tracks dispatch generation from context.
+**Concurrency safety:**
+
+- Each ARQ job creates a fresh provider instance via `create_chat_provider()` (worker.py line 146).
+- The scenario name is read from the environment variable, which is process-wide and immutable during the job.
+- No shared mutable state between jobs — the scenario classes are stateless (except `OutageUntilRetryProvider` which reads `dispatch_generation` from the per-call context).
+
+**Scenarios:**
+
+1. **`AT008_INVALID_OUTPUT`:** Returns invalid JSON or schema-invalid output.
+   - Uses `FakeChatProvider` (already returns invalid schema) or a dedicated `InvalidOutputProvider` returning `{"invalid": "data"}`.
+
+2. **`AT013_OUTAGE_UNTIL_RETRY`:** Fails transiently on dispatch generation 0, succeeds on generation ≥ 1.
+   - `OutageUntilRetryProvider` reads `context["dispatch_generation"]` (see §4.1.1).
    - Raises `TransientChatProviderError` when `dispatch_generation == 0`.
-   - Returns valid `RecommendationData` when `dispatch_generation >= 1`.
+   - Returns valid `RecommendationData` JSON when `dispatch_generation >= 1`.
 
-3. **`NORMAL_SUCCESS`:** Control scenario — provider returns valid output immediately.
-   - Create `_ValidOutputProvider` that returns valid `RecommendationData` JSON.
+3. **`NORMAL_SUCCESS`:** Control scenario — returns valid `RecommendationData` immediately.
+   - `ValidOutputProvider` returns valid JSON matching the recommendation wire schema.
 
-**Dispatch generation tracking:**
+#### 4.1.1 Dispatch Generation Propagation
 
-The provider receives `context["run_id"]` but not `dispatch_generation`. The harness must:
-
-- Parse dispatch generation from ARQ job ID in worker logs.
-- Or add `dispatch_generation` to the provider context in `worker.py` (minimal change).
-
-**Proposed minimal change to `backend/app/ai/workflow/worker.py` line 242:**
+**Verified production behavior:** The provider context dict is constructed in `backend/app/ai/workflow/vertical.py` at lines 242–245:
 
 ```python
 context: dict[str, Any] = {
     "correlation_id": str(run.correlation_id),
     "run_id": str(run.id),
-    "dispatch_generation": run.dispatch_generation,  # Added for acceptance harness
 }
 ```
 
-This change is safe: the context dict is provider-specific metadata, not part of the public API contract.
+The `execute_workflow()` function already receives `queued_generation` as a parameter (line 91). The `dispatch_generation` value is available as `queued_generation` at the point where the context is constructed.
+
+**Proposed change to `backend/app/ai/workflow/vertical.py` line 242–245:**
+
+```python
+context: dict[str, Any] = {
+    "correlation_id": str(run.correlation_id),
+    "run_id": str(run.id),
+    "dispatch_generation": queued_generation,  # Added for acceptance harness
+}
+```
+
+This is a 1-line addition at the correct location. The `queued_generation` parameter is already available in scope. The context dict is provider-specific metadata, not part of any public API contract.
+
+**Why not `worker.py`:** The previous plan incorrectly targeted `worker.py` line 242. That file does not construct the provider context — it delegates to `execute_workflow()` in `vertical.py`. The context dict shown in the previous plan's code sketch does not exist in `worker.py`.
 
 ### 4.2 Database Isolation
 
-**Decision:** Use a dedicated `forgemind_acceptance` database with explicit environment variable propagation.
+**Decision:** Use a dedicated `forgemind_acceptance` database. Set `DATABASE_URL` (not `TEST_DATABASE_URL`) for all application subprocesses.
+
+**Verified consumption paths:**
+
+| Consumer | Reads | Source |
+|----------|-------|--------|
+| Backend API (`database.py`) | `settings.database_url` | `DATABASE_URL` |
+| ARQ worker (`database.py` via `worker.py`) | `settings.database_url` | `DATABASE_URL` |
+| Alembic (`alembic/env.py` line 46) | `settings.database_url` | `DATABASE_URL` |
+| Seed loader (`loader.py` line 56) | `settings.database_url` | `DATABASE_URL` |
+| Integration tests (own engine) | `os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")` | Either |
 
 **Isolation strategy:**
 
-1. **Database creation:** Orchestration script creates `forgemind_acceptance` database via `createdb` or Docker exec.
-2. **Environment variable:** Set `TEST_DATABASE_URL=postgresql+asyncpg://forgemind:forgemind@localhost:5433/forgemind_acceptance`.
-3. **Propagation:** All processes (backend, worker, tests, Playwright) read `TEST_DATABASE_URL`.
-4. **Migrations:** Run `alembic upgrade head` on `forgemind_acceptance` before tests.
-5. **Seed:** Run seed generator on `forgemind_acceptance` to populate golden dataset.
+1. **Harness-internal variable:** The orchestration script defines `ACCEPTANCE_DATABASE_URL` internally.
+2. **Mandatory mapping:** Before starting any subprocess, the orchestration script sets `DATABASE_URL=$ACCEPTANCE_DATABASE_URL` in that subprocess's environment.
+3. **Module-level initialization:** The orchestration script must ensure `DATABASE_URL` is set **before** any Python process imports `app.database` or `app.config`, because these modules create engines at import time from `settings.database_url`.
+4. **All processes receive the same URL:** Backend API, ARQ worker, Alembic, seed loader, and evidence queries all receive the identical `DATABASE_URL`.
+
+**Mandatory fail-closed checks (before migration, seed, API startup, worker startup, or evidence queries):**
+
+```python
+# Proposed: orchestration script fail-closed checks
+def validate_acceptance_database_url(db_url: str) -> None:
+    """Fail-closed validation of acceptance database URL."""
+    from urllib.parse import urlparse
+    parsed = urlparse(db_url)
+
+    # 1. Host must be localhost or 127.0.0.1
+    if parsed.hostname not in ("localhost", "127.0.0.1"):
+        raise RuntimeError(f"Acceptance DB host must be localhost, got {parsed.hostname}")
+
+    # 2. Port must be the acceptance port (5433), not the development port (5432)
+    if parsed.port == 5432:
+        raise RuntimeError("Acceptance DB must not use development port 5432")
+
+    # 3. Database name must be exactly 'forgemind_acceptance'
+    db_name = parsed.path.lstrip("/")
+    if db_name != "forgemind_acceptance":
+        raise RuntimeError(f"Acceptance DB name must be 'forgemind_acceptance', got '{db_name}'")
+
+    # 4. Must not be a production or staging endpoint
+    if "production" in db_url or "staging" in db_url:
+        raise RuntimeError("Acceptance DB URL must not reference production or staging")
+
+    # 5. Confirm the URL is propagated to all consumers
+    #    (verified by querying the database from each subprocess)
+```
 
 **Idempotent preparation:**
 
 ```python
-# Orchestration script (proposed)
+# Proposed: orchestration script
 def prepare_acceptance_database(db_url: str) -> None:
     """Create database if not exists, run migrations, seed."""
-    # 1. Check if database exists via pg_database query.
+    validate_acceptance_database_url(db_url)
+    # 1. Check if database exists via pg_database query on the server.
     # 2. If not, create via CREATE DATABASE.
-    # 3. Run alembic upgrade head.
-    # 4. Run seed generator.
+    # 3. Set DATABASE_URL for Alembic subprocess.
+    # 4. Run: alembic upgrade head (subprocess with DATABASE_URL set).
+    # 5. Set DATABASE_URL for seed subprocess.
+    # 6. Run: python -m app.seed.generator.main (subprocess with DATABASE_URL set).
 ```
 
-**Precondition:** PostgreSQL must be running on port 5433 (or configured port). The orchestration script starts a dedicated PostgreSQL container.
+**Precondition:** PostgreSQL must be running on port 5433 (or configured acceptance port). The orchestration script starts a dedicated PostgreSQL container.
 
 ### 4.3 Redis Isolation
 
-**Decision:** Use Redis database 1 (or dedicated port 6380) with explicit environment variable propagation.
+**Decision:** Use a dedicated Redis on port 6380. Set `REDIS_URL` for all application subprocesses.
+
+**Verified consumption paths:**
+
+| Consumer | Reads | Source |
+|----------|-------|--------|
+| ARQ worker (`worker.py` line 69) | `settings.redis_url` | `REDIS_URL` |
+| Backend API workflow endpoints (`api/workflow.py` line 218) | `settings.redis_url` | `REDIS_URL` |
 
 **Isolation strategy:**
 
 1. **Redis URL:** Set `REDIS_URL=redis://localhost:6380/0` (dedicated port).
-2. **Propagation:** All processes read `REDIS_URL`.
-3. **ARQ worker:** Reads `settings.redis_url` which is set from `REDIS_URL`.
-
-**Rationale:** Separate port avoids accidental collision with development Redis on 6379.
+2. **Propagation:** All processes receive `REDIS_URL` in their environment.
+3. **Separate port:** Avoids accidental collision with development Redis on 6379.
 
 ### 4.4 Process Orchestration
 
-**Decision:** Python orchestration script with subprocess management and health checks.
+**Decision:** Python orchestration script with subprocess management, run-scoped resource identity, and health checks.
 
-**Orchestration sequence:**
+#### 4.4.1 Run Identity and Resource Ownership
 
-1. **Start PostgreSQL:**
-   - Docker container: `docker run -d --name forgemind-acceptance-pg -p 5433:5432 -e POSTGRES_DB=forgemind_acceptance -e POSTGRES_USER=forgemind -e POSTGRES_PASSWORD=forgemind postgres:16`.
+Every harness invocation generates a unique run identifier:
+
+```python
+# Proposed: run identity
+import uuid
+run_id = f"acc-{uuid.uuid4().hex[:12]}"
+```
+
+All resources created by the harness are tagged with this run ID:
+
+- Docker container names: `forgemind-{run_id}-pg`, `forgemind-{run_id}-redis`.
+- Log files: `evidence/{run_id}/logs/`.
+- Evidence artifacts: `evidence/{run_id}/`.
+
+**Ownership verification before teardown:**
+
+Before stopping or removing any resource, the orchestration script must verify that the resource was created by the current run:
+
+```python
+# Proposed: ownership check
+def owns_container(container_name: str, run_id: str) -> bool:
+    """Verify the container was created by this run."""
+    # Check container label or name contains run_id.
+    result = subprocess.run(
+        ["docker", "inspect", "--format", "{{.Name}}", container_name],
+        capture_output=True, text=True,
+    )
+    return run_id in result.stdout
+```
+
+**Port conflict handling:** If the preferred port (5433 or 6380) is already occupied, the orchestration script must:
+
+1. Check if the occupying process is owned by a previous harness run (via container name pattern).
+2. If owned by a previous run: refuse to proceed and report the conflict.
+3. If not owned by a harness run: refuse to proceed and report the external conflict.
+4. Do **not** silently kill or replace pre-existing resources.
+
+#### 4.4.2 Orchestration Sequence
+
+1. **Generate run ID** and create evidence directory `evidence/{run_id}/`.
+
+2. **Start PostgreSQL:**
+   - Container: `docker run -d --name forgemind-{run_id}-pg --label forgemind-run={run_id} -p 5433:5432 -e POSTGRES_DB=forgemind_acceptance -e POSTGRES_USER=forgemind -e POSTGRES_PASSWORD=forgemind postgres:16`.
    - Health check: `pg_isready -h localhost -p 5433` (poll up to 30 seconds).
 
-2. **Start Redis:**
-   - Docker container: `docker run -d --name forgemind-acceptance-redis -p 6380:6379 redis:7`.
+3. **Start Redis:**
+   - Container: `docker run -d --name forgemind-{run_id}-redis --label forgemind-run={run_id} -p 6380:6379 redis:7`.
    - Health check: `redis-cli -p 6380 ping` (poll up to 10 seconds).
 
-3. **Prepare database:**
-   - Run Alembic migrations: `alembic upgrade head`.
-   - Run seed generator: `python -m app.seed.generator.main`.
+4. **Prepare database (with `DATABASE_URL` set to acceptance URL):**
+   - Validate URL via `validate_acceptance_database_url()`.
+   - Run Alembic migrations: `alembic upgrade head` (subprocess with `DATABASE_URL` set).
+   - Run seed generator: `python -m app.seed.generator.main` (subprocess with `DATABASE_URL` set).
 
-4. **Start backend API:**
+5. **Start backend API:**
    - Command: `uvicorn app.main:app --host 0.0.0.0 --port 8001`.
-   - Environment: `TEST_DATABASE_URL`, `REDIS_URL`, `FORGEMIND_ACCEPTANCE_SCENARIO`, `ENVIRONMENT=development`.
+   - Environment: `DATABASE_URL=<acceptance_url>`, `REDIS_URL=redis://localhost:6380/0`, `FORGEMIND_ACCEPTANCE_SCENARIO=<scenario>`, `ENVIRONMENT=development`.
    - Health check: `curl http://localhost:8001/health` (poll up to 30 seconds).
 
-5. **Start ARQ worker:**
+6. **Start ARQ worker:**
    - Command: `arq app.worker.WorkerSettings`.
-   - Environment: Same as backend.
-   - Health check: Monitor logs for "worker started" message (poll up to 30 seconds).
+   - Environment: Same as backend (identical `DATABASE_URL`, `REDIS_URL`, `FORGEMIND_ACCEPTANCE_SCENARIO`).
+   - Health check: Monitor logs for `on_startup` hook completion (poll up to 30 seconds).
 
-6. **Start frontend:**
+7. **Start frontend:**
    - Command: `npm run dev -- --port 5174`.
    - Environment: `VITE_API_BASE_URL=http://localhost:8001`.
    - Health check: `curl http://localhost:5174` (poll up to 30 seconds).
 
-7. **Run Playwright tests:**
-   - Command: `npm run test:e2e -- --project=acceptance`.
-   - Environment: `PLAYWRIGHT_BASE_URL=http://localhost:5174`.
+8. **Run tests** (see §4.5 and §4.6).
 
-8. **Collect evidence:**
-   - API responses, database queries, worker logs, browser screenshots, Playwright traces.
+9. **Collect evidence** (see §4.7).
 
-9. **Teardown:**
-   - Stop processes in reverse order.
-   - Remove Docker containers.
+10. **Teardown:**
+    - Stop subprocesses via `process.terminate()` with timeout.
+    - Stop and remove only containers owned by this run (verified via ownership check).
+    - Do **not** delete volumes.
+    - Do **not** run `docker compose down -v`.
+    - Do **not** run broad Docker cleanup.
 
 **Failure propagation:**
 
-- If any process fails to start, abort and teardown.
-- If Playwright tests fail, collect evidence before teardown.
-- Log all process stdout/stderr to files.
-
-**Safe teardown:**
-
-- Use `docker stop` and `docker rm` (not `docker compose down -v`).
-- Kill subprocesses via `process.terminate()` with timeout.
+- If any process fails to start, abort and teardown owned resources only.
+- If tests fail, collect evidence before teardown.
+- Log all process stdout/stderr to `evidence/{run_id}/logs/`.
 
 ### 4.5 Backend Integration Tests
 
-**Decision:** Add dedicated AT-008 and AT-013 integration tests exercising the real workflow vertical through ARQ worker.
+**Decision:** Add dedicated AT-008 and AT-013 integration tests exercising the real workflow vertical.
 
-**AT-008 backend test** (`backend/tests/integration/test_at008_acceptance.py`):
+**Implementation-verification mode (Phase B):**
+
+The implementation package runs these tests to prove the harness works correctly. The test results are implementation-verification evidence, **not** formal acceptance evidence.
+
+**AT-008 backend test** (proposed: `backend/tests/integration/test_at008_acceptance.py`):
 
 ```python
 async def test_at008_invalid_output_via_worker(
@@ -329,7 +510,7 @@ async def test_at008_invalid_output_via_worker(
     arq_pool: ArqRedis,
 ) -> None:
     """AT-008: Invalid provider output → FAILED_VALIDATION via real worker."""
-    # 1. Set FORGEMIND_ACCEPTANCE_SCENARIO=AT008_INVALID_OUTPUT.
+    # 1. Set FORGEMIND_ACCEPTANCE_SCENARIO=AT008_INVALID_OUTPUT in worker env.
     # 2. Create WorkflowRun via API or direct ORM.
     # 3. Enqueue ARQ job.
     # 4. Wait for worker to process (poll database state).
@@ -339,7 +520,7 @@ async def test_at008_invalid_output_via_worker(
     # 8. Assert risk API still returns deterministic risks.
 ```
 
-**AT-013 backend test** (`backend/tests/integration/test_at013_acceptance.py`):
+**AT-013 backend test** (proposed: `backend/tests/integration/test_at013_acceptance.py`):
 
 ```python
 async def test_at013_outage_retry_via_worker(
@@ -347,7 +528,7 @@ async def test_at013_outage_retry_via_worker(
     arq_pool: ArqRedis,
 ) -> None:
     """AT-013: Provider outage → FAILED_PROVIDER → user Retry → success."""
-    # 1. Set FORGEMIND_ACCEPTANCE_SCENARIO=AT013_OUTAGE_UNTIL_RETRY.
+    # 1. Set FORGEMIND_ACCEPTANCE_SCENARIO=AT013_OUTAGE_UNTIL_RETRY in worker env.
     # 2. Create WorkflowRun.
     # 3. Enqueue ARQ start job (generation 0).
     # 4. Wait for worker to process → FAILED_PROVIDER.
@@ -360,45 +541,45 @@ async def test_at013_outage_retry_via_worker(
     # 11. Assert workflow_steps are append-only (prior steps preserved).
 ```
 
-**Test fixtures:**
+**Test fixtures** (proposed additions to `backend/tests/integration/conftest.py`):
 
 - `arq_pool` fixture: Creates ARQ Redis pool for job enqueue.
-- `worker_process` fixture: Starts ARQ worker subprocess with scenario environment.
+- `worker_process` fixture: Starts ARQ worker subprocess with scenario environment and `DATABASE_URL` set to acceptance URL.
 - `wait_for_terminal_state` helper: Polls database until workflow reaches terminal state (with timeout).
 
 ### 4.6 Playwright Scenarios
 
 **Decision:** Two independently reviewable Playwright scenarios with real backend, worker, database, and frontend.
 
-**AT-008 Playwright scenario** (`frontend/e2e/at008-acceptance.spec.ts`):
+**AT-008 Playwright scenario** (proposed: `frontend/e2e/at008-acceptance.spec.ts`):
 
 ```typescript
 test("AT-008: validation failure visible in trace", async ({ page }) => {
   // 1. Authenticate as production_manager.demo.
   // 2. Navigate to supply risk detail page for PLAN-2026-W31.
   // 3. Verify deterministic risks are visible (RISK-001, RISK-002, RISK-003).
-  // 4. Click "Start AI Analysis" button.
-  // 5. Wait for workflow state to reach FAILED_VALIDATION (poll API or observe UI).
+  // 4. Click "Start AI Analysis" button (if present in UI).
+  // 5. Wait for workflow state to reach FAILED_VALIDATION (poll API).
   // 6. Verify workflow trace shows:
-  //    - provider_call step with status "completed" or "failed".
+  //    - provider_call step with status "completed".
   //    - validation step with status "failed" and error_code "VALIDATION_FAILED".
   // 7. Verify no recommendation section is rendered.
-  // 8. Verify "Retry" button is visible (user is run creator).
+  // 8. Verify "Retry" button is visible (user is PRODUCTION_MANAGER / run creator).
   // 9. Verify deterministic risks remain visible (not blocked by workflow failure).
   // 10. Take screenshot of trace.
   // 11. Assert API response for GET /workflow-runs/{run_id} matches UI state.
 });
 ```
 
-**AT-013 Playwright scenario** (`frontend/e2e/at013-acceptance.spec.ts`):
+**AT-013 Playwright scenario** (proposed: `frontend/e2e/at013-acceptance.spec.ts`):
 
 ```typescript
 test("AT-013: provider outage and user retry", async ({ page }) => {
   // 1. Authenticate as production_manager.demo.
   // 2. Navigate to supply risk detail page for PLAN-2026-W31.
   // 3. Verify deterministic risks are visible.
-  // 4. Click "Start AI Analysis" button.
-  // 5. Wait for workflow state to reach FAILED_PROVIDER (poll API or observe UI).
+  // 4. Click "Start AI Analysis" button (if present in UI).
+  // 5. Wait for workflow state to reach FAILED_PROVIDER (poll API).
   // 6. Verify workflow trace shows:
   //    - provider_call step with status "failed" and error_code "PROVIDER_TRANSIENT".
   //    - error_detail "ProviderError" (safe value, no secrets).
@@ -407,7 +588,7 @@ test("AT-013: provider outage and user retry", async ({ page }) => {
   // 9. Verify deterministic risks remain visible.
   // 10. Take screenshot of failed state.
   // 11. Click "Retry" button.
-  // 12. Wait for workflow state to reach COMPLETED (poll API or observe UI).
+  // 12. Wait for workflow state to reach COMPLETED (poll API).
   // 13. Verify workflow trace shows:
   //     - Prior failed steps preserved (append-only).
   //     - New provider_call step with status "completed".
@@ -427,252 +608,243 @@ test("AT-013: provider outage and user retry", async ({ page }) => {
 - ✅ Real PostgreSQL persistence.
 - ✅ Real Redis queue.
 - ✅ Real ARQ worker.
-- ✅ Real provider adapter and retry wrapper (via scenario registry).
+- ✅ Real provider adapter and retry wrapper (via acceptance scenario module).
 - ✅ Real workflow state machine and trace persistence.
 - ❌ External provider API (replaced by deterministic scenario provider).
 
 **Justification for provider simulation:**
 
-The acceptance test proves the **workflow behavior** (state transitions, error handling, retry logic, trace persistence, UI rendering) — not the external provider's actual API. The scenario provider exercises the same code paths as a real provider (same exceptions, same result structure) without network dependency or secret exposure.
+The acceptance test proves the **workflow behavior** (state transitions, error handling, retry logic, trace persistence, UI rendering) — not the external provider's actual API. The scenario provider exercises the same code paths as a real provider (same exceptions, same result structure, same factory wrapping) without network dependency or secret exposure.
+
+**Playwright configuration** (proposed change to `frontend/playwright.config.ts`):
+
+Add an `acceptance` project that uses a different base URL and does **not** start a webServer (the orchestration script manages all services):
+
+```typescript
+// Proposed addition to projects array:
+{
+  name: 'acceptance',
+  use: {
+    ...devices['Desktop Chrome'],
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5174',
+  },
+  // No webServer — orchestration script manages services.
+},
+```
 
 ### 4.7 Evidence Collection
 
 **Decision:** Python evidence collector with deterministic failure handling, redaction, run identity, and artifact integrity.
 
-**Evidence categories:**
+#### 4.7.1 Evidence Categories and Authoritative Sources
 
-1. **Repository baseline:**
-   - Git SHA, dirty-state check, branch name.
-   - Command: `git rev-parse HEAD`, `git status --porcelain`.
+| # | Evidence | Authoritative Source | Query / Command |
+|---|----------|---------------------|-----------------|
+| 1 | Repository baseline | Git | `git rev-parse HEAD`, `git status --porcelain`, `git diff --stat` |
+| 2 | Environment versions | System | `python --version`, `node --version`, `docker --version` |
+| 3 | Scenario identity | Test metadata | Scenario name, run ID, correlation ID from API responses |
+| 4 | Workflow steps (audit trail) | `workflow_steps` table | `SELECT id, run_id, seq, step_name, status, error_code, error_detail, started_at, completed_at FROM workflow_steps WHERE run_id = :run_id ORDER BY seq` |
+| 5 | Current run state | `workflow_runs` table | `SELECT id, state, dispatch_generation, error_code, error_detail, started_at, completed_at, updated_at FROM workflow_runs WHERE id = :run_id` |
+| 6 | Provider attempt count | Worker log file | Count of `chat_provider.retry.attempt` log entries for the run's correlation_id |
+| 7 | Dispatch generation | API response | `GET /api/v1/workflow-runs/{run_id}` → `dispatch_generation` field |
+| 8 | Recommendation absence/presence | `recommendations` table | `SELECT COUNT(*) FROM recommendations WHERE run_id = :run_id` |
+| 9 | Controlled-write absence | Schema verification | `procurement_tasks` table does not exist in Phase 5 schema (Phase 6). Verify via: `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'procurement_tasks')` — must be `false`. |
+| 10 | Risk API availability | API response | `GET /api/v1/risks?plan_id=PLAN-2026-W31` → verify 3 risks returned |
+| 11 | Browser screenshots | Playwright | Screenshots at key moments (failed state, success state) |
+| 12 | Playwright traces | Playwright | trace.zip files for failed tests |
+| 13 | Final database checks | Database queries | Workflow run final state, step count, recommendation count |
+| 14 | Test counts | pytest / Playwright | pass/fail/skip counts |
+| 15 | Redaction result | Evidence collector | Verify no secrets in evidence files |
+| 16 | Final repository status | Git | `git status --porcelain`, `ls evidence/{run_id}/` |
 
-2. **Environment versions:**
-   - Python version, Node version, Docker version, PostgreSQL version, Redis version.
-   - Command: `python --version`, `node --version`, `docker --version`, `psql --version`, `redis-server --version`.
+**State transition evidence — design limitation:**
 
-3. **Scenario identity:**
-   - Scenario name, run ID, correlation ID, dispatch generation.
-   - Source: Test metadata and API responses.
+The `workflow_runs` table stores only the **current** state and timestamps, not a history of transitions. There is no persisted state-transition history table.
 
-4. **State transitions:**
-   - Workflow run state history from database.
-   - Command: `SELECT state, updated_at FROM workflow_runs WHERE id = :run_id`.
+State transitions are reconstructed from:
 
-5. **Workflow steps:**
-   - All workflow steps with seq, step_name, status, error_code, error_detail.
-   - Command: `SELECT * FROM workflow_steps WHERE run_id = :run_id ORDER BY seq`.
+1. **Workflow steps** (`workflow_steps` table): The append-only step records provide a persistent audit trail of provider calls, validation attempts, and their outcomes. Each step has `seq`, `step_name`, `status`, `error_code`, `error_detail`, `started_at`, `completed_at`.
+2. **Structured worker logs**: The `workflow.vertical.*` and `chat_provider.retry.attempt` log events capture state transitions with timestamps. The orchestration script captures worker stdout to a log file.
+3. **API snapshots**: The orchestration script captures `GET /api/v1/workflow-runs/{run_id}` at defined points (after start, after terminal state, after retry) to record the state at those moments.
 
-6. **Provider attempt count:**
-   - From worker logs: count of `chat_provider.retry.attempt` log entries.
-   - Source: Worker stdout log file.
+**Explicit limitation:** If a future requirement demands a persisted state-transition history table, that would be a product change outside the harness scope. The current evidence model uses steps + logs + API snapshots as the authoritative transition record.
 
-7. **Dispatch generation:**
-   - From API response: `GET /workflow-runs/{run_id}` → `dispatch_generation` field.
+#### 4.7.2 Evidence Lifecycle
 
-8. **Recommendation absence/presence:**
-   - From database: `SELECT COUNT(*) FROM recommendations WHERE run_id = :run_id`.
+1. **Raw artifacts:** Written to `evidence/{run_id}/raw/` during harness execution.
+2. **Redaction:** After all raw artifacts are collected, the evidence collector redacts secrets and writes to `evidence/{run_id}/redacted/`.
+3. **Redaction verification:** The collector verifies redaction by scanning redacted files for secret patterns. If any secret is found, redaction is marked as **failed** and raw artifacts are **preserved** (not deleted) for debugging.
+4. **Checksum generation:** SHA-256 checksums computed for all redacted artifacts **excluding** the checksum file itself. Written to `evidence/{run_id}/redacted/checksums.sha256`.
+5. **Raw cleanup:** Raw artifacts deleted **only after** redaction verification succeeds and checksums are generated. If redaction fails, raw artifacts are retained in `evidence/{run_id}/raw/` and the run is marked as failed.
+6. **Screenshots:** Binary artifacts are reviewed for sensitive content (auth tokens, API keys visible in browser). Screenshots are included in redacted evidence only after manual or automated review confirms no sensitive content is visible.
 
-9. **Controlled-write absence:**
-   - From database: `SELECT COUNT(*) FROM procurement_tasks WHERE run_id = :run_id` (should be 0 for Phase 5).
+#### 4.7.3 Repository Cleanliness Model
 
-10. **Risk API availability:**
-    - From API response: `GET /api/v1/risks?plan_id=PLAN-2026-W31` → verify 3 risks returned.
+The evidence lifecycle must not contradict the repository cleanliness invariant. The following are distinct concepts:
 
-11. **Browser screenshots:**
-    - Playwright screenshots at key moments (failed state, success state).
+**Tracked worktree cleanliness** (measured by `git status --porcelain`):
 
-12. **Playwright traces:**
-    - Playwright trace.zip files for failed tests.
+- After harness execution, `git status --porcelain` must show **only** the protected audit file (`docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md`).
+- Evidence directories are gitignored and do **not** appear in `git status --porcelain`.
 
-13. **Final database checks:**
-    - Workflow run final state, step count, recommendation count.
+**Ignored artifact inventory** (measured by explicit directory listing):
 
-14. **Test counts:**
-    - pytest pass/fail/skip counts, Playwright pass/fail counts.
+- `ls evidence/{run_id}/raw/` — should be empty after successful redaction.
+- `ls evidence/{run_id}/redacted/` — should contain the redacted evidence files.
+- `cat evidence/{run_id}/redacted/checksums.sha256` — should list all redacted artifacts.
 
-15. **Redaction result:**
-    - Verify no secrets, tokens, or API keys in evidence files.
-    - Command: `grep -E "(sk-[a-zA-Z0-9]{20,}|Bearer|password)" evidence/*` (should be empty).
+**Evidence existence verification:**
 
-16. **Final repository status:**
-    - Git status after evidence collection (should show only evidence files).
+- `find evidence/ -type f | wc -l` — should match expected artifact count.
+- `find evidence/ -name "*.json" -exec grep -l "sk-" {} \;` — should be empty (no secrets).
 
-**Evidence lifecycle:**
+**Protected-audit status:**
 
-1. **Raw artifacts:** Written to `evidence/raw/{run_id}/` (temporary, not committed).
-2. **Redacted artifacts:** Written to `evidence/redacted/{run_id}/` (reviewable, may be committed later).
-3. **Cleanup:** Raw artifacts deleted after redaction; redacted artifacts retained for review.
-4. **Integrity:** SHA-256 checksums for all redacted artifacts written to `evidence/redacted/{run_id}/checksums.sha256`.
+- `sha256sum docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md` — must match expected hash.
+- The protected audit file is the sole pre-existing untracked worktree entry.
 
-**Evidence collector implementation:**
+**Cleanliness invariant:**
 
-```python
-# backend/tests/acceptance/evidence_collector.py (proposed)
-
-class EvidenceCollector:
-    def __init__(self, run_id: str, scenario: str, output_dir: Path):
-        self.run_id = run_id
-        self.scenario = scenario
-        self.raw_dir = output_dir / "raw" / run_id
-        self.redacted_dir = output_dir / "redacted" / run_id
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-        self.redacted_dir.mkdir(parents=True, exist_ok=True)
-    
-    def collect_api_response(self, name: str, response: dict) -> None:
-        """Save API response to raw and redacted directories."""
-        raw_path = self.raw_dir / f"{name}.json"
-        redacted_path = self.redacted_dir / f"{name}.json"
-        raw_path.write_text(json.dumps(response, indent=2))
-        redacted = self._redact_secrets(response)
-        redacted_path.write_text(json.dumps(redacted, indent=2))
-    
-    def collect_database_query(self, name: str, query: str, results: list) -> None:
-        """Save database query results."""
-        # Similar to API response.
-    
-    def collect_screenshot(self, name: str, screenshot_path: Path) -> None:
-        """Copy Playwright screenshot to evidence directories."""
-        # Copy to raw and redacted (screenshots don't need redaction).
-    
-    def compute_checksums(self) -> None:
-        """Compute SHA-256 checksums for all redacted artifacts."""
-        checksums = []
-        for path in self.redacted_dir.glob("*"):
-            checksum = hashlib.sha256(path.read_bytes()).hexdigest()
-            checksums.append(f"{checksum}  {path.name}")
-        (self.redacted_dir / "checksums.sha256").write_text("\n".join(checksums))
-    
-    def _redact_secrets(self, data: Any) -> Any:
-        """Recursively redact secrets from JSON-like data."""
-        # Replace values matching secret patterns with "[REDACTED]".
-```
-
-**Repository cleanliness:**
-
-- Evidence files are written to `evidence/` directory (gitignored).
-- `.gitignore` must include `evidence/raw/` and `evidence/redacted/`.
-- Protected audit file `docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md` remains the sole pre-existing untracked entry.
-- After evidence collection, `git status --porcelain` should show only the protected audit file.
+- `git status --porcelain` shows only: `?? docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md`.
+- No other tracked or untracked files appear.
+- Evidence directories exist but are gitignored.
 
 ---
 
 ## 5. File-Level Implementation Plan
 
-### 5.1 Production Code Changes (Minimal)
+### 5.1 Production Code Changes (Minimal, Guarded)
 
-**File:** `backend/app/ai/provider/factory.py`  
-**Change:** Add acceptance scenario registry and environment-variable check.  
-**Lines:** ~20 lines added after line 156.  
-**Scope:** Test-only, guarded by environment check.  
-**Risk:** Low — no production behavior change, clearly isolated.
+**File:** `backend/app/ai/provider/factory.py`
+**Change:** Add conditional import and usage of acceptance scenario module when `FORGEMIND_ACCEPTANCE_SCENARIO` is set.
+**Lines:** ~8 lines added (conditional block with lazy import).
+**Scope:** Guarded acceptance-only path. Environment check prevents execution in production/staging.
+**Risk:** Low — lazy import, environment guard, fail-closed for unknown scenarios.
 
-**File:** `backend/app/ai/workflow/worker.py`  
-**Change:** Add `dispatch_generation` to provider context (line 242).  
-**Lines:** 1 line added.  
-**Scope:** Metadata propagation, not part of public API contract.  
-**Risk:** Low — context dict is provider-specific.
+**File:** `backend/app/ai/provider/acceptance_scenarios.py` (proposed, new)
+**Purpose:** Acceptance scenario provider implementations and lookup function.
+**Key symbols:** `get_acceptance_provider()`, `InvalidOutputProvider`, `OutageUntilRetryProvider`, `ValidOutputProvider`.
+**Scope:** Guarded acceptance-only module. Only imported when `FORGEMIND_ACCEPTANCE_SCENARIO` is set.
+**Expected coverage:** ~150 lines.
+
+**File:** `backend/app/ai/workflow/vertical.py`
+**Change:** Add `dispatch_generation` to provider context dict at line 242–245.
+**Lines:** 1 line added.
+**Scope:** Metadata propagation to provider context. `queued_generation` is already available as a function parameter.
+**Risk:** Low — context dict is provider-specific metadata, not part of any public API contract.
+
+**Total production code changes:** 3 files, ~9 lines of logic + ~150 lines in the new acceptance module.
 
 ### 5.2 Backend Test Files
 
-**File:** `backend/tests/integration/test_at008_acceptance.py`  
-**Purpose:** AT-008 backend integration test via real ARQ worker.  
-**Key symbols:** `test_at008_invalid_output_via_worker`.  
-**AT clauses:** AT-008 (all clauses).  
-**Scope:** Integration test.  
+**File:** `backend/tests/integration/test_at008_acceptance.py` (proposed, new)
+**Purpose:** AT-008 backend integration test via real ARQ worker.
+**Key symbols:** `test_at008_invalid_output_via_worker`.
+**AT clauses:** AT-008 (all clauses).
+**Scope:** Integration test.
 **Expected coverage:** 1 test, ~100 lines.
 
-**File:** `backend/tests/integration/test_at013_acceptance.py`  
-**Purpose:** AT-013 backend integration test via real ARQ worker.  
-**Key symbols:** `test_at013_outage_retry_via_worker`.  
-**AT clauses:** AT-013 (all clauses).  
-**Scope:** Integration test.  
+**File:** `backend/tests/integration/test_at013_acceptance.py` (proposed, new)
+**Purpose:** AT-013 backend integration test via real ARQ worker.
+**Key symbols:** `test_at013_outage_retry_via_worker`.
+**AT clauses:** AT-013 (all clauses).
+**Scope:** Integration test.
 **Expected coverage:** 1 test, ~150 lines.
 
-**File:** `backend/tests/integration/conftest.py`  
-**Change:** Add `arq_pool`, `worker_process`, `wait_for_terminal_state` fixtures.  
-**Lines:** ~100 lines added.  
+**File:** `backend/tests/integration/conftest.py`
+**Change:** Add `arq_pool`, `worker_process`, `wait_for_terminal_state` fixtures.
+**Lines:** ~100 lines added.
 **Scope:** Test infrastructure.
-
-**File:** `backend/tests/acceptance/evidence_collector.py`  
-**Purpose:** Evidence collection and redaction utilities.  
-**Key symbols:** `EvidenceCollector` class.  
-**Scope:** Test infrastructure.  
-**Expected coverage:** ~200 lines.
-
-**File:** `backend/tests/acceptance/scenarios.py`  
-**Purpose:** Scenario provider implementations (`_InvalidOutputProvider`, `_OutageUntilRetryProvider`, `_ValidOutputProvider`).  
-**Key symbols:** Provider classes and registration function.  
-**Scope:** Test infrastructure.  
-**Expected coverage:** ~150 lines.
 
 ### 5.3 Playwright Test Files
 
-**File:** `frontend/e2e/at008-acceptance.spec.ts`  
-**Purpose:** AT-008 browser scenario.  
-**Key symbols:** `test("AT-008: validation failure visible in trace")`.  
-**AT clauses:** AT-008 (UI clauses).  
-**Scope:** End-to-end test.  
+**File:** `frontend/e2e/at008-acceptance.spec.ts` (proposed, new)
+**Purpose:** AT-008 browser scenario.
+**Key symbols:** `test("AT-008: validation failure visible in trace")`.
+**AT clauses:** AT-008 (UI clauses).
+**Scope:** End-to-end test.
 **Expected coverage:** 1 test, ~80 lines.
 
-**File:** `frontend/e2e/at013-acceptance.spec.ts`  
-**Purpose:** AT-013 browser scenario.  
-**Key symbols:** `test("AT-013: provider outage and user retry")`.  
-**AT clauses:** AT-013 (UI clauses).  
-**Scope:** End-to-end test.  
+**File:** `frontend/e2e/at013-acceptance.spec.ts` (proposed, new)
+**Purpose:** AT-013 browser scenario.
+**Key symbols:** `test("AT-013: provider outage and user retry")`.
+**AT clauses:** AT-013 (UI clauses).
+**Scope:** End-to-end test.
 **Expected coverage:** 1 test, ~120 lines.
 
-**File:** `frontend/playwright.config.ts`  
-**Change:** Add `acceptance` project with dedicated base URL and timeout.  
-**Lines:** ~10 lines added.  
+**File:** `frontend/playwright.config.ts`
+**Change:** Add `acceptance` project with dedicated base URL.
+**Lines:** ~10 lines added.
 **Scope:** Test configuration.
 
 ### 5.4 Orchestration Script
 
-**File:** `scripts/acceptance_harness.py`  
-**Purpose:** Process orchestration for isolated acceptance environment.  
-**Key symbols:** `run_acceptance_harness()` main function.  
-**Scope:** Orchestration.  
+**File:** `scripts/acceptance_harness.py` (proposed, new)
+**Purpose:** Process orchestration for isolated acceptance environment.
+**Key symbols:** `run_acceptance_harness()` main function, `validate_acceptance_database_url()`, `prepare_acceptance_database()`.
+**Scope:** Orchestration.
 **Expected coverage:** ~400 lines.
 
 **Responsibilities:**
 
-- Start PostgreSQL and Redis containers.
-- Prepare database (migrations, seed).
-- Start backend, worker, frontend.
+- Generate run ID.
+- Start PostgreSQL and Redis containers with run-scoped names and labels.
+- Validate database URL (fail-closed checks).
+- Prepare database (migrations, seed) with `DATABASE_URL` set.
+- Start backend, worker, frontend with correct environment.
 - Run backend integration tests.
 - Run Playwright tests.
 - Collect evidence.
-- Teardown.
+- Teardown owned resources only.
+
+**Command modes** (proposed):
+
+```python
+# Implementation-verification mode (Phase B):
+python scripts/acceptance_harness.py --mode=verify
+
+# Formal-evidence mode (Phase C):
+python scripts/acceptance_harness.py --mode=formal --run-id=<run_id>
+```
+
+- `--mode=verify`: Runs tests to prove the harness works. Output is implementation-verification evidence. Does not produce the authoritative evidence package.
+- `--mode=formal`: Runs the full harness and collects the authoritative evidence package for Product Owner review.
 
 ### 5.5 Configuration Files
 
-**File:** `.gitignore`  
-**Change:** Add `evidence/raw/` and `evidence/redacted/`.  
-**Lines:** 2 lines added.  
+**File:** `.gitignore`
+**Change:** Add `evidence/` (covers all subdirectories).
+**Lines:** 1 line added.
 **Scope:** Repository configuration.
 
-**File:** `Makefile`  
-**Change:** Add `acceptance-test` target.  
-**Lines:** ~10 lines added.  
+**File:** `Makefile`
+**Change:** Add `acceptance-verify` and `acceptance-formal` targets.
+**Lines:** ~15 lines added.
 **Scope:** Build automation.
 
-**Target definition:**
+**Proposed target definitions:**
 
 ```makefile
-acceptance-test: ## Run acceptance harness for AT-008 and AT-013
-	@echo "Running acceptance harness..."
-	python scripts/acceptance_harness.py
-	@echo "Acceptance harness complete. Evidence in evidence/redacted/"
+acceptance-verify: ## Run acceptance harness in implementation-verification mode
+	@echo "Running acceptance harness (verification mode)..."
+	python scripts/acceptance_harness.py --mode=verify
+	@echo "Verification complete."
+
+acceptance-formal: ## Run acceptance harness in formal-evidence mode
+	@echo "Running acceptance harness (formal-evidence mode)..."
+	python scripts/acceptance_harness.py --mode=formal
+	@echo "Formal evidence collected. See evidence/ directory."
 ```
 
 ### 5.6 Documentation Files
 
-**File:** `docs/planning/wp_rec_03h_acceptance_harness.md`  
-**Purpose:** This planning document.  
+**File:** `docs/planning/wp_rec_03h_acceptance_harness.md`
+**Purpose:** This planning document.
 **Scope:** Planning.
 
-**File:** `docs/ACCEPTANCE_HARNESS.md` (proposed, optional)  
-**Purpose:** User guide for running the acceptance harness.  
-**Scope:** Documentation.  
+**File:** `docs/ACCEPTANCE_HARNESS.md` (proposed, optional)
+**Purpose:** User guide for running the acceptance harness.
+**Scope:** Documentation.
 **Expected coverage:** ~100 lines.
 
 ---
@@ -683,14 +855,14 @@ acceptance-test: ## Run acceptance harness for AT-008 and AT-013
 
 **Rationale:**
 
-- **Runtime cost:** ~5-10 minutes (container startup, migrations, seed, tests, teardown).
+- **Runtime cost:** ~5–10 minutes (container startup, migrations, seed, tests, teardown).
 - **Service availability:** Requires Docker, PostgreSQL, Redis — not all CI runners have these.
 - **Determinism:** Scenario providers are deterministic, but container startup timing may vary.
 - **Artifact retention:** Evidence files are large (screenshots, traces) — not suitable for every PR.
 - **Secret-free execution:** No real API keys, but environment setup is complex.
 - **Flaky-test risk:** Low (deterministic scenarios), but container startup failures possible.
 
-**CI workflow** (proposed, optional):
+**CI workflow** (proposed, optional, for Phase C formal execution):
 
 ```yaml
 # .github/workflows/acceptance-harness.yml (proposed)
@@ -698,7 +870,6 @@ name: Acceptance Harness
 
 on:
   workflow_dispatch:  # Manual trigger only
-  # Or: push to specific branch like "acceptance/wp-rec-03h"
 
 jobs:
   acceptance:
@@ -724,19 +895,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: python scripts/acceptance_harness.py
+      - run: python scripts/acceptance_harness.py --mode=formal
+        env:
+          DATABASE_URL: postgresql+asyncpg://forgemind:forgemind@localhost:5433/forgemind_acceptance
+          REDIS_URL: redis://localhost:6380/0
       - uses: actions/upload-artifact@v4
         with:
           name: acceptance-evidence
-          path: evidence/redacted/
+          path: evidence/
 ```
 
 **Integration with existing CI:**
 
 - Existing backend unit/integration tests run on every PR (no change).
 - Existing frontend unit tests run on every PR (no change).
-- Existing Playwright E2E tests run on every PR (no change — they use mocked backend).
-- Acceptance harness tests are **separate** and run only via dedicated workflow.
+- Existing Playwright E2E tests run on every PR (no change).
+- Acceptance harness tests are **separate** and run only via dedicated workflow or manual invocation.
 
 ---
 
@@ -746,19 +920,19 @@ jobs:
 |-----------|-------|---------|---------|
 | Backend unit tests | All backend unit tests | Every PR | `cd backend && ../.venv/bin/pytest tests/unit/` |
 | Backend integration tests | All backend integration tests | Every PR | `cd backend && ../.venv/bin/pytest tests/integration/` |
-| AT-008 backend acceptance | AT-008 via real worker | Manual/dedicated workflow | `cd backend && ../.venv/bin/pytest tests/integration/test_at008_acceptance.py` |
-| AT-013 backend acceptance | AT-013 via real worker | Manual/dedicated workflow | `cd backend && ../.venv/bin/pytest tests/integration/test_at013_acceptance.py` |
+| AT-008 backend acceptance | AT-008 via real worker | Phase B verification | `cd backend && ../.venv/bin/pytest tests/integration/test_at008_acceptance.py` |
+| AT-013 backend acceptance | AT-013 via real worker | Phase B verification | `cd backend && ../.venv/bin/pytest tests/integration/test_at013_acceptance.py` |
 | Frontend unit tests | All frontend unit tests | Every PR | `cd frontend && npm test` |
-| Playwright E2E tests | Existing E2E tests (mocked backend) | Every PR | `cd frontend && npm run test:e2e` |
-| AT-008 Playwright acceptance | AT-008 browser scenario | Manual/dedicated workflow | `cd frontend && npm run test:e2e -- --project=acceptance at008-acceptance.spec.ts` |
-| AT-013 Playwright acceptance | AT-013 browser scenario | Manual/dedicated workflow | `cd frontend && npm run test:e2e -- --project=acceptance at013-acceptance.spec.ts` |
-| Full acceptance harness | All acceptance tests + evidence | Manual/dedicated workflow | `make acceptance-test` |
+| Playwright E2E tests | Existing E2E tests | Every PR | `cd frontend && npm run test:e2e` |
+| AT-008 Playwright acceptance | AT-008 browser scenario | Phase C formal | Via orchestration script |
+| AT-013 Playwright acceptance | AT-013 browser scenario | Phase C formal | Via orchestration script |
+| Full acceptance harness | All acceptance tests + evidence | Phase C formal | `make acceptance-formal` |
 
 ---
 
 ## 8. Validation Commands
 
-**Pre-implementation validation (this planning package):**
+**Pre-implementation validation (this planning package — Phase A):**
 
 ```bash
 # Verify repository identity
@@ -779,54 +953,69 @@ git status --porcelain
 # Verify planning document exists
 ls -la docs/planning/wp_rec_03h_acceptance_harness.md
 
-# Verify no syntax errors in planning document
-python -m markdown docs/planning/wp_rec_03h_acceptance_harness.md > /dev/null
-
 # Verify diff contains only planning document
 git diff --cached --name-only
 ```
 
-**Post-implementation validation (harness implementation package):**
+**Implementation-verification validation (Phase B — harness implementation package):**
 
 ```bash
-# Run backend unit tests (should still pass)
+# Run backend unit tests (no regressions)
 cd backend && ../.venv/bin/pytest tests/unit/ -v
 
-# Run backend integration tests (should still pass)
+# Run backend integration tests (no regressions)
 cd backend && ../.venv/bin/pytest tests/integration/ -v
 
-# Run frontend unit tests (should still pass)
+# Run frontend unit tests (no regressions)
 cd frontend && npm test
 
-# Run existing Playwright E2E tests (should still pass)
+# Run existing Playwright E2E tests (no regressions)
 cd frontend && npm run test:e2e
 
-# Run AT-008 backend acceptance test (new)
+# Run AT-008 backend acceptance test (new — implementation verification)
 cd backend && ../.venv/bin/pytest tests/integration/test_at008_acceptance.py -v
 
-# Run AT-013 backend acceptance test (new)
+# Run AT-013 backend acceptance test (new — implementation verification)
 cd backend && ../.venv/bin/pytest tests/integration/test_at013_acceptance.py -v
 
-# Run full acceptance harness (new)
-make acceptance-test
+# Run acceptance harness in verification mode (new)
+make acceptance-verify
+
+# Verify repository cleanliness
+git status --porcelain
+```
+
+**Formal-evidence validation (Phase C — separate authorization required):**
+
+```bash
+# Run full acceptance harness in formal-evidence mode
+make acceptance-formal
 
 # Verify evidence collected
-ls -la evidence/redacted/
-cat evidence/redacted/*/checksums.sha256
+ls -la evidence/
 
-# Verify repository cleanliness (only protected audit + evidence files)
+# Verify evidence integrity
+find evidence/ -name "checksums.sha256" -exec cat {} \;
+
+# Verify no secrets in evidence
+find evidence/ -name "*.json" -exec grep -l "sk-" {} \;
+
+# Verify repository cleanliness
 git status --porcelain
+
+# Verify evidence directory inventory
+find evidence/ -type f | wc -l
 ```
 
 ---
 
 ## 9. Stop Conditions
 
-The harness implementation must stop and report if:
+The harness implementation (Phase B) must stop and report if:
 
-1. **Production code change exceeds minimal injection point:** More than 2 files changed in `backend/app/` (excluding tests).
-2. **Test isolation failure:** Acceptance tests modify production database or Redis.
-3. **Evidence redaction failure:** Secrets, tokens, or API keys found in evidence files.
+1. **Production code change exceeds minimal injection point:** More than 3 files changed in `backend/app/` (excluding tests).
+2. **Test isolation failure:** Acceptance tests modify any database other than `forgemind_acceptance`.
+3. **Evidence redaction failure:** Secrets, tokens, or API keys found in redacted evidence files.
 4. **Determinism failure:** Scenario providers produce non-deterministic output across runs.
 5. **Container startup failure:** PostgreSQL or Redis containers fail to start within timeout.
 6. **Migration failure:** Alembic migrations fail on `forgemind_acceptance` database.
@@ -834,24 +1023,48 @@ The harness implementation must stop and report if:
 8. **Worker startup failure:** ARQ worker fails to start or connect to Redis.
 9. **Test timeout:** Backend acceptance tests or Playwright scenarios exceed timeout (5 minutes each).
 10. **Evidence collection failure:** Evidence collector fails to write artifacts or compute checksums.
+11. **Fail-closed violation:** Unknown scenario name does not raise an error, or acceptance mode is accessible in production/staging.
+12. **Database URL leak:** `DATABASE_URL` points to a non-acceptance database during harness execution.
 
 ---
 
 ## 10. Rollback Approach
 
-**If harness implementation fails:**
+### Phase B (Implementation) Failure
 
-1. Revert all changes via `git reset --hard HEAD`.
-2. Remove Docker containers: `docker rm -f forgemind-acceptance-pg forgemind-acceptance-redis`.
-3. Delete evidence directory: `rm -rf evidence/`.
-4. Report failure with exact error message and stop condition triggered.
+If the implementation package fails validation:
 
-**If harness execution fails:**
+1. **Stop the task.** Do not attempt destructive remediation.
+2. **Preserve the current diff** for review: `git diff` and `git diff --cached` capture the current state.
+3. **Report the failure** with exact error message, stop condition triggered, and current working tree state.
+4. **Revert through a later corrective commit** if required — do not use `git reset --hard`, `git stash`, `git clean`, or any destructive operation.
+5. **Do not** modify `.env`, start/stop containers, run migrations, or write to any database.
 
-1. Stop all processes (orchestration script handles this).
-2. Remove Docker containers.
-3. Retain evidence for debugging (in `evidence/raw/`).
-4. Report failure with test output and error logs.
+### Phase C (Formal Execution) Failure
+
+If the harness execution fails during formal evidence collection:
+
+1. **Stop the orchestration script.** The script's teardown handler stops owned processes and containers.
+2. **Preserve failure artifacts** in `evidence/{run_id}/raw/` for debugging.
+3. **Report the failure** with test output, error logs, and the run ID.
+4. **Do not** delete evidence, reset the repository, or modify any tracked files.
+5. **Teardown owned resources only:** The script verifies container ownership via run-scoped names/labels before stopping or removing them. Containers not owned by the current run are left untouched.
+
+### Prohibited Rollback Operations
+
+The plan does **not** authorize:
+
+- `git reset --hard`
+- `git stash`
+- `git clean`
+- `git rebase`
+- `git amend`
+- `git push --force`
+- `rm -rf` on any project directory
+- `docker rm -f` on containers not owned by the current run
+- `docker compose down -v`
+- Deletion of Docker volumes
+- Broad Docker cleanup
 
 ---
 
@@ -864,19 +1077,21 @@ The harness implementation and execution must ensure:
 3. **No real API keys:** Environment variables use sentinel values or empty strings.
 4. **No secret values in artifacts:** Evidence collector redacts all secrets before saving.
 5. **No uncontrolled external outage dependency:** Scenario providers simulate outages deterministically.
-6. **No normal development or production database mutation:** Isolated `forgemind_acceptance` database.
-7. **No deletion of Docker volumes:** Use `docker stop` and `docker rm`, not `docker compose down -v`.
+6. **No normal development or production database mutation:** Isolated `forgemind_acceptance` database with fail-closed URL validation.
+7. **No deletion of Docker volumes:** Use `docker stop` and `docker rm` on owned containers only.
 8. **No database recreation:** Orchestration script creates database if not exists, does not drop.
 9. **No installation into running containers:** All dependencies installed via `pip` or `npm` before container start.
 10. **No privilege or authorization bypass:** Tests use demo accounts with appropriate roles.
 11. **No weakening of backend role enforcement:** Production RBAC unchanged.
-12. **No acceptance-only route exposed in production:** Scenario registry guarded by environment check.
+12. **No acceptance-only route exposed in production:** Scenario module guarded by environment check; lazy import prevents loading in production/staging.
 13. **Safe user-facing errors only:** Error messages do not expose secrets or stack traces.
-14. **Deterministic teardown limited to harness-owned resources:** Only stop containers and processes started by harness.
+14. **Deterministic teardown limited to harness-owned resources:** Only stop containers and processes verified as owned by the current run.
 
 ---
 
 ## 12. Definition of Done
+
+### Phase B — Harness Implementation
 
 The harness implementation is complete when:
 
@@ -885,50 +1100,61 @@ The harness implementation is complete when:
 3. ✅ Backend integration tests pass (no regressions).
 4. ✅ Frontend unit tests pass (no regressions).
 5. ✅ Existing Playwright E2E tests pass (no regressions).
-6. ✅ AT-008 backend acceptance test passes.
-7. ✅ AT-013 backend acceptance test passes.
-8. ✅ AT-008 Playwright acceptance scenario passes.
-9. ✅ AT-013 Playwright acceptance scenario passes.
-10. ✅ Full acceptance harness runs successfully via `make acceptance-test`.
-11. ✅ Evidence collected in `evidence/redacted/` with checksums.
-12. ✅ No secrets, tokens, or API keys in evidence files.
-13. ✅ Repository cleanliness: only protected audit file and evidence files untracked.
-14. ✅ Lint passes: `make lint`.
-15. ✅ No production code changes beyond minimal injection point (2 files, ~21 lines).
+6. ✅ AT-008 backend acceptance test passes (implementation verification).
+7. ✅ AT-013 backend acceptance test passes (implementation verification).
+8. ✅ `make acceptance-verify` completes successfully (implementation verification).
+9. ✅ Lint passes: `make lint`.
+10. ✅ No production code changes beyond minimal injection point (3 files, ~9 lines logic + ~150 lines acceptance module).
+11. ✅ Fail-closed checks verified: unknown scenario raises, production/staging guard works.
+12. ✅ Repository cleanliness: `git status --porcelain` shows only the protected audit file.
 
 **The harness implementation does NOT:**
 
+- Run the harness in formal-evidence mode.
+- Collect formal acceptance evidence.
 - Declare AT-008 or AT-013 PASS.
 - Declare Phase 5 acceptance.
 - Modify Source of Truth or Decision Log.
 - Authorize formal acceptance execution.
 
+### Phase C — Formal Acceptance Execution
+
+Defined in a separate authorization after Phase B merge. The formal execution package will:
+
+1. Run the merged harness via `make acceptance-formal`.
+2. Collect the authoritative evidence package.
+3. Verify evidence integrity (checksums, redaction).
+4. Submit evidence for Product Owner review.
+
 ---
 
 ## 13. Authorization Boundary
 
-**This planning package authorizes:**
+**This planning document (Phase A):**
 
-- Harness implementation (files listed in Section 5).
-- Harness execution via `make acceptance-test`.
-- Evidence collection and redaction.
+- ✅ Specifies an implementation-ready harness design.
+- ❌ Does NOT authorize harness implementation.
+- ❌ Does NOT authorize harness execution.
+- ❌ Does NOT authorize evidence collection.
+- ❌ Does NOT authorize any code changes.
 
-**This planning package does NOT authorize:**
+**After Phase A merge, a separate Product Owner authorization is required for:**
 
-- Formal AT-008 or AT-013 PASS declaration (requires Product Owner acceptance of evidence).
-- Phase 5 acceptance declaration.
-- Source of Truth or Decision Log changes.
-- Documentation lifecycle reconciliation (deferred).
-- WP-REC-05, AT-006/AT-007 verification, Phase 6, SP-0B, or any unrelated package.
+- Phase B: Harness implementation.
 
-**Formal acceptance execution requires:**
+**After Phase B merge, a separate Product Owner authorization is required for:**
 
-1. Harness implementation reviewed and merged.
-2. Product Owner authorizes formal execution.
-3. Formal execution package runs harness and collects evidence.
-4. Product Owner reviews evidence and declares AT-008/AT-013 PASS.
-5. Phase 5 acceptance declared.
-6. Documentation lifecycle reconciliation performed.
+- Phase C: Formal acceptance execution.
+
+**After Phase C, a separate Product Owner action is required for:**
+
+- Phase D: Evidence review and acceptance declaration.
+
+**After Phase D, a separate Product Owner authorization is required for:**
+
+- Phase E: Documentation lifecycle reconciliation.
+
+No earlier step automatically authorizes a later step.
 
 ---
 
@@ -936,20 +1162,22 @@ The harness implementation is complete when:
 
 ### 14.1 Objective
 
-Implement the acceptance harness specified in this document.
+Implement the acceptance harness specified in this document (Phase B).
 
 ### 14.2 Included Scope
 
 - All files listed in Section 5.
-- All validation commands in Section 8.
-- All stop conditions in Section 9.
+- Implementation-verification tests (Section 8, Phase B commands).
+- Fail-closed validation of scenario control and database isolation.
 
 ### 14.3 Excluded Scope
 
-- Formal AT-008 or AT-013 execution.
+- Formal-evidence mode execution (`--mode=formal`).
+- Formal AT-008 or AT-013 PASS declaration.
 - Phase 5 acceptance declaration.
 - Source of Truth or Decision Log changes.
 - Documentation lifecycle reconciliation.
+- Authoritative evidence collection.
 
 ### 14.4 Prerequisites
 
@@ -961,19 +1189,35 @@ Implement the acceptance harness specified in this document.
 
 ### 14.5 Exact File Scope
 
-See Section 5.
+See Section 5. Summary:
+
+| # | File | Action | Scope |
+|---|------|--------|-------|
+| 1 | `backend/app/ai/provider/factory.py` | Modify | Production (guarded) |
+| 2 | `backend/app/ai/provider/acceptance_scenarios.py` | Create | Production (guarded) |
+| 3 | `backend/app/ai/workflow/vertical.py` | Modify | Production (1 line) |
+| 4 | `backend/tests/integration/test_at008_acceptance.py` | Create | Test |
+| 5 | `backend/tests/integration/test_at013_acceptance.py` | Create | Test |
+| 6 | `backend/tests/integration/conftest.py` | Modify | Test infrastructure |
+| 7 | `frontend/e2e/at008-acceptance.spec.ts` | Create | Test |
+| 8 | `frontend/e2e/at013-acceptance.spec.ts` | Create | Test |
+| 9 | `frontend/playwright.config.ts` | Modify | Test configuration |
+| 10 | `scripts/acceptance_harness.py` | Create | Orchestration |
+| 11 | `.gitignore` | Modify | Configuration |
+| 12 | `Makefile` | Modify | Build automation |
+| 13 | `docs/ACCEPTANCE_HARNESS.md` | Create (optional) | Documentation |
 
 ### 14.6 Deterministic Scenario-Control Design
 
-See Section 4.1.
+See Section 4.1. Key design: guarded acceptance-only module with lazy import, fail-closed for unknown scenarios, environment guard prevents production/staging access.
 
 ### 14.7 Database and Redis Isolation Design
 
-See Sections 4.2 and 4.3.
+See Sections 4.2 and 4.3. Key design: `DATABASE_URL` (not `TEST_DATABASE_URL`) propagated to all subprocesses, fail-closed URL validation, dedicated database and port.
 
 ### 14.8 Process-Orchestration Design
 
-See Section 4.4.
+See Section 4.4. Key design: run-scoped container names and labels, ownership verification before teardown, port conflict detection, no destructive operations.
 
 ### 14.9 Backend Integration-Test Design
 
@@ -985,7 +1229,7 @@ See Section 4.6.
 
 ### 14.11 Evidence Collector Design
 
-See Section 4.7.
+See Section 4.7. Key design: run-scoped directories, raw preserved until redaction verified, checksums exclude self, screenshots reviewed for sensitive content.
 
 ### 14.12 CI Strategy
 
@@ -1005,7 +1249,7 @@ See Section 9.
 
 ### 14.16 Rollback Approach
 
-See Section 10.
+See Section 10. Key design: stop task, preserve diff, report failure, revert via corrective commit, no destructive operations.
 
 ### 14.17 Security Constraints
 
@@ -1013,7 +1257,7 @@ See Section 11.
 
 ### 14.18 Definition of Done
 
-See Section 12.
+See Section 12 (Phase B).
 
 ### 14.19 Explicit Authorization Boundary
 
@@ -1021,13 +1265,13 @@ See Section 13.
 
 ### 14.20 Exact Next Action After Implementation Review
 
-After harness implementation is reviewed and merged:
+After harness implementation (Phase B) is reviewed and merged:
 
-1. Product Owner authorizes formal acceptance execution package.
-2. Formal execution package runs harness and collects evidence.
-3. Product Owner reviews evidence and declares AT-008/AT-013 PASS.
-4. Phase 5 acceptance declared.
-5. Documentation lifecycle reconciliation performed (separate package).
+1. Product Owner authorizes formal acceptance execution (Phase C).
+2. Formal execution package runs harness in `--mode=formal` and collects evidence.
+3. Product Owner reviews evidence (Phase D).
+4. Product Owner declares AT-008/AT-013 PASS and Phase 5 acceptance.
+5. Documentation lifecycle reconciliation (Phase E, separate package).
 
 ---
 
@@ -1035,214 +1279,152 @@ After harness implementation is reviewed and merged:
 
 ### 15.1 Is WP-REC-03H the correct bounded package name and scope?
 
-**Yes.** WP-REC-03H is the correct name and scope. It follows the WP-REC-03 series (Phase 5 AI Workflow) and is bounded to AT-008 and AT-013 acceptance harness only. It does not expand into WP-REC-05 (Phase 4 completion), AT-006/AT-007 verification, Phase 6, or any unrelated package.
+**Yes.** WP-REC-03H is the correct name and scope. It follows the WP-REC-03 series (Phase 5 AI Workflow) and is bounded to the AT-008 and AT-013 acceptance harness specification. It does not expand into WP-REC-05, AT-006/AT-007 verification, Phase 6, or any unrelated package.
 
 ### 15.2 Can the harness be implemented without production-code changes?
 
-**No, but with minimal changes.** Two production files require changes:
+**No.** Three production files require changes:
 
-1. `backend/app/ai/provider/factory.py`: Add acceptance scenario registry (~20 lines).
-2. `backend/app/ai/workflow/worker.py`: Add `dispatch_generation` to provider context (1 line).
+1. `backend/app/ai/provider/factory.py`: Add conditional acceptance scenario import (~8 lines).
+2. `backend/app/ai/provider/acceptance_scenarios.py`: New guarded module (~150 lines).
+3. `backend/app/ai/workflow/vertical.py`: Add `dispatch_generation` to provider context (1 line).
 
-Both changes are test-only, guarded by environment checks, and do not affect production behavior.
+All changes are guarded by environment checks, fail-closed, and do not affect production behavior.
 
 ### 15.3 What exact mechanism selects deterministic chat-provider behavior?
 
-**Environment variable `FORGEMIND_ACCEPTANCE_SCENARIO`** checked in `create_chat_provider()` after line 140. When set to `AT008_INVALID_OUTPUT`, `AT013_OUTAGE_UNTIL_RETRY`, or `NORMAL_SUCCESS`, the factory returns a scenario-specific provider from the registry. The registry is guarded by `if settings.environment not in ("production", "staging")`.
+**Environment variable `FORGEMIND_ACCEPTANCE_SCENARIO`** checked in `create_chat_provider()` (factory.py). When set and `environment` is `"development"`, the factory lazily imports `app.ai.provider.acceptance_scenarios` and calls `get_acceptance_provider(scenario_name, config)`. Unknown scenario names raise `ChatProviderConfigurationError` (fail closed). The module is never imported in production/staging.
 
 ### 15.4 How are the backend API and ARQ worker guaranteed to share the same provider scenario?
 
-Both processes read the same `FORGEMIND_ACCEPTANCE_SCENARIO` environment variable. The orchestration script sets this variable before starting both processes. The worker calls `create_chat_provider()` which checks the environment variable and returns the scenario provider.
+Both processes inherit the same `FORGEMIND_ACCEPTANCE_SCENARIO` environment variable from the orchestration script. Both call `create_chat_provider()` which reads the env var and returns the same scenario type. The scenario module is deterministic — given the same scenario name and config, it returns an equivalent provider.
 
 ### 15.5 How is the acceptance database isolated from the development database?
 
-**Dedicated database `forgemind_acceptance`** on port 5433 (or configured port). All processes read `TEST_DATABASE_URL=postgresql+asyncpg://forgemind:forgemind@localhost:5433/forgemind_acceptance`. The orchestration script creates the database, runs migrations, and seeds the golden dataset before starting tests.
+**Dedicated database `forgemind_acceptance`** on port 5433. The orchestration script sets `DATABASE_URL` (not `TEST_DATABASE_URL`) for all application subprocesses. Fail-closed validation rejects URLs pointing to the development database, production, or staging. All processes (backend, worker, Alembic, seed) receive the identical `DATABASE_URL` before module import.
 
 ### 15.6 How is Redis state isolated?
 
-**Dedicated Redis on port 6380** (or configured port). All processes read `REDIS_URL=redis://localhost:6380/0`. The orchestration script starts a dedicated Redis container.
+**Dedicated Redis on port 6380.** All processes receive `REDIS_URL=redis://localhost:6380/0` in their environment.
 
 ### 15.7 How does AT-013 fail before Retry and succeed after Retry without race-prone global state?
 
-**Dispatch-generation-aware scenario provider.** The `_OutageUntilRetryProvider` receives `dispatch_generation` in the provider context (added in Section 4.1). When `dispatch_generation == 0`, it raises `TransientChatProviderError`. When `dispatch_generation >= 1`, it returns valid `RecommendationData`. This is per-process state (the provider instance), not global mutable state. Each ARQ job creates a fresh provider instance, so there is no shared state across jobs.
+**Dispatch-generation-aware scenario provider.** The `OutageUntilRetryProvider` reads `context["dispatch_generation"]` (added to the context dict in `vertical.py`). When `dispatch_generation == 0`, it raises `TransientChatProviderError`. When `dispatch_generation >= 1`, it returns valid `RecommendationData`. Each ARQ job creates a fresh provider instance — there is no shared mutable state across jobs. The scenario behavior is determined entirely by the per-call context, not by any global registry.
 
 ### 15.8 Which Playwright interactions are real end-to-end rather than mocked?
 
 **All interactions are real** except the external provider API:
 
 - ✅ Real browser (Playwright).
-- ✅ Real frontend (React app).
-- ✅ Real backend API (FastAPI + uvicorn).
-- ✅ Real PostgreSQL persistence.
-- ✅ Real Redis queue.
+- ✅ Real frontend (React app on port 5174).
+- ✅ Real backend API (FastAPI + uvicorn on port 8001).
+- ✅ Real PostgreSQL persistence (forgemind_acceptance on port 5433).
+- ✅ Real Redis queue (port 6380).
 - ✅ Real ARQ worker.
-- ✅ Real provider adapter and retry wrapper (via scenario registry).
+- ✅ Real provider adapter and retry wrapper (via acceptance scenario module).
 - ✅ Real workflow state machine and trace persistence.
 - ❌ External provider API (replaced by deterministic scenario provider).
 
 ### 15.9 Where are raw evidence artifacts written?
 
-**`evidence/raw/{run_id}/`** (temporary, gitignored, deleted after redaction).
+**`evidence/{run_id}/raw/`** (gitignored, preserved until redaction verification succeeds, then deleted).
 
 ### 15.10 Which evidence artifacts, if any, are later committed?
 
-**None are committed automatically.** The `evidence/redacted/{run_id}/` directory contains reviewable artifacts that **may** be committed later by a separate documentation lifecycle package, but this is not authorized by WP-REC-03H.
+**None are committed automatically.** Evidence directories are gitignored. A future documentation lifecycle package (Phase E) may choose to commit selected redacted artifacts, but this is not authorized by WP-REC-03H.
 
 ### 15.11 How is repository cleanliness evaluated while evidence exists?
 
-**Git status check:** `git status --porcelain` should show only:
+**Two separate checks:**
 
-1. The protected audit file: `docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md`.
-2. The evidence directories: `evidence/raw/` and `evidence/redacted/` (gitignored).
-
-No other untracked or modified files are permitted.
+1. **Tracked worktree cleanliness:** `git status --porcelain` shows only the protected audit file. Evidence directories are gitignored and do not appear.
+2. **Evidence inventory:** `ls evidence/{run_id}/redacted/` and `find evidence/ -type f | wc -l` verify evidence exists outside the tracked worktree.
 
 ### 15.12 What is the exact implementation file list?
 
-See Section 5. Summary:
-
-**Production code (2 files):**
-
-1. `backend/app/ai/provider/factory.py` (modify).
-2. `backend/app/ai/workflow/worker.py` (modify).
-
-**Backend tests (5 files):**
-
-3. `backend/tests/integration/test_at008_acceptance.py` (create).
-4. `backend/tests/integration/test_at013_acceptance.py` (create).
-5. `backend/tests/integration/conftest.py` (modify).
-6. `backend/tests/acceptance/evidence_collector.py` (create).
-7. `backend/tests/acceptance/scenarios.py` (create).
-
-**Playwright tests (3 files):**
-
-8. `frontend/e2e/at008-acceptance.spec.ts` (create).
-9. `frontend/e2e/at013-acceptance.spec.ts` (create).
-10. `frontend/playwright.config.ts` (modify).
-
-**Orchestration and configuration (3 files):**
-
-11. `scripts/acceptance_harness.py` (create).
-12. `.gitignore` (modify).
-13. `Makefile` (modify).
-
-**Documentation (1 file, optional):**
-
-14. `docs/ACCEPTANCE_HARNESS.md` (create, optional).
+See Section 14.5. Summary: 13 files (3 production, 3 backend tests, 3 Playwright tests, 3 orchestration/config, 1 optional docs).
 
 ### 15.13 What is the exact validation command sequence?
 
-See Section 8. Summary:
-
-```bash
-# Pre-implementation (this planning package)
-git remote -v | grep Tihonya/forgemind-ai-operations
-git branch --show-current
-git rev-parse HEAD
-sha256sum docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md
-wc -l docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md
-wc -c docs/reviews/wp-rec-03f-post-pr76-readiness-audit.md
-git status --porcelain
-ls -la docs/planning/wp_rec_03h_acceptance_harness.md
-git diff --cached --name-only
-
-# Post-implementation (harness implementation package)
-cd backend && ../.venv/bin/pytest tests/unit/ -v
-cd backend && ../.venv/bin/pytest tests/integration/ -v
-cd frontend && npm test
-cd frontend && npm run test:e2e
-cd backend && ../.venv/bin/pytest tests/integration/test_at008_acceptance.py -v
-cd backend && ../.venv/bin/pytest tests/integration/test_at013_acceptance.py -v
-make acceptance-test
-ls -la evidence/redacted/
-cat evidence/redacted/*/checksums.sha256
-git status --porcelain
-```
+See Section 8. Phase B commands for implementation verification; Phase C commands for formal evidence (separate authorization).
 
 ### 15.14 Does harness implementation require CI changes?
 
-**No, but optional.** The harness can run manually via `make acceptance-test`. An optional CI workflow (`.github/workflows/acceptance-harness.yml`) can be added later for automated execution, but this is not required for harness implementation.
+**No.** The harness runs manually via `make acceptance-verify` (Phase B) or `make acceptance-formal` (Phase C). An optional CI workflow can be added later, but is not required for implementation.
 
 ### 15.15 What later package will execute formal acceptance?
 
-**WP-REC-03H-EXEC** (proposed name) or a similar formal execution package. This package will:
-
-1. Run the harness via `make acceptance-test`.
-2. Collect evidence.
-3. Submit evidence to Product Owner for review.
-4. Product Owner declares AT-008/AT-013 PASS.
-5. Phase 5 acceptance declared.
+**Phase C** (formal acceptance execution) is a separate authorization after Phase B merge. It will run the merged harness via `make acceptance-formal`, collect authoritative evidence, and submit it for Product Owner review (Phase D).
 
 ### 15.16 What conditions block formal acceptance execution?
 
-Formal acceptance execution is blocked if:
-
-1. Harness implementation is not reviewed and merged.
-2. Harness execution fails (test failures, evidence collection failures).
-3. Evidence contains secrets, tokens, or API keys.
-4. Evidence does not demonstrate all AT-008 and AT-013 clauses.
-5. Product Owner does not authorize formal execution.
+1. Harness implementation (Phase B) is not reviewed and merged.
+2. Product Owner has not authorized Phase C.
+3. Harness execution fails (test failures, evidence collection failures).
+4. Evidence contains secrets, tokens, or API keys.
+5. Evidence does not demonstrate all AT-008 and AT-013 clauses.
 
 ---
 
 ## 16. Unresolved Questions
 
-**None.** All design decisions are resolved and specified in this document.
+**One explicit design limitation:**
+
+The `workflow_runs` table stores only the current state, not a history of transitions. State-transition evidence is reconstructed from workflow steps, structured logs, and API snapshots. If a persisted transition history is required for formal acceptance, that would be a product change outside the harness scope. The current evidence model is sufficient for AT-008 and AT-013 because the workflow steps table provides a complete append-only audit trail of all execution steps, and the structured logs capture state transitions with timestamps.
+
+**No other unresolved questions.** All design decisions are resolved and specified in this document.
 
 ---
 
 ## 17. Lifecycle and Authorization Boundary Confirmation
 
-**This planning package:**
+**This planning document (Phase A) authorizes:**
 
-- ✅ Authorizes harness implementation.
-- ✅ Authorizes harness execution via `make acceptance-test`.
-- ✅ Authorizes evidence collection and redaction.
-- ❌ Does NOT authorize formal AT-008 or AT-013 PASS declaration.
-- ❌ Does NOT authorize Phase 5 acceptance declaration.
-- ❌ Does NOT authorize Source of Truth or Decision Log changes.
-- ❌ Does NOT authorize documentation lifecycle reconciliation.
-- ❌ Does NOT authorize WP-REC-05, AT-006/AT-007 verification, Phase 6, SP-0B, or any unrelated package.
+- ✅ Specification of an implementation-ready harness design.
+- ❌ Nothing else.
 
-**Harness implementation completion:**
+**Phase B (harness implementation) requires:**
 
-- Merging the harness implementation PR does NOT declare AT-008 or AT-013 PASS.
-- It only provides the tooling to collect evidence.
+- Separate Product Owner authorization after Phase A merge.
+- May: implement harness code, run verification tests, create implementation PR.
+- Must NOT: collect formal evidence, declare PASS, declare Phase 5 accepted.
 
-**Harness execution:**
+**Phase C (formal execution) requires:**
 
-- Running `make acceptance-test` collects evidence but does NOT declare PASS.
-- Evidence must be reviewed by Product Owner.
+- Separate Product Owner authorization after Phase B merge.
+- May: run harness in formal mode, collect authoritative evidence.
+- Must NOT: declare PASS.
 
-**Product Owner acceptance:**
+**Phase D (acceptance declaration) requires:**
 
 - Product Owner reviews evidence and explicitly declares AT-008/AT-013 PASS.
-- Phase 5 acceptance is declared separately.
+- Product Owner declares Phase 5 acceptance.
 
-**Documentation lifecycle reconciliation:**
+**Phase E (documentation reconciliation) requires:**
 
-- Deferred to a separate package after Phase 5 acceptance.
+- Separate Product Owner authorization after Phase D.
 
 ---
 
 ## 18. Recommended Next Action
 
-**After this planning package is reviewed and approved:**
+**After this planning PR (#82) is reviewed and merged:**
 
-Authorize harness implementation package with the following scope:
+The Product Owner may authorize Phase B (harness implementation) with the following scope:
 
-- Implement all files listed in Section 5.
-- Run all validation commands in Section 8.
-- Collect evidence via `make acceptance-test`.
+- Implement all files listed in Section 14.5.
+- Run all Phase B validation commands in Section 8.
+- Run `make acceptance-verify` to prove the harness works.
 - Submit implementation PR for review.
 
-**Do NOT authorize:**
+**Do NOT authorize in the same task:**
 
-- Formal AT-008 or AT-013 execution.
+- Formal acceptance execution (Phase C).
+- AT-008 or AT-013 PASS declaration.
 - Phase 5 acceptance declaration.
 - Source of Truth or Decision Log changes.
 - Documentation lifecycle reconciliation.
 
 ---
 
-**End of WP-REC-03H Planning Document**
+**End of WP-REC-03H Planning Document (Corrected)**
