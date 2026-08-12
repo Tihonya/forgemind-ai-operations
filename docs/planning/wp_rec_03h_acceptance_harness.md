@@ -195,7 +195,7 @@ The harness must exercise the **real production workflow path** through ARQ work
 
 **Workflow hooks** (`frontend/src/hooks/`):
 
-- `use-workflow-run.ts`: Polls `GET /api/v1/workflow-runs/{run_id}` every 2 seconds when state is `PENDING` or `RUNNING`. Stops polling when state reaches terminal state (`COMPLETED`, `FAILED_*`).
+- `use-workflow-run.ts`: Polls `GET /api/v1/workflow-runs/{run_id}` every 3 seconds when state is `PENDING` or `RUNNING`. Stops polling when state reaches terminal state (`COMPLETED`, `FAILED_*`).
 - `use-workflow-start.ts`: POST `/api/v1/workflow-runs` to start a workflow.
 - `use-workflow-retry.ts`: POST `/api/v1/workflow-runs/{run_id}/retry` to retry a failed workflow.
 
