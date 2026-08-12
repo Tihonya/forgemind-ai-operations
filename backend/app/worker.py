@@ -9,7 +9,6 @@ from arq.cron import cron
 
 from app.ai.workflow.reconciler import (
     CRON_TIMEOUT_SECONDS,
-    RECONCILER_INTERVAL_SECONDS,
     reconcile_stale_pending_runs,
 )
 from app.ai.workflow.worker import workflow_retry, workflow_start
@@ -108,7 +107,7 @@ class WorkerSettings:
             reconcile_stale_pending_runs,
             hour=None,
             minute=None,
-            second=RECONCILER_INTERVAL_SECONDS,
+            second=0,
             timeout=CRON_TIMEOUT_SECONDS,
             unique=True,
         ),

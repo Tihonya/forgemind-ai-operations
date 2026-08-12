@@ -103,3 +103,6 @@ secrets/
 
 # Agent loop artifacts
 .ralph-tui/artifacts/
+
+# Acceptance harness evidence (WP-REC-03H)
+evidence/

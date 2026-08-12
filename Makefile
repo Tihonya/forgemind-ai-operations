@@ -59,3 +59,13 @@ smoke-test: ## Run smoke tests on running services
 	@echo "Running smoke tests..."
 	./scripts/run-tests.sh
 	@echo "Smoke tests passed."
+
+acceptance-verify: ## Run acceptance harness in implementation-verification mode (Phase B)
+	@echo "Running acceptance harness (verification mode)..."
+	python scripts/acceptance_harness.py --mode=verify
+	@echo "Verification complete."
+
+acceptance-formal: ## Run acceptance harness in formal-evidence mode (Phase C — requires PO authorization)
+	@echo "Running acceptance harness (formal-evidence mode)..."
+	python scripts/acceptance_harness.py --mode=formal
+	@echo "Formal evidence collected. See evidence/ directory."
