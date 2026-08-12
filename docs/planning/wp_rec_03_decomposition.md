@@ -17,6 +17,21 @@
 - WP-REC-03F: COMPLETE — merged via PR #78 at `aab132325b65123a8abee8787c013f70f0ab9b74` on 2026-08-11. Backend workflow start/retry API, ARQ worker, and D6 reconciler implemented. All D1-D6 contracts satisfied.
 - WP-REC-03G: COMPLETE — merged via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` on 2026-08-12. Frontend workflow start/retry controls, stale-mutation protection, role-based authorization, plan-change guard, and deterministic polling lifecycle implemented.
 
+**WP-REC-03G Completion Evidence (2026-08-12):**
+
+WP-REC-03G (Frontend Start/Retry UI Interaction) was delivered via PR #80:
+
+- PR #80 head: `554d08037fe32312f5f4d4f29c1d8b3e456d2737`
+- Merge commit: `1582c394c1a82775b77259983a0dce364d42023a` (two-parent, regular merge)
+- Merge date: 2026-08-12
+- Frontend Start and Retry controls delivered for the supply-risk detail route.
+- Retry visibility is limited to the production manager (`PRODUCTION_MANAGER`) or the run creator.
+- Workflow activity and polling preserve the existing supply-risk content; they do not replace or block it.
+- Plan changes suppress stale Start and Retry completions; a stale completion cannot install an obsolete `run_id` or trigger polling/invalidation for an obsolete plan.
+- Post-merge `Frontend CI` and `End-to-End Tests` both completed successfully on the exact merge commit `1582c39…`.
+- AT-013 implementation is complete as a result; formal AT-013 PASS still requires accepted end-to-end model-outage evidence.
+- Phase 5 implementation packages (WP-REC-03A through WP-REC-03G) are all delivered; formal Phase 5 acceptance is pending because accepted AT-008 and AT-013 evidence is not yet recorded.
+
 ---
 
 ## 1. Purpose
@@ -466,7 +481,7 @@ Each package below specifies the 15 required attributes.
 - No user-initiated retry API (that is 03F)
 - No frontend changes (UI non-freeze behavior and user-facing retry interaction are 03G; read-only trace visibility is 03E; backend start/retry execution is 03F)
 - No approval/audit logic
-- AT-013 implementation is NOT complete after 03D alone, and remains NOT complete after 03F alone — AT-013 additionally requires failed-step visibility in UI (03E), workflow execution wiring (03F), and user-initiated retry UI (03G). Backend implementation is complete after 03F, but formal PASS requires accepted end-to-end evidence.
+- AT-013 implementation was NOT complete after 03D alone, and remained NOT complete after 03F alone — AT-013 additionally required failed-step visibility in UI (03E), workflow execution wiring (03F), and user-initiated retry UI (03G). At 03D-specification time, only backend automatic-retry mechanics were delivered; 03G (frontend start/retry UI) was a future requirement. The 03G requirement was subsequently satisfied via PR #80 (merged 2026-08-12). AT-013 implementation is now complete (03D+03F+03E+03G); formal PASS still requires accepted end-to-end model-outage evidence.
 
 **6. Permitted repository areas:**
 - `backend/app/ai/workflow/outage_handler.py` (new)
@@ -485,7 +500,7 @@ Each package below specifies the 15 required attributes.
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "cloud and local endpoint must connect through same adapter contract"
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 implementation is NOT complete after 03D alone, and remains NOT complete after 03F alone. This package covers only the **automatic** backend retry/outage mechanics. AT-013 additionally requires: failed AI step visible to user (03E), workflow start/retry execution (03F), and user-facing retry UI (03G). AT-013 backend implementation is complete after 03F, but formal PASS requires both 03G UI implementation and accepted end-to-end evidence.
+- AT-013 implementation was NOT complete after 03D alone, and remained NOT complete after 03F alone. This package covers only the **automatic** backend retry/outage mechanics. At 03D-specification time, AT-013 additionally required: failed AI step visible to user (03E), workflow start/retry execution (03F), and user-facing retry UI (03G). AT-013 backend implementation was complete after 03F; 03G remained a future requirement. The 03G requirement was subsequently satisfied via PR #80 (merged 2026-08-12). AT-013 implementation is now complete (03D+03F+03E+03G); formal PASS still requires accepted end-to-end model-outage evidence.
 - Additional unit tests: transient error retried N times then `FAILED_PROVIDER`, permanent error not retried, exponential backoff timing, retry exhausted then graceful failure
 - Additional integration tests: full outage scenario with mocked provider, partial outage (intermittent errors), retry-then-success
 
@@ -1098,7 +1113,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §2: "LLM is not the source of truth for arithmetic" — deterministic risk result is authoritative input to the workflow
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §6: structured recommendation schema — `"plan_id": "PLAN-2026-W31"` is the external plan identifier; D3 aligns the start request `plan_id` with this external identifier, not with the database UUID
 - `02_SYSTEM_BEHAVIOR_AND_DATA.md` §8: "recommendation → draft action → approval request → human decision → procurement task → audit event" — no write action before approval (Phase 6)
-- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry" — AT-013 **backend clauses** implementation complete after 03F; UI clauses require 03G; formal PASS requires accepted end-to-end evidence.
+- `04_ACCEPTANCE_TESTS.md` AT-013: "AI endpoint unavailable → risk engine result remains available, workflow shows failed AI step, UI does not freeze, user can retry" — at 03F-specification time, AT-013 backend clauses were complete after 03F and UI clauses still required 03G. The 03G requirement was subsequently satisfied via PR #80 (merged 2026-08-12). AT-013 implementation is now complete (03D+03F+03E+03G); formal PASS requires accepted end-to-end model-outage evidence.
 - `03_DEFINITION_OF_DONE.md` Gate C: "When model unavailable, system shows controlled failure state"
 - DEC-004: deterministic business logic; LLM explains
 - DEC-005: AI creates draft action only; write requires approval
@@ -1106,7 +1121,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 - DEC-012: HTTP polling (3s interval) for run progress
 
 **9. Acceptance tests and additional unit/integration tests:**
-- AT-013 backend clauses implementation complete after 03F (pending formal acceptance evidence): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). The UI clauses (non-freezing UI, user can retry in UI) require 03G. Formal AT-013 PASS requires both 03G implementation and accepted end-to-end evidence.
+- AT-013 backend clauses were complete after 03F (pending formal acceptance evidence): AI endpoint unavailable → risk engine result available, workflow shows failed AI step. All backend clauses verifiable: risk engine result persisted independently of provider call (03D backend + 03F worker); workflow shows failed AI step (03F worker transitions to `FAILED_PROVIDER`; 03E serves the trace). At 03F-specification time, the UI clauses (non-freezing UI, user can retry in UI) still required 03G. The 03G requirement was subsequently satisfied via PR #80 (merged 2026-08-12). AT-013 implementation is now complete (03D+03F+03E+03G); formal PASS requires accepted end-to-end model-outage evidence.
 - Additional unit tests (HTTP): start returns 202 with `run_id` (as `PRODUCTION_MANAGER`); start returns 403 for authenticated non-`PRODUCTION_MANAGER`; start returns 401 for unauthenticated; `triggered_by` is set to `current_user.username` on start; retry returns 202 only on eligible failed states (`FAILED_PROVIDER`, `FAILED_VALIDATION`, `FAILED_INTERNAL`) for run creator or `PRODUCTION_MANAGER`; retry on `COMPLETED` returns 409 (non-retryable terminal); retry on non-terminal (`RUNNING`, `AWAITING_VALIDATION`) returns 409; retry on `PENDING` returns 409; retry by non-creator/non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by non-`PRODUCTION_MANAGER` returns 403; retry when `triggered_by IS NULL` by `PRODUCTION_MANAGER` returns 202; retry does not modify `triggered_by`; duplicate start with same idempotency key returns existing `run_id`; enqueue failure returns 503; concurrent retry — losing caller receives 409.
 - Additional D3 unit tests (start-request `plan_id` validation): valid exact `ProductionPlan.code` accepted and resolves to the persisted `WorkflowRun.plan_id` UUID; missing `plan_id` returns 422; `plan_id: null` returns 422; JSON number/boolean/array/object `plan_id` returns 422; empty-string `plan_id` returns 422; whitespace-only `plan_id` returns 422; `plan_id` with leading or trailing whitespace returns 422; a syntactically valid UUID string is NOT resolved through `ProductionPlan.id` — it is looked up only as an exact `ProductionPlan.code` and returns 404 when no such code exists; unknown exact code returns 404 `production_plan_not_found` and creates no `WorkflowRun`, no state transition, no commit, and no ARQ enqueue; persisted `WorkflowRun.plan_id` is the resolved UUID; the start response remains exactly `{run_id, state, location}` with no `plan_id`; no trimming, case normalization, or `PLAN-*` regex is applied.
 - Additional state-machine unit tests: `FAILED_PROVIDER → PENDING` accepted; `FAILED_VALIDATION → PENDING` accepted; `FAILED_INTERNAL → PENDING` accepted; `COMPLETED → PENDING` rejected (non-retryable terminal); `get_allowed_transitions` for the three failed states now includes `PENDING`; `get_allowed_transitions` for `COMPLETED` remains empty; `is_terminal` for the three failed states still returns `True` (terminal for ordinary execution); `TERMINAL_STATES` frozenset unchanged (the three failed states remain in it — retry is an explicit external action, not a polling/ordinary transition).
@@ -1268,7 +1283,7 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 |----|-------------|---------------------|------------|------------------------|
 | AT-007 | Document access control | WP-REC-05 only (NOT Phase 5) | After WP-REC-05 | NOT covered by Phase 5 |
 | AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E + 03F | Implementation complete after 03F+03E (validator after 03C, trace after 03E, worker after 03F) | Implementation COMPLETE; formal PASS NOT RECORDED (requires accepted end-to-end evidence) |
-| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | Backend implementation after 03F (03D+03F); trace visibility after 03E; UI clauses require 03G | Implementation INCOMPLETE (03G NOT AUTHORIZED); formal PASS NOT RECORDED (requires 03G + accepted evidence) |
+| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | Backend after 03F (03D+03F); trace visibility after 03E; UI after 03G (merged via PR #80) | Implementation COMPLETE (03D+03F+03E+03G); formal PASS NOT RECORDED (requires accepted end-to-end evidence) |
 
 AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Phase 5. 03E provides a partial foundation for AT-012 (workflow trace visibility) but AT-012 is NOT PASS during Phase 5.
 
@@ -1283,21 +1298,21 @@ AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Ph
 | No package is oversized | ✅ All packages are M or S; no L packages; 03F split into backend (M) + frontend (S) |
 | Each package has independently reviewable scope | ✅ Each package has explicit included scope and exclusions |
 | Each package can be reverted independently | ✅ Each package is a feature branch; migrations have downgrade paths |
-| Tests map to AT requirements | ✅ AT-008: validator after 03C (unit-level), implementation complete after 03F+03E (formal PASS requires evidence); AT-013: backend implementation after 03F, UI requires 03G (formal PASS requires evidence) |
+| Tests map to AT requirements | ✅ AT-008: validator after 03C (unit-level), implementation complete after 03F+03E (formal PASS requires evidence); AT-013: implementation complete after 03D+03F+03E+03G (03G merged via PR #80; formal PASS requires evidence) |
 | No package depends on unauthorized Runtime separation | ✅ No package touches `scripts/agent-loop/` or `.agent-loop/`; zero runtime coupling |
-| Lifecycle and authorization states are current | ✅ WP-REC-03A through 03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78). WP-REC-03G remains NOT AUTHORIZED. Completed work is not represented as merely authorized or pending authorization. No future package is represented as authorized. |
-| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E, 03F are now COMPLETE (merged via PRs #72, #73, #74, #78). WP-REC-03G NOT AUTHORIZED. |
+| Lifecycle and authorization states are current | ✅ WP-REC-03A through 03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). Completed work is not represented as merely authorized or pending authorization. No future package is represented as authorized. |
+| Exact first candidate identified but unauthorized | ✅ WP-REC-03A was the first candidate; COMPLETE (merged via PR #63); WP-REC-03B was the second candidate; COMPLETE (merged via PR #65). WP-REC-03C, 03D, 03E, 03F, 03G are now COMPLETE (merged via PRs #72, #73, #74, #78, #80). All Phase 5 implementation packages delivered. |
 | Deterministic risk calculation is authoritative input | ✅ DEC-004 preserved; risk engine feeds workflow via 03F worker |
 | Structured and schema-validated model output | ✅ 03C enforces SoT §6 schema; AT-008 validator (unit-level) after 03C; implementation complete after 03F+03E (formal PASS requires evidence) |
 | Human approval before controlled writes | ✅ No write actions in Phase 5; approval is Phase 6 (WP-REC-04) |
 | Complete audit traceability | ✅ Workflow steps and correlation IDs (03B); full audit events in Phase 6 |
-| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03F (ARQ worker, persistence) + 03E (trace) + 03G (UI non-freeze, user retry); AT-013 backend implementation complete after 03F; UI implementation requires 03G (formal PASS requires evidence) |
+| Graceful model/provider outage behavior | ✅ 03D (automatic backend retry) + 03F (ARQ worker, persistence) + 03E (trace) + 03G (UI non-freeze, user retry, merged via PR #80); AT-013 implementation complete after 03D+03F+03E+03G (formal PASS requires accepted end-to-end evidence) |
 | Synthetic-data-only policy | ✅ DEC-003 preserved; fake provider uses no real data |
 | No runtime dependency on scripts/agent-loop | ✅ No package imports or depends on agent-loop code |
 | No coupling to forgemind-agent-runtime | ✅ Runtime separation (SP-0B) is NOT AUTHORIZED and not required |
 | AT-007 maps only to WP-REC-05 | ✅ AT-007 is NOT mapped to any Phase 5 package |
 | AT-008 ownership clear | ✅ 03C owns validator (unit-level); 03F wires worker execution; 03E renders trace; implementation complete after 03F+03E (formal PASS requires evidence) |
-| AT-013 not PASS before full retry+UI | ✅ AT-013 backend implementation complete after 03F (03D+03F+03E trace); UI implementation requires 03G (NOT AUTHORIZED); formal PASS requires 03G + accepted evidence |
+| AT-013 not PASS without accepted evidence | ✅ AT-013 implementation complete after 03D+03F+03E+03G (03G merged via PR #80 on 2026-08-12); formal PASS requires accepted end-to-end evidence |
 | Start/retry API has explicit package owner | ✅ 03F owns start/retry API + ARQ worker (backend half) |
 | Recommendation UI has explicit package owner | ✅ 03E owns recommendation display; 03G adds start/retry UI actions |
 | Recommendation persistence has explicit package owner | ✅ 03B owns SQLAlchemy Recommendation model and migration; 03C owns Pydantic wire schema; 03F's worker writes; 03E reads |
@@ -1356,11 +1371,11 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 
 **WP-REC-03B (Workflow/State-Machine Foundation) is also COMPLETE — merged via PR #65 at `fc48aed557d20f516cf46fe94175ce2d22c61dba` (2026-08-09).** The second candidate implementation package is complete.
 
-**Phase 5 implementation status (2026-08-11 reconciliation):** WP-REC-03A through WP-REC-03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78 respectively). WP-REC-03F implementation is COMPLETE — merged via PR #78 at commit aab132325b65123a8abee8787c013f70f0ab9b74 on 2026-08-11, satisfying all D1-D6 contracts. WP-REC-03G is NOT AUTHORIZED.
+**Phase 5 implementation status (2026-08-12 reconciliation):** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80 respectively). WP-REC-03F is COMPLETE — merged via PR #78 at commit `aab132325b65123a8abee8787c013f70f0ab9b74` on 2026-08-11, satisfying all D1-D6 contracts. WP-REC-03G is COMPLETE — merged via PR #80 at commit `1582c394c1a82775b77259983a0dce364d42023a` on 2026-08-12.
 
 ---
 
-## 12. Summary of NOT AUTHORIZED Items
+## 12. Package Status Summary (Phase 5 lifecycle and authorization boundaries)
 
 | Item | Status |
 |------|--------|
@@ -1371,8 +1386,8 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03D (automatic provider retry/outage — backend) | COMPLETE — merged via PR #73 |
 | WP-REC-03E (workflow-run detail + recommendation UI) | COMPLETE — merged via PR #74 |
 | WP-REC-03F (backend workflow start/retry API + ARQ worker) | COMPLETE — merged via PR #78 at aab132325b65123a8abee8787c013f70f0ab9b74 on 2026-08-11 |
-| WP-REC-03G (frontend start/retry UI interaction) | NOT AUTHORIZED |
-| WP-REC-03 implementation (as a whole) | MIXED LIFECYCLE — WP-REC-03A through WP-REC-03F are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78); WP-REC-03G is NOT AUTHORIZED |
+| WP-REC-03G (frontend start/retry UI interaction) | COMPLETE — merged via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` on 2026-08-12 |
+| WP-REC-03 implementation (as a whole) | COMPLETE — WP-REC-03A through WP-REC-03G are all merged via PRs #63, #65, #72, #73, #74, #78, #80; formal Phase 5 acceptance pending accepted AT-008 and AT-013 evidence |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
