@@ -122,6 +122,7 @@ markers = [
     "unit: Unit tests",
     "integration: Integration tests",
     "slow: Slow running tests",
+    "acceptance: Acceptance harness tests (require isolated acceptance database on port 5433)",
 ]
 
 [tool.coverage.run]

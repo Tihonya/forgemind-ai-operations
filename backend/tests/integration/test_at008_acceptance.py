@@ -30,6 +30,8 @@ from app.ai.workflow.state_machine import WorkflowState
 from app.ai.workflow.vertical import execute_workflow
 from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
 
+pytestmark = pytest.mark.acceptance
+
 _INTEGRATION_DB_URL = (
     os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 )
