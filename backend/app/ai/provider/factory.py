@@ -139,6 +139,25 @@ def create_chat_provider(
 
     name = provider_name if provider_name is not None else effective_config.embedding_provider
 
+    # --- Acceptance scenario override (development-only, fail-closed). ---
+    # When FORGEMIND_ACCEPTANCE_SCENARIO is set and the environment is
+    # "development", return a deterministic scenario provider instead of
+    # any normal provider.  Production and staging fail closed.
+    import os as _os
+    _acceptance_scenario = _os.environ.get("FORGEMIND_ACCEPTANCE_SCENARIO")
+    if _acceptance_scenario:
+        if effective_config.environment in ("production", "staging"):
+            raise ChatProviderConfigurationError(
+                "Acceptance scenarios are not available in "
+                f"{effective_config.environment}"
+            )
+        # Lazy import — the acceptance module is never loaded in
+        # production/staging or when the env var is absent.
+        from app.ai.provider.acceptance_scenarios import get_acceptance_provider
+        delegate = get_acceptance_provider(_acceptance_scenario, effective_config)
+        return _wrap_with_retry(delegate, effective_config)
+    # --- End acceptance override. ---
+
     if name == "fake":
         if effective_config.environment in ("production", "staging"):
             raise ChatProviderConfigurationError(

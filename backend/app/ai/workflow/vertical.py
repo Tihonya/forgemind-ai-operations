@@ -242,6 +242,7 @@ async def execute_workflow(
         context: dict[str, Any] = {
             "correlation_id": str(run.correlation_id),
             "run_id": str(run.id),
+            "dispatch_generation": queued_generation,
         }
         chat_result = await provider.complete(
             prompt=prompt,
