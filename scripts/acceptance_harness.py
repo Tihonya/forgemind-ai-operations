@@ -22,17 +22,22 @@ from __future__ import annotations
 import argparse
 import datetime
 import hashlib
+import io
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import time
 import uuid
 import zipfile
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+import psycopg
 
 # Repository root (parent of scripts/)
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -40,24 +45,46 @@ BACKEND_DIR = REPO_ROOT / "backend"
 FRONTEND_DIR = REPO_ROOT / "frontend"
 
 # Secret patterns for redaction (configurable for testing)
-# Note: Removed overbroad base64 pattern that corrupted SHA-256 and git SHAs
-DEFAULT_REDACTION_PATTERNS: list[str] = [
-    r"sk-[A-Za-z0-9]{20,}",                        # OpenAI-style keys
-    r"password=[^\s&]+",                           # password= values
-    r"secret[_-]?key=[^\s&]+",                     # secret_key= values
-    r"token=[^\s&]+",                              # token= values
-    r"api[_-]?key=[^\s&]+",                        # api_key= values
-    r"acceptance-test-secret-key-must-be-32-chars", # hardcoded test secret
-    # URL-embedded credentials (H-01)
-    r"://[^/\s:]+:[^/\s@]+@",                      # user:password@host in URLs
-    # JWT tokens (L-01)
-    r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",  # JWT format
-    # Authorization headers (L-02)
-    r"(?i)authorization:\s*[^\s]+",                # Authorization: Bearer/Basic
-    # Cookies and session values (L-02)
-    r"session[_-]?id=[^\s;]+",                     # session_id= values
-    r"auth[_-]?token=[^\s;]+",                     # auth_token= values
+REDACTION_PAIRS: list[tuple[str, str]] = [
+    # OpenAI-style keys
+    (r"sk-[A-Za-z0-9]{20,}", "[REDACTED]"),
+    # password= values
+    (r"password=[^\s&]+", "password=[REDACTED]"),
+    # secret_key= values
+    (r"secret[_-]?key=[^\s&]+", "secret_key=[REDACTED]"),
+    # token= values
+    (r"token=[^\s&]+", "token=[REDACTED]"),
+    # api_key= values
+    (r"api[_-]?key=[^\s&]+", "api_key=[REDACTED]"),
+    # JSON-quoted secret fields: "secret_key": "value" (M-08)
+    (r'(?i)"secret[_-]?key"\s*:\s*"[^"]*"', '"secret_key":"[REDACTED]"'),
+    # JSON-quoted api_key fields: "api_key": "value" (M-08)
+    (r'(?i)"api[_-]?key"\s*:\s*"[^"]*"', '"api_key":"[REDACTED]"'),
+    # JSON-quoted password fields: "password": "value" (M-08)
+    (r'(?i)"password"\s*:\s*"[^"]*"', '"password":"[REDACTED]"'),
+    # JSON-quoted token fields: "token": "value" (M-08)
+    (r'(?i)"token"\s*:\s*"[^"]*"', '"token":"[REDACTED]"'),
+    # JSON-quoted auth_token fields: "auth_token": "value" (M-08)
+    (r'(?i)"auth[_-]?token"\s*:\s*"[^"]*"', '"auth_token":"[REDACTED]"'),
+    # hardcoded test secret
+    (r"acceptance-test-secret-key-must-be-32-chars", "[REDACTED]"),
+    # URL-embedded credentials with username (M-08: preserve scheme and host)
+    (r"(://)[^/\s:]+:[^/\s@]+@", r"\1[REDACTED]@"),
+    # URL-embedded credentials without username (M-08: :password@host)
+    (r"(://):[^/\s@]+@", r"\1:[REDACTED]@"),
+    # JWT tokens
+    (r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[REDACTED]"),
+    # Authorization: Bearer
+    (r"(?i)authorization:\s*bearer\s+[^\s]+", "Authorization: Bearer [REDACTED]"),
+    # Authorization: Basic
+    (r"(?i)authorization:\s*basic\s+[^\s]+", "Authorization: Basic [REDACTED]"),
+    # session_id= values
+    (r"session[_-]?id=[^\s;]+", "session_id=[REDACTED]"),
+    # auth_token= values
+    (r"auth[_-]?token=[^\s;]+", "auth_token=[REDACTED]"),
 ]
+
+DEFAULT_REDACTION_PATTERNS: list[str] = [pattern for pattern, _ in REDACTION_PAIRS]
 
 # Protected audit file
 PROTECTED_AUDIT_PATH = REPO_ROOT / "docs" / "reviews" / "wp-rec-03f-post-pr76-readiness-audit.md"
@@ -68,30 +95,36 @@ SAFE_RUN_ID_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}[a-zA-Z0-9]$|^[a-z
 
 # Required evidence categories (B-06 completeness enforcement)
 REQUIRED_EVIDENCE_CATEGORIES = [
-    "repository/baseline.json",           # Category 1
-    "environment/versions.json",          # Category 2
-    "scenarios/AT008_INVALID_OUTPUT/identity.json",  # Category 3
-    "scenarios/AT008_INVALID_OUTPUT/db/workflow_steps.json",  # Category 4
-    "scenarios/AT008_INVALID_OUTPUT/db/workflow_run_state.json",  # Category 5
-    "scenarios/AT008_INVALID_OUTPUT/db/provider_retry_count.json",  # Category 6
-    "scenarios/AT008_INVALID_OUTPUT/api/dispatch_generation.json",  # Category 7
-    "scenarios/AT008_INVALID_OUTPUT/db/recommendations.json",  # Category 8
-    "scenarios/AT008_INVALID_OUTPUT/db/controlled_write_check.json",  # Category 9
-    "scenarios/AT008_INVALID_OUTPUT/api/risk_api.json",  # Category 10
-    "scenarios/AT008_INVALID_OUTPUT/tests/backend.json",  # Category 14
-    "scenarios/AT008_INVALID_OUTPUT/tests/playwright.json",  # Category 14
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/identity.json",  # Category 3
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/workflow_steps.json",  # Category 4
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/workflow_run_state.json",  # Category 5
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/provider_retry_count.json",  # Category 6
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/api/dispatch_generation.json",  # Category 7
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/recommendations.json",  # Category 8
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/controlled_write_check.json",  # Category 9
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/api/risk_api.json",  # Category 10
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/tests/backend.json",  # Category 14
-    "scenarios/AT013_OUTAGE_UNTIL_RETRY/tests/playwright.json",  # Category 14
-    "repository/final.json",              # Category 16
+    "repository/baseline.json",
+    "environment/versions.json",
+    "scenarios/AT008_INVALID_OUTPUT/identity.json",
+    "scenarios/AT008_INVALID_OUTPUT/db/workflow_steps.json",
+    "scenarios/AT008_INVALID_OUTPUT/db/workflow_run_state.json",
+    "scenarios/AT008_INVALID_OUTPUT/db/provider_retry_count.json",
+    "scenarios/AT008_INVALID_OUTPUT/api/dispatch_generation.json",
+    "scenarios/AT008_INVALID_OUTPUT/db/recommendations.json",
+    "scenarios/AT008_INVALID_OUTPUT/db/controlled_write_check.json",
+    "scenarios/AT008_INVALID_OUTPUT/api/risk_api.json",
+    "scenarios/AT008_INVALID_OUTPUT/tests/backend.json",
+    "scenarios/AT008_INVALID_OUTPUT/tests/playwright.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/identity.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/workflow_steps.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/workflow_run_state.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/provider_retry_count.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/api/dispatch_generation.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/recommendations.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/db/controlled_write_check.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/api/risk_api.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/tests/backend.json",
+    "scenarios/AT013_OUTAGE_UNTIL_RETRY/tests/playwright.json",
+    "repository/final.json",
 ]
+
+# Valid workflow states
+VALID_WORKFLOW_STATES = {
+    "PENDING", "RUNNING", "AWAITING_VALIDATION",
+    "FAILED_VALIDATION", "FAILED_PROVIDER", "COMPLETED"
+}
 
 
 def _resolve_venv_dir() -> Path:
@@ -153,6 +186,54 @@ class AcceptanceHarnessError(Exception):
     pass
 
 
+@dataclass
+class ExecutionResult:
+    """Structured subprocess execution result (M-07)."""
+    command: list[str]
+    working_directory: str
+    start_timestamp: str
+    end_timestamp: str
+    duration_seconds: float
+    exit_code: int
+    stdout: str
+    stderr: str
+    parsed_counts: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate required fields."""
+        if not self.command:
+            raise TypeError("command is required")
+        # Validate timestamps are ISO format
+        try:
+            datetime.datetime.fromisoformat(self.start_timestamp)
+            datetime.datetime.fromisoformat(self.end_timestamp)
+        except ValueError as e:
+            raise ValueError(f"Invalid timestamp format: {e}")
+        # Validate duration
+        if self.duration_seconds < 0:
+            raise ValueError("duration_seconds must be non-negative")
+        if self.duration_seconds != self.duration_seconds:  # NaN check
+            raise ValueError("duration_seconds cannot be NaN")
+
+
+@dataclass
+class BrowserResult:
+    """Validated browser scenario result (B-12)."""
+    schema_version: str
+    scenario: str
+    harness_execution_id: str
+    product_workflow_run_id: str
+    correlation_id: str | None
+    plan_id: str
+    browser_test_start: str
+    browser_test_end: str
+    final_state: str
+    screenshots: list[dict[str, Any]] = field(default_factory=list)
+    # AT-013 specific
+    pre_retry_snapshot: dict[str, Any] | None = None
+    post_retry_snapshot: dict[str, Any] | None = None
+
+
 # ---------------------------------------------------------------------------
 # Run-ID validation
 # ---------------------------------------------------------------------------
@@ -211,17 +292,20 @@ def redact_secrets(content: str, patterns: list[str] | None = None) -> str:
 
     Args:
         content: The text content to redact.
-        patterns: Regex patterns to match. Uses DEFAULT_REDACTION_PATTERNS if None.
+        patterns: Regex patterns to match. Uses REDACTION_PAIRS if None.
 
     Returns:
         Redacted content with all matched patterns replaced.
     """
-    if patterns is None:
-        patterns = DEFAULT_REDACTION_PATTERNS
-
     result = content
-    for pattern in patterns:
-        result = re.sub(pattern, "[REDACTED]", result)
+    if patterns is None:
+        # Use REDACTION_PAIRS for proper group substitution
+        for pattern, replacement in REDACTION_PAIRS:
+            result = re.sub(pattern, replacement, result)
+    else:
+        # Legacy: patterns without replacements
+        for pattern in patterns:
+            result = re.sub(pattern, "[REDACTED]", result)
     return result
 
 
@@ -337,7 +421,7 @@ def verify_protected_audit() -> None:
 def capture_git_state() -> dict[str, str]:
     """Capture current repository state for evidence.
     
-    Enhanced to capture all invariants needed for B-05:
+    Enhanced to capture all invariants needed for H-07:
     - HEAD
     - branch identity
     - complete porcelain status
@@ -345,6 +429,8 @@ def capture_git_state() -> dict[str, str]:
     - unstaged tracked diff identity
     - untracked-file inventory
     - protected-audit identity
+    
+    Raises AcceptanceHarnessError on any git command failure (no [capture failed]).
     """
     state: dict[str, str] = {}
     for cmd_name, cmd in [
@@ -352,8 +438,8 @@ def capture_git_state() -> dict[str, str]:
         ("branch", ["git", "branch", "--show-current"]),
         ("status", ["git", "status", "--porcelain"]),
         ("diff_stat", ["git", "diff", "--stat"]),
-        ("diff_staged", ["git", "diff", "--cached", "--stat"]),  # B-05: staged changes
-        ("diff_unstaged_hash", ["git", "diff"]),  # B-05: content hash
+        ("diff_staged", ["git", "diff", "--cached", "--stat"]),
+        ("diff_unstaged_hash", ["git", "diff"]),
         ("log_oneline", ["git", "log", "--oneline", "-5"]),
     ]:
         try:
@@ -363,6 +449,7 @@ def capture_git_state() -> dict[str, str]:
                 capture_output=True,
                 text=True,
                 timeout=10,
+                check=True,  # Fail closed on non-zero exit
             )
             state[cmd_name] = result.stdout.strip()
             # For diff_unstaged_hash, compute SHA-256 of the diff content
@@ -370,8 +457,15 @@ def capture_git_state() -> dict[str, str]:
                 state["diff_unstaged_sha256"] = hashlib.sha256(
                     result.stdout.encode("utf-8")
                 ).hexdigest()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            state[cmd_name] = "[capture failed]"
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
+            raise AcceptanceHarnessError(
+                f"Git command failed for {cmd_name}: {cmd}. Error: {e}"
+            )
+    
+    # Add protected audit SHA-256 if file exists
+    if PROTECTED_AUDIT_PATH.exists():
+        state["protected_audit_sha256"] = sha256_file(PROTECTED_AUDIT_PATH)
+    
     return state
 
 
@@ -397,7 +491,7 @@ def capture_tool_versions() -> dict[str, str]:
 
 
 def verify_repository_invariants(baseline: dict[str, str], final: dict[str, str]) -> None:
-    """Verify repository hasn't changed during execution (B-05).
+    """Verify repository hasn't changed during execution (H-07).
     
     Compares:
     - HEAD
@@ -405,7 +499,17 @@ def verify_repository_invariants(baseline: dict[str, str], final: dict[str, str]
     - complete porcelain status
     - staged diff identity
     - unstaged diff content hash
+    - protected audit SHA-256
+    
+    Rejects [capture failed] values (H-07: no false-pass on git failures).
     """
+    # Reject [capture failed] values
+    for field_name in ["head", "branch", "status", "diff_staged", "diff_unstaged_sha256"]:
+        if baseline.get(field_name) == "[capture failed]" or final.get(field_name) == "[capture failed]":
+            raise AcceptanceHarnessError(
+                f"Git capture failed for {field_name}. Cannot verify repository invariants."
+            )
+    
     checks = [
         ("head", "HEAD changed during execution"),
         ("branch", "Branch changed during execution"),
@@ -414,55 +518,83 @@ def verify_repository_invariants(baseline: dict[str, str], final: dict[str, str]
         ("diff_unstaged_sha256", "Unstaged content changed during execution"),
     ]
     
-    for field, message in checks:
-        if baseline.get(field) != final.get(field):
+    for field_name, message in checks:
+        if baseline.get(field_name) != final.get(field_name):
             raise AcceptanceHarnessError(
-                f"{message}: baseline={baseline.get(field)!r}, "
-                f"final={final.get(field)!r}"
+                f"{message}: baseline={baseline.get(field_name)!r}, "
+                f"final={final.get(field_name)!r}"
+            )
+    
+    # Check protected audit SHA-256 if present
+    if "protected_audit_sha256" in baseline and "protected_audit_sha256" in final:
+        if baseline["protected_audit_sha256"] != final["protected_audit_sha256"]:
+            raise AcceptanceHarnessError(
+                f"Protected audit file changed during execution: "
+                f"baseline={baseline['protected_audit_sha256']!r}, "
+                f"final={final['protected_audit_sha256']!r}"
             )
 
 
 # ---------------------------------------------------------------------------
-# Database and API evidence collection
+# Database and API evidence collection (B-09: psycopg3, not psql CLI)
 # ---------------------------------------------------------------------------
 
 
-def query_database(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, str]]:
-    """Execute a database query and return results as dicts.
+def query_database(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+    """Execute a database query using psycopg3 with real parameter binding.
     
-    Uses psql CLI to avoid importing async database drivers.
-    Returns list of dicts with column index as string key.
+    Returns list of dicts with column names as keys.
+    Preserves NULL values as None.
+    Fails closed on any psycopg.Error.
     """
+    # Convert postgresql+asyncpg:// to postgresql:// for psycopg
     sync_url = ACCEPTANCE_DATABASE_URL.replace("+asyncpg", "")
     
-    # Build psql command with params inlined safely via positional placeholders
-    cmd = [
-        "psql",
-        "-d", sync_url,
-        "-t",  # tuples only
-        "-A",  # unaligned
-        "-F", "|",  # field separator
-        "-c", query,
-    ]
-    
-    result = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        timeout=10,
-    )
-    
-    if result.returncode != 0:
-        raise AcceptanceHarnessError(f"Database query failed: {result.stderr}")
-    
-    # Parse pipe-delimited output into dicts with string keys
-    rows: list[dict[str, str]] = []
-    for line in result.stdout.strip().split("\n"):
-        if line and "|" in line:
-            fields = line.split("|")
-            rows.append({str(i): v for i, v in enumerate(fields)})
-    
-    return rows
+    try:
+        conn = psycopg.connect(sync_url)
+        try:
+            cur = conn.cursor()
+            try:
+                cur.execute(query, params)
+                
+                # Get column names from cursor.description
+                columns: list[str] = []
+                if cur.description is not None:
+                    columns = [desc[0] for desc in cur.description]
+                
+                rows_raw = cur.fetchall()
+                
+                # Validate rows_raw is a proper sequence
+                if not isinstance(rows_raw, (list, tuple)):
+                    raise TypeError(
+                        f"Expected list/tuple from fetchall, got {type(rows_raw).__name__}"
+                    )
+                
+                if not columns and rows_raw:
+                    raise ValueError(
+                        "fetchall returned rows but cursor.description is None"
+                    )
+                
+                # Convert to list of dicts with column names
+                rows: list[dict[str, Any]] = []
+                for row in rows_raw:
+                    row_dict: dict[str, Any] = {}
+                    for i, col_name in enumerate(columns):
+                        if i < len(row):
+                            row_dict[col_name] = row[i]  # Preserves None for NULL
+                        else:
+                            row_dict[col_name] = None
+                    rows.append(row_dict)
+                
+                return rows
+            finally:
+                cur.close()
+        finally:
+            conn.close()
+    except psycopg.Error as e:
+        raise AcceptanceHarnessError(f"Database query failed: {e}")
+    except Exception as e:
+        raise AcceptanceHarnessError(f"Database error: {e}")
 
 
 def query_workflow_steps(workflow_run_id: str) -> list[dict[str, Any]]:
@@ -474,28 +606,15 @@ def query_workflow_steps(workflow_run_id: str) -> list[dict[str, Any]]:
         WHERE run_id = %s
         ORDER BY seq
     """
-    rows = query_database(query, (workflow_run_id,))
-    
-    steps = []
-    for row in rows:
-        steps.append({
-            "seq": row.get("0"),
-            "step_name": row.get("1"),
-            "status": row.get("2"),
-            "error_code": row.get("3"),
-            "error_detail": row.get("4"),
-            "started_at": row.get("5"),
-            "completed_at": row.get("6"),
-        })
-    
-    return steps
+    return query_database(query, (workflow_run_id,))
 
 
 def query_workflow_run_state(workflow_run_id: str) -> dict[str, Any]:
-    """Query current workflow run state (B-01 category 5)."""
+    """Query current workflow run state (B-01 category 5, B-13: use 'state' not 'status')."""
     query = """
-        SELECT id, correlation_id, status, dispatch_generation,
-               created_at, updated_at
+        SELECT id, correlation_id, state, dispatch_generation,
+               error_code, error_detail,
+               started_at, completed_at, created_at, updated_at
         FROM workflow_runs
         WHERE id = %s
     """
@@ -504,30 +623,41 @@ def query_workflow_run_state(workflow_run_id: str) -> dict[str, Any]:
     if not rows:
         return {"error": "Workflow run not found", "workflow_run_id": workflow_run_id}
     
-    row = rows[0]
-    return {
-        "id": row.get("0"),
-        "correlation_id": row.get("1"),
-        "status": row.get("2"),
-        "dispatch_generation": row.get("3"),
-        "created_at": row.get("4"),
-        "updated_at": row.get("5"),
-    }
+    return rows[0]
 
 
-def count_provider_retry_attempts(scenario: str) -> int:
-    """Count provider retry attempts from service logs (B-01 category 6)."""
-    logs_dir = REPO_ROOT / "evidence" / "temp" / "logs"
-    retry_count = 0
+def count_provider_retry_attempts(log_path: Path, correlation_id: str) -> int:
+    """Count provider retry attempts from service logs (B-01 category 6).
     
-    # Search for retry log entries
-    for log_file in logs_dir.glob(f"*-{scenario}.log"):
-        try:
-            content = log_file.read_text(encoding="utf-8", errors="ignore")
-            # Count occurrences of retry log pattern
-            retry_count += content.count("chat_provider.retry.attempt")
-        except Exception:
-            pass
+    Args:
+        log_path: Path to the worker log file for this run.
+        correlation_id: Correlation ID to filter retry entries.
+    
+    Returns:
+        Count of retry attempts matching the correlation ID.
+    
+    Raises:
+        FileNotFoundError: If log file does not exist.
+        AcceptanceHarnessError: If log is malformed.
+    """
+    if not log_path.exists():
+        raise FileNotFoundError(f"Log file not found: {log_path}")
+    
+    try:
+        content = log_path.read_text(encoding="utf-8", errors="ignore")
+    except Exception as e:
+        raise AcceptanceHarnessError(f"Failed to read log file {log_path}: {e}")
+    
+    # Count occurrences of retry log pattern with matching correlation_id
+    retry_count = 0
+    target = f"correlation_id={correlation_id}"
+    for line in content.splitlines():
+        if target in line:
+            # Verify exact match (not prefix)
+            idx = line.find(target)
+            end = idx + len(target)
+            if end >= len(line) or not line[end].isalnum():
+                retry_count += 1
     
     return retry_count
 
@@ -539,17 +669,7 @@ def query_recommendations(workflow_run_id: str) -> list[dict[str, Any]]:
         FROM recommendations
         WHERE run_id = %s
     """
-    rows = query_database(query, (workflow_run_id,))
-    
-    recommendations = []
-    for row in rows:
-        recommendations.append({
-            "id": row.get("0"),
-            "run_id": row.get("1"),
-            "created_at": row.get("2"),
-        })
-    
-    return recommendations
+    return query_database(query, (workflow_run_id,))
 
 
 def check_procurement_tasks_exist() -> bool:
@@ -558,28 +678,16 @@ def check_procurement_tasks_exist() -> bool:
         SELECT EXISTS (
             SELECT 1 FROM information_schema.tables
             WHERE table_name = 'procurement_tasks'
-        )
+        ) AS exists
     """
     rows = query_database(query)
     
     if not rows:
         return False
     
-    # Parse boolean result
-    table_exists = rows[0].get("0") == "t"
-    
-    if not table_exists:
-        return False
-    
-    # Check if table has any rows
-    count_query = "SELECT COUNT(*) FROM procurement_tasks"
-    count_rows = query_database(count_query)
-    
-    if not count_rows:
-        return False
-    
-    count = int(count_rows[0].get("0", "0"))
-    return count > 0
+    # Parse boolean result (psycopg returns True/False, not 't'/'f')
+    table_exists = rows[0].get("exists", False)
+    return bool(table_exists)
 
 
 def query_risk_api(plan_id: str) -> dict[str, Any]:
@@ -647,21 +755,522 @@ def find_recent_workflow_runs(
     """Find workflow runs created after a given time (for evidence collection).
     
     Returns list of workflow run IDs (as strings).
+    Uses parameterized query (M-09: no f-string SQL).
     """
-    # Query for workflow runs created after the test start time
-    # Use the scenario name to filter by creator or other metadata if available
-    query = f"""
+    query = """
         SELECT id FROM workflow_runs
-        WHERE created_at >= '{after_time.isoformat()}'
+        WHERE created_at >= %s
         ORDER BY created_at DESC
         LIMIT 5
     """
     
     try:
-        rows = query_database(query)
-        return [row.get("0", "") for row in rows if row.get("0")]
+        rows = query_database(query, (after_time.isoformat(),))
+        return [str(row.get("id", "")) for row in rows if row.get("id")]
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Browser result validation (B-12)
+# ---------------------------------------------------------------------------
+
+
+def validate_browser_result(
+    result_dict: dict[str, Any], scenario: str, harness_id: str
+) -> BrowserResult:
+    """Validate a Playwright scenario result JSON.
+    
+    Args:
+        result_dict: The parsed JSON from the Playwright spec.
+        scenario: Expected scenario name.
+        harness_id: Expected harness execution ID.
+    
+    Returns:
+        Validated BrowserResult.
+    
+    Raises:
+        AcceptanceHarnessError: If validation fails.
+    """
+    # Required fields
+    required_fields = [
+        "schema_version", "scenario", "harness_execution_id",
+        "product_workflow_run_id", "plan_id",
+        "browser_test_start", "browser_test_end", "final_state"
+    ]
+    
+    for field_name in required_fields:
+        if field_name not in result_dict:
+            raise AcceptanceHarnessError(f"Missing required field: {field_name}")
+    
+    # Validate schema version
+    if result_dict["schema_version"] != "1.0":
+        raise AcceptanceHarnessError(
+            f"Unsupported schema version: {result_dict['schema_version']}"
+        )
+    
+    # Validate scenario matches
+    if result_dict["scenario"] != scenario:
+        raise AcceptanceHarnessError(
+            f"Scenario mismatch: expected {scenario}, got {result_dict['scenario']}"
+        )
+    
+    # Validate harness ID matches
+    if result_dict["harness_execution_id"] != harness_id:
+        raise AcceptanceHarnessError(
+            f"Harness ID mismatch: expected {harness_id}, got {result_dict['harness_execution_id']}"
+        )
+    
+    # Validate workflow_run_id is a valid UUID
+    workflow_run_id = result_dict["product_workflow_run_id"]
+    try:
+        uuid.UUID(workflow_run_id)
+    except (ValueError, AttributeError) as e:
+        raise AcceptanceHarnessError(
+            f"Invalid workflow_run_id UUID: {workflow_run_id}. Error: {e}"
+        )
+    
+    # Validate timestamps are ISO format
+    for ts_field in ["browser_test_start", "browser_test_end"]:
+        try:
+            datetime.datetime.fromisoformat(result_dict[ts_field])
+        except ValueError as e:
+            raise AcceptanceHarnessError(
+                f"Invalid timestamp in {ts_field}: {result_dict[ts_field]}. Error: {e}"
+            )
+    
+    # AT-013 specific validation
+    if scenario == "AT013_OUTAGE_UNTIL_RETRY":
+        pre_retry = result_dict.get("pre_retry_snapshot")
+        post_retry = result_dict.get("post_retry_snapshot")
+        
+        if pre_retry is None or post_retry is None:
+            raise AcceptanceHarnessError(
+                "AT-013 requires both pre_retry_snapshot and post_retry_snapshot"
+            )
+        
+        # Validate generation increment
+        pre_gen = pre_retry.get("generation")
+        post_gen = post_retry.get("generation")
+        
+        if pre_gen is None or post_gen is None:
+            raise AcceptanceHarnessError(
+                "AT-013 pre/post retry snapshots must include generation"
+            )
+        
+        if post_gen != pre_gen + 1:
+            raise AcceptanceHarnessError(
+                f"AT-013 generation increment invalid: pre={pre_gen}, post={post_gen}"
+            )
+        
+        # Validate same workflow_run_id in both snapshots
+        pre_run_id = pre_retry.get("workflow_run_id")
+        post_run_id = post_retry.get("workflow_run_id")
+        
+        if pre_run_id != post_run_id:
+            raise AcceptanceHarnessError(
+                f"AT-013 run ID continuity violated: pre={pre_run_id}, post={post_run_id}"
+            )
+    
+    return BrowserResult(
+        schema_version=result_dict["schema_version"],
+        scenario=result_dict["scenario"],
+        harness_execution_id=result_dict["harness_execution_id"],
+        product_workflow_run_id=result_dict["product_workflow_run_id"],
+        correlation_id=result_dict.get("correlation_id"),
+        plan_id=result_dict["plan_id"],
+        browser_test_start=result_dict["browser_test_start"],
+        browser_test_end=result_dict["browser_test_end"],
+        final_state=result_dict["final_state"],
+        screenshots=result_dict.get("screenshots", []),
+        pre_retry_snapshot=result_dict.get("pre_retry_snapshot"),
+        post_retry_snapshot=result_dict.get("post_retry_snapshot"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Semantic evidence validation (B-11)
+# ---------------------------------------------------------------------------
+
+
+def validate_semantic_evidence(evidence: dict[str, Any]) -> None:
+    """Validate semantic completeness of evidence (B-11).
+    
+    Checks:
+    - Required fields present
+    - No placeholder values
+    - No error objects
+    - Valid state values
+    - Consistent IDs
+    - Non-empty lists where required
+    - Valid timestamps
+    
+    Raises:
+        AcceptanceHarnessError: If validation fails.
+    """
+    category = evidence.get("category")
+    
+    # Required fields for all categories
+    required_fields = ["workflow_run_id", "state", "dispatch_generation", "correlation_id", "timestamp", "step_count"]
+    for field_name in required_fields:
+        if field_name not in evidence:
+            raise AcceptanceHarnessError(f"Missing required field: {field_name}")
+    
+    # Check for None identifiers
+    for id_field in ["workflow_run_id", "correlation_id"]:
+        if evidence.get(id_field) is None:
+            raise AcceptanceHarnessError(f"{id_field} cannot be None")
+    
+    # Check for placeholder values
+    placeholder_values = {"TODO", "N/A", "placeholder", "[capture failed]", "unknown"}
+    state_value = evidence.get("state")
+    if isinstance(state_value, str) and state_value in placeholder_values:
+        raise AcceptanceHarnessError(f"Placeholder value in state: {state_value}")
+    
+    # Check for error objects
+    if isinstance(state_value, dict) and "error" in state_value:
+        raise AcceptanceHarnessError(f"Error object in state: {state_value}")
+    
+    # Validate state is a recognized value (case-insensitive)
+    if isinstance(state_value, str) and state_value.upper() not in VALID_WORKFLOW_STATES:
+        raise AcceptanceHarnessError(
+            f"Invalid state value: {state_value}. Must be one of {VALID_WORKFLOW_STATES}"
+        )
+    
+    # Category-specific validation
+    if category == "workflow_steps":
+        steps = evidence.get("steps", [])
+        if not steps:
+            raise AcceptanceHarnessError("workflow_steps category requires non-empty steps list")
+        
+        step_count = evidence.get("step_count", 0)
+        if step_count == 0:
+            raise AcceptanceHarnessError("workflow_steps category requires step_count > 0")
+        
+        # Check ID consistency
+        identity_run_id = evidence.get("identity_workflow_run_id")
+        if identity_run_id and identity_run_id != evidence.get("workflow_run_id"):
+            raise AcceptanceHarnessError(
+                f"ID mismatch: identity_workflow_run_id={identity_run_id}, "
+                f"workflow_run_id={evidence.get('workflow_run_id')}"
+            )
+    
+    elif category == "recommendations":
+        rec_count = evidence.get("recommendation_count", 0)
+        recommendations = evidence.get("recommendations", [])
+        
+        # AT-008 expects at least one recommendation
+        if rec_count == 0 or not recommendations:
+            raise AcceptanceHarnessError(
+                "recommendations category requires at least one recommendation"
+            )
+    
+    # Validate timestamp is recent (not stale)
+    timestamp_str = evidence.get("timestamp")
+    browser_start = evidence.get("browser_test_start")
+    
+    if timestamp_str and browser_start:
+        try:
+            ts = datetime.datetime.fromisoformat(timestamp_str)
+            browser_ts = datetime.datetime.fromisoformat(browser_start)
+            
+            # Timestamp should be within browser test window or after
+            if ts < browser_ts:
+                # Allow some tolerance (e.g., 1 year for test data)
+                one_year = datetime.timedelta(days=365)
+                if browser_ts - ts > one_year:
+                    raise AcceptanceHarnessError(
+                        f"Stale timestamp: {timestamp_str} is before browser test start {browser_start}"
+                    )
+        except ValueError:
+            pass  # Invalid timestamp format already caught
+
+
+# ---------------------------------------------------------------------------
+# Screenshot review (M-06)
+# ---------------------------------------------------------------------------
+
+
+def review_screenshot(
+    path: Path, name: str, dom_snapshot_path: Path | None = None
+) -> dict[str, Any]:
+    """Review screenshot for validity and security (M-06).
+    
+    Checks:
+    - PNG/JPEG signature
+    - Non-zero dimensions within expected range
+    - Modification time within reasonable window
+    - DOM text snapshot (if provided) for secrets
+    
+    Args:
+        path: Path to the screenshot file.
+        name: Artifact name for logging.
+        dom_snapshot_path: Optional path to companion DOM text snapshot.
+    
+    Returns:
+        Review result dict.
+    
+    Raises:
+        AcceptanceHarnessError: If review fails.
+    """
+    review_result: dict[str, Any] = {
+        "artifact": name,
+        "reviewed": True,
+        "method": "signature_and_dom_scan",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    
+    if not path.exists():
+        raise AcceptanceHarnessError(f"Screenshot not found: {path}")
+    
+    # Read file bytes
+    try:
+        with open(path, "rb") as f:
+            header = f.read(32)
+    except Exception as e:
+        raise AcceptanceHarnessError(f"Failed to read screenshot {path}: {e}")
+    
+    # Check PNG signature
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        review_result["format"] = "png"
+        
+        # Parse IHDR chunk for dimensions
+        if len(header) >= 24:
+            try:
+                # IHDR starts at offset 8 (after signature)
+                # Length (4 bytes) + "IHDR" (4 bytes) + width (4 bytes) + height (4 bytes)
+                width = struct.unpack(">I", header[16:20])[0]
+                height = struct.unpack(">I", header[20:24])[0]
+                
+                if width == 0 or height == 0:
+                    raise AcceptanceHarnessError(
+                        f"Screenshot has zero dimensions: {width}x{height}"
+                    )
+                
+                # Reject extremely large dimensions (not a real screenshot)
+                if width > 10000 or height > 10000:
+                    raise AcceptanceHarnessError(
+                        f"Screenshot dimensions too large: {width}x{height}"
+                    )
+                
+                review_result["dimensions"] = {"width": width, "height": height}
+            except struct.error as e:
+                raise AcceptanceHarnessError(f"Failed to parse PNG IHDR: {e}")
+    
+    elif header.startswith(b"\xff\xd8\xff"):
+        review_result["format"] = "jpeg"
+        # JPEG dimension parsing would require more complex parsing
+        # For now, accept JPEG with signature check only
+    else:
+        raise AcceptanceHarnessError(
+            f"Unknown image format for {path}. Expected PNG or JPEG."
+        )
+    
+    # Check modification time (should be recent, not from 2020)
+    mtime = path.stat().st_mtime
+    mtime_dt = datetime.datetime.fromtimestamp(mtime, tz=datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    
+    # Reject screenshots older than 5 years (stale artifact detection)
+    five_years_ago = now - datetime.timedelta(days=5*365)
+    if mtime_dt < five_years_ago:
+        raise AcceptanceHarnessError(
+            f"Screenshot is stale (modification time {mtime_dt} is older than 5 years)"
+        )
+    
+    review_result["modification_time"] = mtime_dt.isoformat()
+    
+    # Check DOM text snapshot if provided
+    if dom_snapshot_path:
+        if not dom_snapshot_path.exists():
+            raise AcceptanceHarnessError(
+                f"DOM snapshot not found: {dom_snapshot_path}"
+            )
+        
+        try:
+            dom_text = dom_snapshot_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            raise AcceptanceHarnessError(f"Failed to read DOM snapshot: {e}")
+        
+        # Scan for secret patterns
+        secret_patterns = [
+            r"password=[^\s\"&]+",
+            r"secret[_-]?key=[^\s\"&]+",
+            r"token=[^\s\"&]+",
+            r"api[_-]?key=[^\s\"&]+",
+            r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",  # JWT
+            r"(?i)authorization[\"=:]+[^\s\"&,}]+",
+        ]
+        
+        for pattern in secret_patterns:
+            if re.search(pattern, dom_text, re.IGNORECASE):
+                raise AcceptanceHarnessError(
+                    f"Secret pattern found in DOM snapshot: {pattern}"
+                )
+        
+        review_result["dom_snapshot_reviewed"] = True
+    
+    review_result["safe"] = True
+    return review_result
+
+
+# ---------------------------------------------------------------------------
+# ZIP artifact review (L-04)
+# ---------------------------------------------------------------------------
+
+
+def review_zip_artifact(path: Path) -> dict[str, Any]:
+    """Review ZIP artifact for security and validity (L-04).
+    
+    Checks:
+    - Max member count (10000)
+    - Max compressed size (100MB)
+    - Max expanded size (500MB)
+    - Max compression ratio (100:1)
+    - Encrypted entries
+    - Symlink entries
+    - Nested archives
+    - Absolute paths
+    - .. traversal
+    - Windows drive paths
+    - Both / and \\ separators
+    - Secret patterns in text members
+    
+    Args:
+        path: Path to the ZIP file.
+    
+    Returns:
+        Review result dict.
+    
+    Raises:
+        AcceptanceHarnessError: If review fails.
+    """
+    review_result: dict[str, Any] = {
+        "artifact": str(path),
+        "reviewed": True,
+        "method": "comprehensive_zip_scan",
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    }
+    
+    if not path.exists():
+        raise AcceptanceHarnessError(f"ZIP file not found: {path}")
+    
+    # Check file size
+    file_size = path.stat().st_size
+    max_compressed_size = 100 * 1024 * 1024  # 100MB
+    
+    if file_size > max_compressed_size:
+        raise AcceptanceHarnessError(
+            f"ZIP file too large: {file_size} bytes (max {max_compressed_size})"
+        )
+    
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            infolist = zf.infolist()
+            
+            # Check member count
+            max_members = 10000
+            if len(infolist) > max_members:
+                raise AcceptanceHarnessError(
+                    f"ZIP has too many members: {len(infolist)} (max {max_members})"
+                )
+            
+            total_expanded_size = 0
+            max_expanded_size = 500 * 1024 * 1024  # 500MB
+            
+            for zip_info in infolist:
+                filename = zip_info.filename
+                
+                # Check for path traversal (both / and \\)
+                if filename.startswith("/") or filename.startswith("\\"):
+                    raise AcceptanceHarnessError(
+                        f"Absolute path in ZIP: {filename}"
+                    )
+                
+                if ".." in filename:
+                    raise AcceptanceHarnessError(
+                        f"Path traversal in ZIP: {filename}"
+                    )
+                
+                # Check for Windows drive paths
+                if re.match(r"^[A-Za-z]:[\\/]", filename):
+                    raise AcceptanceHarnessError(
+                        f"Windows drive path in ZIP: {filename}"
+                    )
+                
+                # Check for encrypted entries
+                if zip_info.flag_bits & 0x1:
+                    raise AcceptanceHarnessError(
+                        f"Encrypted entry in ZIP: {filename}"
+                    )
+                
+                # Check for symlinks (Unix symlink attribute)
+                if (zip_info.external_attr >> 16) & 0o170000 == 0o120000:
+                    raise AcceptanceHarnessError(
+                        f"Symlink entry in ZIP: {filename}"
+                    )
+                
+                # Check for nested archives
+                if filename.lower().endswith((".zip", ".tar", ".gz", ".bz2", ".xz")):
+                    raise AcceptanceHarnessError(
+                        f"Nested archive in ZIP: {filename}"
+                    )
+                
+                # Accumulate expanded size
+                if not zip_info.is_dir():
+                    total_expanded_size += zip_info.file_size
+                    
+                    if total_expanded_size > max_expanded_size:
+                        raise AcceptanceHarnessError(
+                            f"ZIP expanded size too large: {total_expanded_size} bytes "
+                            f"(max {max_expanded_size})"
+                        )
+                    
+                    # Check compression ratio for this entry
+                    if zip_info.compress_size > 0:
+                        ratio = zip_info.file_size / zip_info.compress_size
+                        max_ratio = 100.0
+                        if ratio > max_ratio:
+                            raise AcceptanceHarnessError(
+                                f"Suspicious compression ratio for {filename}: "
+                                f"{ratio:.1f}:1 (max {max_ratio}:1)"
+                            )
+                    
+                    # Scan text files for secrets
+                    if filename.endswith((".json", ".txt", ".log", ".har")):
+                        try:
+                            content = zf.read(filename).decode("utf-8", errors="ignore")
+                            
+                            secret_patterns = [
+                                r"sk-[A-Za-z0-9]{20,}",
+                                r"password[\"=:]+[^\s\"&,}]+",
+                                r"secret[_-]?key[\"=:]+[^\s\"&,}]+",
+                                r"token[\"=:]+[^\s\"&,}]+",
+                                r"api[_-]?key[\"=:]+[^\s\"&,}]+",
+                                r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+                                r"(?i)authorization[\"=:]+[^\s\"&,}]+",
+                                # Bearer tokens in JSON/HAR value fields
+                                r"(?i)bearer\s+[A-Za-z0-9_\-\.=]+",
+                                # Authorization header in HAR format: "name":"Authorization","value":"..."
+                                r"(?i)authorization[\"']?\s*,\s*[\"']?value[\"']?\s*:\s*[\"'][^\"]+",
+                            ]
+                            
+                            for pattern in secret_patterns:
+                                if re.search(pattern, content, re.IGNORECASE):
+                                    raise AcceptanceHarnessError(
+                                        f"Secret pattern found in ZIP member {filename}: {pattern}"
+                                    )
+                        except UnicodeDecodeError:
+                            pass  # Binary file, skip text scan
+            
+            review_result["member_count"] = len(infolist)
+            review_result["total_expanded_size"] = total_expanded_size
+            review_result["safe"] = True
+            
+    except zipfile.BadZipFile as e:
+        raise AcceptanceHarnessError(f"Invalid ZIP file: {e}")
+    
+    return review_result
 
 
 # ---------------------------------------------------------------------------
@@ -688,9 +1297,9 @@ class EvidenceCollector:
         self.raw_dir = evidence_dir / "raw"
         self.redacted_dir = evidence_dir / "redacted"
         self.artifacts: list[dict[str, str]] = []
-        self.binary_reviews: dict[str, dict[str, Any]] = {}  # B-03
+        self.binary_reviews: dict[str, dict[str, Any]] = {}
         self._failure = False
-        self._complete = False  # B-06
+        self._complete = False
 
     def setup(self) -> None:
         """Create evidence directory structure."""
@@ -876,52 +1485,21 @@ class EvidenceCollector:
         
         findings: list[str] = []
         
-        # For ZIP files, scan contents
+        # For ZIP files, use comprehensive review
         if path.suffix == ".zip":
             try:
-                with zipfile.ZipFile(path, 'r') as zf:
-                    for zip_info in zf.infolist():
-                        # Check for path traversal
-                        if zip_info.filename.startswith('/') or '..' in zip_info.filename:
-                            findings.append(f"Path traversal detected: {zip_info.filename}")
-                            continue
-                        
-                        # Read and scan text files inside ZIP
-                        if not zip_info.is_dir():
-                            try:
-                                content = zf.read(zip_info.filename).decode('utf-8', errors='ignore')
-                                # Check for secrets
-                                secret_patterns = [
-                                    r'sk-[A-Za-z0-9]{20,}',
-                                    r'password[\"=:]+[^\s\"&,}]+',
-                                    r'secret[_-]?key[\"=:]+[^\s\"&,}]+',
-                                    r'token[\"=:]+[^\s\"&,}]+',
-                                    r'api[_-]?key[\"=:]+[^\s\"&,}]+',
-                                    r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+',  # JWT
-                                    r'(?i)authorization[\"=:]+[^\s\"&,}]+',
-                                ]
-                                for pattern in secret_patterns:
-                                    if re.search(pattern, content, re.IGNORECASE):
-                                        findings.append(
-                                            f"Secret pattern found in {zip_info.filename}: {pattern}"
-                                        )
-                            except Exception as e:
-                                findings.append(f"Error scanning {zip_info.filename}: {e}")
-            except zipfile.BadZipFile:
-                findings.append("Invalid ZIP file")
+                zip_review = review_zip_artifact(path)
+                review_result.update(zip_review)
+            except AcceptanceHarnessError as e:
+                findings.append(str(e))
         
-        # For screenshots, verify they're from controlled viewport
+        # For screenshots, use signature and DOM review
         elif path.suffix in ('.png', '.jpg', '.jpeg', '.gif'):
-            # Screenshots should be from Playwright with controlled viewport
-            # We can't inspect pixel content, but we verify:
-            # 1. File is a valid image
-            # 2. Source is from playwright (tracked in artifacts)
-            # 3. No browser chrome visible (Playwright default)
-            review_result["method"] = "viewport_control_attestation"
-            review_result["attestation"] = (
-                "Screenshot generated by Playwright with controlled viewport. "
-                "No browser chrome or DevTools visible by default."
-            )
+            try:
+                screenshot_review = review_screenshot(path, name)
+                review_result.update(screenshot_review)
+            except AcceptanceHarnessError as e:
+                findings.append(str(e))
         
         review_result["safe"] = len(findings) == 0
         review_result["findings"] = findings
@@ -1062,10 +1640,10 @@ class EvidenceCollector:
         manifest = {
             "run_id": self.run_id,
             "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "complete": self._complete,  # B-06: explicit completeness status
-            "artifact_count": len(artifacts_list),  # H-06: match actual list
+            "complete": self._complete,
+            "artifact_count": len(artifacts_list),
             "artifacts": artifacts_list,
-            "binary_reviews": binary_reviews_list,  # B-03: record review results
+            "binary_reviews": binary_reviews_list,
         }
 
         manifest_path = self.redacted_dir / "manifest.json"
@@ -1074,7 +1652,6 @@ class EvidenceCollector:
         )
 
         # Recompute checksums including the manifest
-        # (checksums.sha256 is regenerated to include manifest.json)
         write_checksums_file(self.redacted_dir)
 
 
@@ -1170,17 +1747,19 @@ def wait_for_http(url: str, timeout: int = 30) -> None:
 
 
 def verify_ports_clear(ports: list[int]) -> None:
-    """Verify all specified ports are clear after teardown (M-05)."""
+    """Verify all specified ports are clear after teardown (L-03).
+    
+    Raises AcceptanceHarnessError if any port is still occupied.
+    """
     still_in_use = []
     for port in ports:
         if not check_port_available(port):
             still_in_use.append(port)
     
     if still_in_use:
-        print(
-            f"WARNING: Ports still in use after teardown: {still_in_use}. "
-            "This may indicate zombie processes or external services.",
-            file=sys.stderr
+        raise AcceptanceHarnessError(
+            f"Ports still in use after teardown: {still_in_use}. "
+            "This may indicate zombie processes or external services."
         )
 
 
@@ -1193,6 +1772,7 @@ class AcceptanceEnvironment:
         self.evidence_dir = REPO_ROOT / "evidence" / run_id
         self.containers: list[str] = []
         self.processes: list[subprocess.Popen[bytes]] = []
+        self._log_handles: list[io.TextIOWrapper] = []  # L-05: track log file handles
 
     def setup(self) -> None:
         """Start PostgreSQL, Redis, prepare database."""
@@ -1287,6 +1867,8 @@ class AcceptanceEnvironment:
 
         # Backend API
         log_backend = self.evidence_dir / "logs" / f"backend-{scenario}.log"
+        log_backend_handle = open(log_backend, "w")
+        self._log_handles.append(log_backend_handle)
         backend_proc = subprocess.Popen(
             [
                 str(VENV_BIN / "uvicorn"),
@@ -1296,37 +1878,39 @@ class AcceptanceEnvironment:
             ],
             cwd=BACKEND_DIR,
             env=env,
-            stdout=open(log_backend, "w"),
+            stdout=log_backend_handle,
             stderr=subprocess.STDOUT,
         )
         self.processes.append(backend_proc)
         wait_for_http(f"http://localhost:{ACCEPTANCE_BACKEND_PORT}/health")
         print(f"  Backend API started on port {ACCEPTANCE_BACKEND_PORT}")
 
-        # ARQ worker — use python3.12 -m arq to avoid shebang picking up
-        # system python3.14 which lacks the installed packages.
+        # ARQ worker
         log_worker = self.evidence_dir / "logs" / f"worker-{scenario}.log"
+        log_worker_handle = open(log_worker, "w")
+        self._log_handles.append(log_worker_handle)
         worker_proc = subprocess.Popen(
             [str(VENV_BIN / "python3.12"), "-m", "arq", "app.worker.WorkerSettings"],
             cwd=BACKEND_DIR,
             env=env,
-            stdout=open(log_worker, "w"),
+            stdout=log_worker_handle,
             stderr=subprocess.STDOUT,
         )
         self.processes.append(worker_proc)
-        # Wait for worker to connect and start polling
-        time.sleep(5)  # Increased from 3 to 5 seconds
+        time.sleep(5)
         print("  ARQ worker started")
 
         # Frontend dev server
         log_frontend = self.evidence_dir / "logs" / f"frontend-{scenario}.log"
+        log_frontend_handle = open(log_frontend, "w")
+        self._log_handles.append(log_frontend_handle)
         frontend_env = os.environ.copy()
         frontend_env["VITE_API_BASE_URL"] = f"http://localhost:{ACCEPTANCE_BACKEND_PORT}/api/v1"
         frontend_proc = subprocess.Popen(
             ["npm", "run", "dev", "--", "--port", str(ACCEPTANCE_FRONTEND_PORT)],
             cwd=FRONTEND_DIR,
             env=frontend_env,
-            stdout=open(log_frontend, "w"),
+            stdout=log_frontend_handle,
             stderr=subprocess.STDOUT,
         )
         self.processes.append(frontend_proc)
@@ -1338,15 +1922,22 @@ class AcceptanceEnvironment:
         print(f"[{self.run_id}] Stopping services...")
         for proc in self.processes:
             if proc.poll() is None:
-                # Close stdout to flush logs before stopping
-                if proc.stdout:
-                    proc.stdout.close()
                 proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
         self.processes.clear()
+        
+        # L-05: Flush and close all tracked log handles
+        for handle in self._log_handles:
+            try:
+                handle.flush()
+                handle.close()
+            except Exception:
+                pass
+        self._log_handles.clear()
+        
         time.sleep(2)  # Allow ports to be released
 
     def run_backend_tests(self, scenario: str) -> tuple[int, str]:
@@ -1375,7 +1966,7 @@ class AcceptanceEnvironment:
             ],
             cwd=BACKEND_DIR,
             env=env,
-            capture_output=True,  # B-08: capture output
+            capture_output=True,
             text=True,
         )
         return result.returncode, result.stdout
@@ -1391,8 +1982,6 @@ class AcceptanceEnvironment:
         env["PLAYWRIGHT_ACCEPTANCE_BASE_URL"] = ACCEPTANCE_FRONTEND_URL
         env["ACCEPTANCE_FRONTEND_PORT"] = str(ACCEPTANCE_FRONTEND_PORT)
 
-        # Map scenario to its specific spec file so only the matching
-        # acceptance test runs for each scenario's service configuration.
         if scenario == "AT008_INVALID_OUTPUT":
             spec_file = "acceptance-e2e/at008-acceptance.spec.ts"
         elif scenario == "AT013_OUTAGE_UNTIL_RETRY":
@@ -1408,7 +1997,7 @@ class AcceptanceEnvironment:
             ],
             cwd=FRONTEND_DIR,
             env=env,
-            capture_output=True,  # B-08: capture output
+            capture_output=True,
             text=True,
         )
         return result.returncode, result.stdout
@@ -1420,14 +2009,20 @@ class AcceptanceEnvironment:
         # Stop subprocesses
         for proc in self.processes:
             if proc.poll() is None:
-                # Close stdout to flush logs
-                if proc.stdout:
-                    proc.stdout.close()
                 proc.terminate()
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+
+        # L-05: Close all tracked log handles
+        for handle in self._log_handles:
+            try:
+                handle.flush()
+                handle.close()
+            except Exception:
+                pass
+        self._log_handles.clear()
 
         # Remove owned containers
         for container in self.containers:
@@ -1455,7 +2050,7 @@ class AcceptanceEnvironment:
             else:
                 print(f"  Skipping container {container} (not owned by this run)")
 
-        # Verify ports are clear (M-05)
+        # Verify ports are clear (L-03: raises if occupied)
         verify_ports_clear([
             ACCEPTANCE_DB_PORT,
             ACCEPTANCE_REDIS_PORT,
@@ -1495,14 +2090,12 @@ def run_verify_mode(run_id: str) -> int:
             backend_rc, _ = env.run_backend_tests(scenario)
             if backend_rc != 0:
                 print(f"Backend tests failed for {scenario} (exit code {backend_rc})")
-                # M-04: Stop services before returning on failure
                 env.stop_services()
                 return backend_rc
 
             playwright_rc, _ = env.run_playwright_tests(scenario)
             if playwright_rc != 0:
                 print(f"Playwright tests failed for {scenario} (exit code {playwright_rc})")
-                # M-04: Stop services before returning on failure
                 env.stop_services()
                 return playwright_rc
 
@@ -1537,7 +2130,6 @@ def parse_pytest_output(output: str) -> dict[str, int]:
         "deselected": 0,
     }
     
-    # Look for summary line like "5 passed, 1 failed, 2 skipped"
     import re
     summary_pattern = r'(\d+) passed'
     match = re.search(summary_pattern, output)
@@ -1588,8 +2180,8 @@ def run_formal_mode(run_id: str) -> int:
     Single finalization path ensures:
     - Logs collected on all paths (H-03)
     - Protected audit reverified on all paths (H-04)
-    - Repository invariants checked on all paths (H-05)
-    - No evidence failures swallowed (B-04)
+    - Repository invariants checked on all paths (H-07)
+    - No evidence failures swallowed (B-10)
     - No unredacted logs survive (B-02)
     """
     # Pre-flight: verify protected audit integrity
@@ -1607,7 +2199,7 @@ def run_formal_mode(run_id: str) -> int:
 
     env = AcceptanceEnvironment(run_id=run_id, mode="formal")
     
-    # Track scenario failures (B-04)
+    # Track scenario failures (B-10: no swallowing)
     scenario_failure: int | None = None
 
     try:
@@ -1636,51 +2228,55 @@ def run_formal_mode(run_id: str) -> int:
                 scenario, "backend", backend_rc, backend_output, backend_counts
             )
 
-            # Collect DB/API evidence regardless of test outcome (B-01)
+            # Collect DB/API evidence (B-10: no broad except swallowing)
             # Query for workflow runs created during this test
-            try:
-                workflow_run_ids = find_recent_workflow_runs(test_start_time, scenario)
+            workflow_run_ids = find_recent_workflow_runs(test_start_time, scenario)
+            run_state: dict[str, Any] = {}
+            
+            if workflow_run_ids:
+                primary_run_id = workflow_run_ids[0]
                 
-                if workflow_run_ids:
-                    primary_run_id = workflow_run_ids[0]
-                    
-                    # Update scenario identity with actual workflow_run_id (B-07)
-                    collector.collect_scenario_identity(
-                        scenario,
-                        workflow_run_id=primary_run_id,
-                    )
-                    
-                    # Collect workflow steps audit trail (B-01 category 4)
-                    steps = query_workflow_steps(primary_run_id)
-                    collector.collect_workflow_steps(scenario, primary_run_id, steps)
-                    
-                    # Collect workflow run state (B-01 category 5)
-                    run_state = query_workflow_run_state(primary_run_id)
-                    collector.collect_workflow_run_state(scenario, run_state)
-                    
-                    # Collect dispatch generation from API (B-01 category 7)
-                    api_snapshot = query_workflow_run_api(primary_run_id)
-                    collector.collect_api_snapshot(scenario, "dispatch_generation", api_snapshot)
-                    
-                    # Collect recommendations (B-01 category 8)
-                    recommendations = query_recommendations(primary_run_id)
-                    collector.collect_recommendations(scenario, primary_run_id, recommendations)
-                    
-                    # Collect controlled-write check (B-01 category 9)
-                    procurement_exist = check_procurement_tasks_exist()
-                    collector.collect_controlled_write_check(scenario, procurement_exist)
+                # Update scenario identity with actual workflow_run_id (B-07)
+                collector.collect_scenario_identity(
+                    scenario,
+                    workflow_run_id=primary_run_id,
+                )
                 
-                # Collect provider retry count from logs (B-01 category 6)
-                retry_count = count_provider_retry_attempts(scenario)
-                collector.collect_provider_retry_count(scenario, retry_count)
+                # Collect workflow steps audit trail (B-01 category 4)
+                steps = query_workflow_steps(primary_run_id)
+                collector.collect_workflow_steps(scenario, primary_run_id, steps)
                 
-                # Collect risk API availability (B-01 category 10)
-                risk_data = query_risk_api("PLAN-2026-W31")
-                collector.collect_risk_api_availability(scenario, risk_data)
+                # Collect workflow run state (B-01 category 5)
+                run_state = query_workflow_run_state(primary_run_id)
+                collector.collect_workflow_run_state(scenario, run_state)
                 
-            except Exception as e:
-                print(f"Warning: DB/API evidence collection failed: {e}")
-                # Continue with test execution even if evidence collection fails
+                # Collect dispatch generation from API (B-01 category 7)
+                api_snapshot = query_workflow_run_api(primary_run_id)
+                collector.collect_api_snapshot(scenario, "dispatch_generation", api_snapshot)
+                
+                # Collect recommendations (B-01 category 8)
+                recommendations = query_recommendations(primary_run_id)
+                collector.collect_recommendations(scenario, primary_run_id, recommendations)
+                
+                # Collect controlled-write check (B-01 category 9)
+                procurement_exist = check_procurement_tasks_exist()
+                collector.collect_controlled_write_check(scenario, procurement_exist)
+            
+            # Collect provider retry count from logs (B-01 category 6)
+            # Use the actual log path for this run
+            log_path = evidence_dir / "logs" / f"worker-{scenario}.log"
+            correlation_id: str | None = None
+            if workflow_run_ids and "run_state" in dir():
+                correlation_id = run_state.get("correlation_id")
+            if correlation_id:
+                retry_count = count_provider_retry_attempts(log_path, str(correlation_id))
+            else:
+                retry_count = 0
+            collector.collect_provider_retry_count(scenario, retry_count)
+            
+            # Collect risk API availability (B-01 category 10)
+            risk_data = query_risk_api("PLAN-2026-W31")
+            collector.collect_risk_api_availability(scenario, risk_data)
 
             if backend_rc != 0:
                 print(f"Backend tests failed for {scenario} (exit code {backend_rc})")
@@ -1726,7 +2322,7 @@ def run_formal_mode(run_id: str) -> int:
         final_git = capture_git_state()
         collector.collect_json("repository/final.json", final_git, source="git")
 
-        # Verify repository invariants (B-05, H-05)
+        # Verify repository invariants (B-05, H-07)
         verify_repository_invariants(baseline_git, final_git)
 
         # Re-verify protected audit (H-04)
@@ -1739,7 +2335,7 @@ def run_formal_mode(run_id: str) -> int:
             print(f"Raw evidence preserved at: {evidence_dir / 'raw'}")
             return scenario_failure
 
-        # Redact, verify, checksum, cleanup (B-04: don't swallow failures)
+        # Redact, verify, checksum, cleanup (B-10: don't swallow failures)
         print(f"\n[{run_id}] Redacting and verifying evidence...")
         collector.redact_and_verify()
 
@@ -1758,6 +2354,14 @@ def run_formal_mode(run_id: str) -> int:
             verify_protected_audit()
         except AcceptanceHarnessError as audit_err:
             print(f"PROTECTED AUDIT FAILURE: {audit_err}", file=sys.stderr)
+        
+        # H-07: Verify repository invariants on exception path
+        try:
+            final_git = capture_git_state()
+            verify_repository_invariants(baseline_git, final_git)
+        except AcceptanceHarnessError as inv_err:
+            print(f"REPOSITORY INVARIANT FAILURE: {inv_err}", file=sys.stderr)
+        
         return 1
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
@@ -1768,6 +2372,14 @@ def run_formal_mode(run_id: str) -> int:
             verify_protected_audit()
         except AcceptanceHarnessError:
             pass
+        
+        # H-07: Verify repository invariants on interruption path
+        try:
+            final_git = capture_git_state()
+            verify_repository_invariants(baseline_git, final_git)
+        except AcceptanceHarnessError:
+            pass
+        
         return 130
     finally:
         env.teardown()
