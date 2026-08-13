@@ -5,6 +5,9 @@
  * - testDir: ``./acceptance-e2e`` (not ``./e2e``).
  * - No ``webServer`` — the orchestration script manages frontend startup.
  * - ``baseURL`` read from ``PLAYWRIGHT_ACCEPTANCE_BASE_URL`` (fail-closed).
+ * - The harness provides ``HARNESS_EXECUTION_ID``, ``ACCEPTANCE_SCENARIO``,
+ *   and ``BROWSER_RESULT_PATH`` env vars so specs can write structured
+ *   BrowserResult artifacts to the exact task-owned path.
  *
  * This config is invoked by the orchestration script:
  *   npx playwright test --config=playwright.acceptance.config.ts
