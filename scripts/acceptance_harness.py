@@ -1715,14 +1715,20 @@ class EvidenceCollector:
             source="api",
         )
 
-    def review_binary_artifact(self, path: Path, name: str) -> dict[str, Any]:
+    def review_binary_artifact(
+        self, path: Path, name: str, dom_snapshot_path: Path | None = None
+    ) -> dict[str, Any]:
         """Review binary artifact for sensitive content (B-03).
-        
+
         Returns review result dict with:
         - reviewed: bool
         - method: str
         - safe: bool
         - findings: list[str]
+
+        For screenshot artifacts, ``dom_snapshot_path`` is forwarded to
+        ``review_screenshot()`` so the paired DOM snapshot remains part of the
+        binary-security review (fail-closed).
         """
         review_result: dict[str, Any] = {
             "artifact": name,
@@ -1744,7 +1750,9 @@ class EvidenceCollector:
         # For screenshots, use signature and DOM review
         elif path.suffix in ('.png', '.jpg', '.jpeg', '.gif'):
             try:
-                screenshot_review = review_screenshot(path, name)
+                screenshot_review = review_screenshot(
+                    path, name, dom_snapshot_path=dom_snapshot_path
+                )
                 review_result.update(screenshot_review)
             except AcceptanceHarnessError as e:
                 findings.append(str(e))
@@ -2715,14 +2723,17 @@ def run_formal_mode(run_id: str) -> int:
                     if screenshot_info.get("dom_snapshot_path")
                     else None
                 )
-                review = review_screenshot(
+                review = collector.review_binary_artifact(
                     screenshot_path,
                     screenshot_info.get("name", "screenshot"),
                     dom_snapshot_path=dom_path,
                 )
-                collector.binary_reviews[
-                    screenshot_info.get("name", "screenshot")
-                ] = review
+                if not review["safe"]:
+                    raise AcceptanceHarnessError(
+                        f"Binary artifact review failed for "
+                        f"{screenshot_info.get('name', 'screenshot')}: "
+                        f"{', '.join(review['findings'])}"
+                    )
 
             # Collect Playwright artifacts if available
             pw_results_dir = FRONTEND_DIR / "test-results" / "acceptance"
