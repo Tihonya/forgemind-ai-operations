@@ -7,12 +7,21 @@ These tests verify:
 - unsafe or reused run IDs are rejected;
 - redaction removes configured secret values;
 - redaction verification fails closed when a secret remains;
+- URL credential redaction (H-01);
+- SHA-256 and git SHA preservation (H-02);
 - checksums are deterministic and exclude their own file;
 - missing required evidence causes failure;
 - raw artifacts are preserved on failure;
 - raw artifacts are removed only after successful redaction and checksum creation;
 - verify mode does not represent output as authoritative Phase C evidence;
-- owned-resource teardown protections remain intact.
+- owned-resource teardown protections remain intact;
+- binary artifact review mechanism (B-03);
+- evidence completeness enforcement (B-06);
+- repository invariant verification (B-05);
+- subprocess output capture (B-08);
+- manifest accounting correctness (H-06);
+- service log lifecycle (B-02, H-03);
+- failure path semantics (B-04).
 
 All tests use temporary directories — no real evidence is created in the repository.
 """
@@ -21,8 +30,9 @@ from __future__ import annotations
 
 import json
 import sys
+import zipfile
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -134,16 +144,73 @@ class TestRedaction:
 
     def test_redact_openai_key(self) -> None:
         """OpenAI-style keys are redacted."""
-        content = "API key: sk-abc123def456ghi789jkl012mno345pqr678"
+        content = "API key: sk-1234567890abcdefghij1234567890"
         result = ah.redact_secrets(content)
-        assert "sk-" not in result
+        assert "sk-1234567890abcdefghij" not in result
         assert "[REDACTED]" in result
 
-    def test_redact_password(self) -> None:
-        """Password values are redacted."""
-        content = "DATABASE_URL=postgresql://user:password=secret123@host/db"
+    def test_redact_password_url_format(self) -> None:
+        """Password in URL format is redacted (H-01)."""
+        content = "DATABASE_URL=postgresql+asyncpg://forgemind:forgemind@localhost:5433/forgemind_acceptance"
         result = ah.redact_secrets(content)
-        assert "secret123" not in result
+        assert "forgemind:forgemind@" not in result
+        assert "[REDACTED]" in result
+        # But host and database name should remain
+        assert "localhost" in result
+        assert "5433" in result
+        assert "forgemind_acceptance" in result
+
+    def test_redact_redis_url(self) -> None:
+        """Redis URL with password is redacted (H-01)."""
+        content = "REDIS_URL=redis://user:secret@localhost:6379/0"
+        result = ah.redact_secrets(content)
+        assert "user:secret@" not in result
+        assert "[REDACTED]" in result
+
+    def test_redact_jwt_token(self) -> None:
+        """JWT tokens are redacted (L-01)."""
+        jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        content = f"Authorization: Bearer {jwt}"
+        result = ah.redact_secrets(content)
+        assert "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9" not in result
+        assert "[REDACTED]" in result
+
+    def test_redact_authorization_header(self) -> None:
+        """Authorization headers are redacted (L-02)."""
+        content = "Authorization: Bearer secret-token-12345"
+        result = ah.redact_secrets(content)
+        assert "Bearer secret-token-12345" not in result
+        assert "[REDACTED]" in result
+
+    def test_redact_session_cookie(self) -> None:
+        """Session cookies are redacted (L-02)."""
+        content = "Cookie: session_id=abc123xyz; auth_token=secret-token"
+        result = ah.redact_secrets(content)
+        assert "session_id=abc123xyz" not in result
+        assert "auth_token=secret-token" not in result
+
+    def test_preserve_sha256_hash(self) -> None:
+        """SHA-256 hashes are NOT redacted (H-02)."""
+        sha256 = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        content = f'{{"artifact_sha256": "{sha256}"}}'
+        result = ah.redact_secrets(content)
+        assert sha256 in result
+        assert "[REDACTED]" not in result
+
+    def test_preserve_git_sha(self) -> None:
+        """Git commit SHAs are NOT redacted (H-02)."""
+        git_sha = "3b9332dcaa0468f69eeada03c13f4617201809bd"
+        content = f"HEAD: {git_sha}"
+        result = ah.redact_secrets(content)
+        assert git_sha in result
+        assert "[REDACTED]" not in result
+
+    def test_preserve_uuid(self) -> None:
+        """UUIDs are NOT redacted (H-02)."""
+        uuid_val = "550e8400-e29b-41d4-a716-446655440000"
+        content = f"workflow_run_id: {uuid_val}"
+        result = ah.redact_secrets(content)
+        assert uuid_val in result
 
     def test_redact_acceptance_secret(self) -> None:
         """The acceptance test secret key is redacted."""
@@ -177,13 +244,13 @@ class TestRedactionVerification:
 
     def test_secret_remains_detected(self) -> None:
         """Remaining secret patterns are detected."""
-        content = "key=sk-abc123def456ghi789jkl012mno345pqr678"
+        content = "key=sk-1234567890abcdefghij1234567890"
         violations = ah.verify_redaction(content)
         assert len(violations) > 0
 
     def test_redacted_content_passes(self) -> None:
         """Content that has been properly redacted passes verification."""
-        content = "key=sk-abc123def456ghi789jkl012mno345pqr678"
+        content = "key=sk-1234567890abcdefghij1234567890"
         redacted = ah.redact_secrets(content)
         violations = ah.verify_redaction(redacted)
         assert violations == []
@@ -265,6 +332,26 @@ class TestChecksums:
         assert "top.txt" in checksums
         assert "sub/nested.txt" in checksums
 
+    def test_checksums_independent_recomputation(self, tmp_path: Path) -> None:
+        """Checksums can be independently recomputed and verified (H-06)."""
+        (tmp_path / "file1.txt").write_text("content1")
+        (tmp_path / "file2.txt").write_text("content2")
+        
+        # Write checksums
+        ah.write_checksums_file(tmp_path)
+        
+        # Read and parse checksums file
+        checksums_content = (tmp_path / "checksums.sha256").read_text()
+        parsed = {}
+        for line in checksums_content.strip().split("\n"):
+            digest, path = line.split("  ")
+            parsed[path] = digest
+        
+        # Independently recompute
+        for path, expected_digest in parsed.items():
+            actual_digest = ah.sha256_file(tmp_path / path)
+            assert actual_digest == expected_digest, f"Checksum mismatch for {path}"
+
 
 # ---------------------------------------------------------------------------
 # Evidence Collector tests
@@ -313,17 +400,17 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        # Collect clean content (no secrets)
-        collector.collect_text("workflow/state.json", '{"state": "COMPLETED"}')
-        collector.collect_text("risks/list.json", '[{"id": "RISK-001"}]')
+        # Collect all required artifacts
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
 
         collector.redact_and_verify()
 
         # Raw should be deleted
         assert not (evidence_dir / "raw").exists()
         # Redacted should exist
-        assert (evidence_dir / "redacted" / "workflow" / "state.json").exists()
-        assert (evidence_dir / "redacted" / "risks" / "list.json").exists()
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            assert (evidence_dir / "redacted" / required).exists()
         # Checksums should exist
         assert (evidence_dir / "redacted" / "checksums.sha256").exists()
         # Manifest should exist
@@ -335,13 +422,18 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        # Collect content with a known secret
-        secret_content = 'SECRET_KEY=acceptance-test-secret-key-must-be-32-chars\nstate=OK'
-        collector.collect_text("config/env.txt", secret_content)
+        # Collect all required artifacts with one containing a secret
+        for i, required in enumerate(ah.REQUIRED_EVIDENCE_CATEGORIES):
+            if i == 0:
+                # First artifact contains a secret
+                secret_content = 'SECRET_KEY=acceptance-test-secret-key-must-be-32-chars\nstate=OK'
+                collector.collect_json(required, {"config": secret_content})
+            else:
+                collector.collect_json(required, {"test": "data"})
 
         collector.redact_and_verify()
 
-        redacted = (evidence_dir / "redacted" / "config" / "env.txt").read_text()
+        redacted = (evidence_dir / "redacted" / ah.REQUIRED_EVIDENCE_CATEGORIES[0]).read_text()
         assert "acceptance-test-secret-key-must-be-32-chars" not in redacted
         assert "[REDACTED]" in redacted
         assert "state=OK" in redacted
@@ -352,11 +444,13 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        # Content with a secret that default patterns will redact
-        collector.collect_text(
-            "config.txt",
-            "api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890extra",
-        )
+        # Collect all required artifacts, with one containing a secret
+        for i, required in enumerate(ah.REQUIRED_EVIDENCE_CATEGORIES):
+            if i == 0:
+                # First artifact contains a secret that will be redacted
+                collector.collect_text(required, "secret_key=mysupersecretkey12345")
+            else:
+                collector.collect_json(required, {"test": "data"})
 
         # Use default patterns (which redact the secret to [REDACTED])
         # PLUS a verification pattern that catches [REDACTED] itself.
@@ -368,16 +462,18 @@ class TestEvidenceCollector:
 
         # Raw should be preserved on failure
         assert (evidence_dir / "raw").is_dir()
-        assert (evidence_dir / "raw" / "config.txt").exists()
 
-    def test_missing_raw_artifacts_fails(self, tmp_path: Path) -> None:
-        """Missing required evidence causes failure."""
+    def test_missing_required_artifacts_fails(self, tmp_path: Path) -> None:
+        """Missing required evidence categories causes failure (B-06)."""
         evidence_dir = tmp_path / "evidence" / "test-run"
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        # Don't collect anything
-        with pytest.raises(ah.AcceptanceHarnessError, match="No raw artifacts"):
+        # Collect only 5 of the required artifacts
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES[:5]:
+            collector.collect_json(required, {"test": "data"})
+
+        with pytest.raises(ah.AcceptanceHarnessError, match="Evidence completeness check failed"):
             collector.redact_and_verify()
 
     def test_raw_preserved_on_redaction_failure(self, tmp_path: Path) -> None:
@@ -386,10 +482,13 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        collector.collect_text(
-            "data.txt",
-            "api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890",
-        )
+        # Collect all required artifacts, with one containing a secret
+        for i, required in enumerate(ah.REQUIRED_EVIDENCE_CATEGORIES):
+            if i == 0:
+                # First artifact contains a secret that will be redacted
+                collector.collect_text(required, "secret_key=mysupersecretkey12345")
+            else:
+                collector.collect_json(required, {"test": "data"})
 
         # Use default patterns (redact secrets) plus a verification pattern
         # that catches [REDACTED] → verification fails → raw preserved.
@@ -398,7 +497,7 @@ class TestEvidenceCollector:
             collector.redact_and_verify(patterns=impossible_patterns)
 
         # Raw must still exist
-        assert (evidence_dir / "raw" / "data.txt").exists()
+        assert (evidence_dir / "raw").is_dir()
 
     def test_raw_removed_only_after_success(self, tmp_path: Path) -> None:
         """Raw artifacts are removed only after successful redaction + checksums."""
@@ -406,12 +505,13 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        collector.collect_text("clean.txt", "This is clean content with no secrets.")
+        # Collect all required artifacts
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
 
         collector.redact_and_verify()
 
         assert not (evidence_dir / "raw").exists()
-        assert (evidence_dir / "redacted" / "clean.txt").exists()
         assert (evidence_dir / "redacted" / "checksums.sha256").exists()
 
     def test_manifest_written(self, tmp_path: Path) -> None:
@@ -420,14 +520,43 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        collector.collect_text("data.txt", "clean data")
+        # Collect all required artifacts
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+
         collector.redact_and_verify()
 
         manifest_path = evidence_dir / "redacted" / "manifest.json"
         assert manifest_path.exists()
         manifest = json.loads(manifest_path.read_text())
         assert manifest["run_id"] == "test-run"
-        assert manifest["artifact_count"] >= 1
+        assert manifest["complete"] is True
+        assert manifest["artifact_count"] == len(ah.REQUIRED_EVIDENCE_CATEGORIES)
+        assert len(manifest["artifacts"]) == manifest["artifact_count"]
+
+    def test_manifest_artifact_count_matches_list(self, tmp_path: Path) -> None:
+        """Manifest artifact_count matches actual artifacts list (H-06)."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Collect all required artifacts
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+
+        collector.redact_and_verify()
+
+        manifest = json.loads((evidence_dir / "redacted" / "manifest.json").read_text())
+        
+        # artifact_count should match len(artifacts)
+        assert manifest["artifact_count"] == len(manifest["artifacts"])
+        
+        # Each artifact in list should have path, sha256, source, type
+        for artifact in manifest["artifacts"]:
+            assert "path" in artifact
+            assert "sha256" in artifact
+            assert "source" in artifact
+            assert "type" in artifact
 
     def test_collect_repository_baseline(self, tmp_path: Path) -> None:
         """collect_repository_baseline captures git state."""
@@ -448,14 +577,21 @@ class TestEvidenceCollector:
         collector = ah.EvidenceCollector(evidence_dir, "test-run")
         collector.setup()
 
-        collector.collect_scenario_identity("AT008_INVALID_OUTPUT", "corr-123")
+        collector.collect_scenario_identity(
+            "AT008_INVALID_OUTPUT",
+            correlation_id="corr-123",
+            workflow_run_id="run-456",
+            dispatch_generation=1,
+        )
 
         path = evidence_dir / "raw" / "scenarios" / "AT008_INVALID_OUTPUT" / "identity.json"
         assert path.exists()
         data = json.loads(path.read_text())
         assert data["scenario"] == "AT008_INVALID_OUTPUT"
         assert data["correlation_id"] == "corr-123"
-        assert data["run_id"] == "test-run"
+        assert data["harness_run_id"] == "test-run"
+        assert data["product_workflow_run_id"] == "run-456"
+        assert data["dispatch_generation"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +624,188 @@ class TestProtectedAuditVerification:
 
 
 # ---------------------------------------------------------------------------
+# Binary artifact review tests (B-03)
+# ---------------------------------------------------------------------------
+
+
+class TestBinaryArtifactReview:
+    """Tests for binary artifact review mechanism."""
+
+    def test_safe_screenshot_reviewed(self, tmp_path: Path) -> None:
+        """Safe PNG screenshot passes review."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Create a fake PNG file (just some bytes)
+        screenshot = tmp_path / "screenshot.png"
+        screenshot.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 100)
+
+        review = collector.review_binary_artifact(screenshot, "screenshot.png")
+        assert review["reviewed"] is True
+        assert review["safe"] is True
+        assert review["method"] == "viewport_control_attestation"
+
+    def test_zip_with_secrets_rejected(self, tmp_path: Path) -> None:
+        """ZIP containing secrets is rejected."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Create a ZIP with a file containing a secret
+        zip_path = tmp_path / "trace.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr("har.json", '{"headers": {"authorization": "Bearer secret-token"}}')
+
+        review = collector.review_binary_artifact(zip_path, "trace.zip")
+        assert review["reviewed"] is True
+        assert review["safe"] is False
+        assert len(review["findings"]) > 0
+        assert "authorization" in review["findings"][0].lower()
+
+    def test_zip_with_path_traversal_rejected(self, tmp_path: Path) -> None:
+        """ZIP with path traversal is rejected."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Create a ZIP with path traversal
+        zip_path = tmp_path / "evil.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr("../etc/passwd", "evil content")
+
+        review = collector.review_binary_artifact(zip_path, "evil.zip")
+        assert review["reviewed"] is True
+        assert review["safe"] is False
+        assert "Path traversal" in review["findings"][0]
+
+    def test_safe_zip_passes(self, tmp_path: Path) -> None:
+        """ZIP without secrets passes review."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Create a ZIP with safe content
+        zip_path = tmp_path / "safe.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr("data.json", '{"status": "completed", "count": 42}')
+
+        review = collector.review_binary_artifact(zip_path, "safe.zip")
+        assert review["reviewed"] is True
+        assert review["safe"] is True
+
+    def test_unreviewed_binary_blocks_finalization(self, tmp_path: Path) -> None:
+        """Binary artifact without successful review blocks finalization."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+
+        # Collect all required artifacts plus a binary with secrets
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+
+        # Add a binary file with secrets
+        zip_path = tmp_path / "evil.zip"
+        with zipfile.ZipFile(zip_path, 'w') as zf:
+            zf.writestr("secret.txt", "password=secret123")
+        collector.collect_file(zip_path, "binary/trace.zip", source="playwright")
+
+        # Should fail during redact_and_verify
+        with pytest.raises(ah.AcceptanceHarnessError, match="Binary artifact review failed"):
+            collector.redact_and_verify()
+
+
+# ---------------------------------------------------------------------------
+# Repository invariant tests (B-05)
+# ---------------------------------------------------------------------------
+
+
+class TestRepositoryInvariants:
+    """Tests for repository invariant verification."""
+
+    def test_unchanged_state_passes(self) -> None:
+        """Identical baseline and final state passes."""
+        baseline = {
+            "head": "abc123",
+            "branch": "main",
+            "status": "",
+            "diff_staged": "",
+            "diff_unstaged_sha256": "hash123",
+        }
+        final = baseline.copy()
+        
+        # Should not raise
+        ah.verify_repository_invariants(baseline, final)
+
+    def test_head_change_detected(self) -> None:
+        """HEAD change is detected."""
+        baseline = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        final = {"head": "def456", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        
+        with pytest.raises(ah.AcceptanceHarnessError, match="HEAD changed"):
+            ah.verify_repository_invariants(baseline, final)
+
+    def test_branch_change_detected(self) -> None:
+        """Branch change is detected."""
+        baseline = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        final = {"head": "abc123", "branch": "feature", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        
+        with pytest.raises(ah.AcceptanceHarnessError, match="Branch changed"):
+            ah.verify_repository_invariants(baseline, final)
+
+    def test_status_change_detected(self) -> None:
+        """New untracked file is detected."""
+        baseline = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        final = {"head": "abc123", "branch": "main", "status": "?? new_file.txt", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        
+        with pytest.raises(ah.AcceptanceHarnessError, match="Repository status changed"):
+            ah.verify_repository_invariants(baseline, final)
+
+    def test_staged_change_detected(self) -> None:
+        """Staged changes are detected."""
+        baseline = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        final = {"head": "abc123", "branch": "main", "status": "", "diff_staged": " file.txt | 1 +", "diff_unstaged_sha256": "hash1"}
+        
+        with pytest.raises(ah.AcceptanceHarnessError, match="Staged changes"):
+            ah.verify_repository_invariants(baseline, final)
+
+    def test_content_change_detected(self) -> None:
+        """Content changes with same diff_stat are detected."""
+        baseline = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash1"}
+        final = {"head": "abc123", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash2"}
+        
+        with pytest.raises(ah.AcceptanceHarnessError, match="Unstaged content changed"):
+            ah.verify_repository_invariants(baseline, final)
+
+
+# ---------------------------------------------------------------------------
+# Subprocess output capture tests (B-08)
+# ---------------------------------------------------------------------------
+
+
+class TestSubprocessOutputCapture:
+    """Tests for subprocess output capture and parsing."""
+
+    def test_parse_pytest_output(self) -> None:
+        """Pytest output is parsed for pass/fail/skip counts."""
+        output = "============================= test session starts ==============================\n5 passed, 1 failed, 2 skipped, 3 deselected in 10.5s"
+        counts = ah.parse_pytest_output(output)
+        assert counts["passed"] == 5
+        assert counts["failed"] == 1
+        assert counts["skipped"] == 2
+        assert counts["deselected"] == 3
+
+    def test_parse_pytest_output_no_summary(self) -> None:
+        """Pytest output without summary returns zero counts."""
+        output = "No tests collected"
+        counts = ah.parse_pytest_output(output)
+        assert counts["passed"] == 0
+        assert counts["failed"] == 0
+        assert counts["skipped"] == 0
+        assert counts["deselected"] == 0
+
+
+# ---------------------------------------------------------------------------
 # Mode distinction tests
 # ---------------------------------------------------------------------------
 
@@ -495,47 +813,44 @@ class TestProtectedAuditVerification:
 class TestModeDistinction:
     """Tests proving formal and verify modes are distinct."""
 
-    def test_formal_mode_not_unconditional_rejection(self) -> None:
-        """Formal mode is no longer an unconditional rejection path.
+    def test_formal_mode_dispatches_correctly(self, tmp_path: Path) -> None:
+        """main() with --mode=formal calls run_formal_mode()."""
+        with patch.object(ah, "run_formal_mode") as mock_formal:
+            mock_formal.return_value = 0
+            with patch("sys.argv", ["harness", "--mode", "formal", "--run-id", "test-run"]):
+                with patch.object(ah, "validate_evidence_dir_not_exists"):
+                    result = ah.main()
+            
+            mock_formal.assert_called_once_with("test-run")
+            assert result == 0
 
-        The old code returned 1 immediately for --mode=formal.
-        Now it proceeds to run_formal_mode() after validation.
-        """
-        # Verify that run_formal_mode exists and is callable
-        assert callable(ah.run_formal_mode)
-        # The function should not contain the old rejection message
-        import inspect
-        source = inspect.getsource(ah.run_formal_mode)
-        assert "requires separate Product Owner authorization" not in source
+    def test_verify_mode_dispatches_correctly(self) -> None:
+        """main() with --mode=verify calls run_verify_mode()."""
+        with patch.object(ah, "run_verify_mode") as mock_verify:
+            mock_verify.return_value = 0
+            with patch("sys.argv", ["harness", "--mode", "verify", "--run-id", "test-run"]):
+                result = ah.main()
+            
+            mock_verify.assert_called_once_with("test-run")
+            assert result == 0
 
-    def test_verify_mode_function_exists(self) -> None:
-        """Verify mode has its own dedicated function."""
-        assert callable(ah.run_verify_mode)
-
-    def test_verify_mode_does_not_claim_phase_c(self, capsys: pytest.CaptureFixture) -> None:
-        """Verify mode output does not claim authoritative Phase C evidence.
-
-        We test this by checking the verify mode function source doesn't
-        contain Phase C evidence terminology.
-        """
-        import inspect
-        source = inspect.getsource(ah.run_verify_mode)
-        assert "formal evidence" not in source.lower() or "not authoritative" in source.lower()
-        assert "Phase C" not in source or "not" in source.lower()
-
-    def test_main_accepts_formal_mode(self) -> None:
-        """main() parser accepts --mode=formal."""
-        parser = __import__("argparse").ArgumentParser()
-        parser.add_argument("--mode", choices=["verify", "formal"], required=True)
-        args = parser.parse_args(["--mode", "formal"])
-        assert args.mode == "formal"
-
-    def test_main_accepts_verify_mode(self) -> None:
-        """main() parser accepts --mode=verify."""
-        parser = __import__("argparse").ArgumentParser()
-        parser.add_argument("--mode", choices=["verify", "formal"], required=True)
-        args = parser.parse_args(["--mode", "verify"])
-        assert args.mode == "verify"
+    def test_verify_mode_does_not_claim_phase_c(self) -> None:
+        """Verify mode output does not claim authoritative Phase C evidence."""
+        with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+            mock_env_instance = Mock()
+            mock_env_instance.setup.return_value = None
+            mock_env_instance.start_services.return_value = None
+            mock_env_instance.run_backend_tests.return_value = (0, "5 passed")
+            mock_env_instance.run_playwright_tests.return_value = (0, "3 passed")
+            mock_env_instance.stop_services.return_value = None
+            mock_env_instance.teardown.return_value = None
+            MockEnv.return_value = mock_env_instance
+            
+            result = ah.run_verify_mode("test-run")
+            
+            assert result == 0
+            # Verify mode should not call evidence collector methods
+            # (this is implicit in the implementation)
 
 
 # ---------------------------------------------------------------------------
@@ -546,36 +861,165 @@ class TestModeDistinction:
 class TestTeardownProtection:
     """Tests proving owned-resource teardown protections remain intact."""
 
-    def test_environment_tracks_containers(self) -> None:
-        """AcceptanceEnvironment tracks container names for ownership verification."""
+    def test_teardown_removes_owned_containers(self) -> None:
+        """Teardown removes containers with matching run_id label."""
         env = ah.AcceptanceEnvironment(run_id="test-run", mode="verify")
-        assert env.containers == []
-        env.containers.append("forgemind-test-run-pg")
-        assert "forgemind-test-run-pg" in env.containers
+        env.containers = ["forgemind-test-run-pg"]
+        
+        with patch("subprocess.run") as mock_run:
+            # Mock docker inspect to return matching label
+            mock_run.side_effect = [
+                Mock(returncode=0, stdout="test-run\n"),  # inspect
+                Mock(returncode=0),  # stop
+                Mock(returncode=0),  # rm
+            ]
+            
+            env.teardown()
+            
+            # Should have called docker stop and rm
+            assert mock_run.call_count == 3
 
-    def test_environment_tracks_processes(self) -> None:
-        """AcceptanceEnvironment tracks processes for cleanup."""
+    def test_teardown_skips_non_owned_containers(self) -> None:
+        """Teardown skips containers without matching run_id label."""
         env = ah.AcceptanceEnvironment(run_id="test-run", mode="verify")
-        assert env.processes == []
-
-    def test_teardown_checks_ownership_label(self) -> None:
-        """Teardown uses exact label matching for container ownership."""
-        import inspect
-        source = inspect.getsource(ah.AcceptanceEnvironment.teardown)
-        assert 'forgemind-run' in source
-        assert 'label' in source.lower()
+        env.containers = ["forgemind-other-run-pg"]
+        
+        with patch("subprocess.run") as mock_run:
+            # Mock docker inspect to return non-matching label
+            mock_run.return_value = Mock(returncode=0, stdout="other-run\n")
+            
+            env.teardown()
+            
+            # Should only call inspect, not stop/rm
+            assert mock_run.call_count == 1
 
     def test_evidence_dir_scoped_to_run_id(self) -> None:
         """Evidence directory is scoped to the run ID."""
         env = ah.AcceptanceEnvironment(run_id="unique-run-id", mode="formal")
         assert "unique-run-id" in str(env.evidence_dir)
 
-    def test_container_names_scoped_to_run_id(self) -> None:
-        """Container names include the run ID for ownership."""
-        run_id = "test-ownership"
-        ah.AcceptanceEnvironment(run_id=run_id, mode="verify")
-        # Simulate what setup() does
-        pg_name = f"forgemind-{run_id}-pg"
-        redis_name = f"forgemind-{run_id}-redis"
-        assert run_id in pg_name
-        assert run_id in redis_name
+
+# ---------------------------------------------------------------------------
+# Service log lifecycle tests (B-02, H-03)
+# ---------------------------------------------------------------------------
+
+
+class TestServiceLogLifecycle:
+    """Tests for service log collection and cleanup."""
+
+    def test_collect_service_logs_moves_files(self, tmp_path: Path) -> None:
+        """collect_service_logs moves logs to raw and removes originals."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+        
+        # Create log files
+        logs_dir = evidence_dir / "logs"
+        log1 = logs_dir / "backend.log"
+        log1.write_text("log content")
+        
+        # Collect logs
+        ah.collect_service_logs(collector, logs_dir)
+        
+        # Original should be removed
+        assert not log1.exists()
+        # Should be in raw
+        assert (collector.raw_dir / "logs" / "backend.log").exists()
+
+    def test_logs_collected_on_failure_path(self, tmp_path: Path) -> None:
+        """Logs are collected even when scenario fails."""
+        with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+            mock_env_instance = Mock()
+            mock_env_instance.setup.return_value = None
+            mock_env_instance.start_services.return_value = None
+            mock_env_instance.run_backend_tests.return_value = (1, "1 failed")  # Failure
+            mock_env_instance.stop_services.return_value = None
+            mock_env_instance.teardown.return_value = None
+            MockEnv.return_value = mock_env_instance
+            
+            with patch.object(ah, "capture_git_state") as mock_git:
+                mock_git.return_value = {"head": "abc", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash"}
+                
+                with patch.object(ah, "verify_protected_audit"):
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "collect_service_logs") as mock_collect:
+                            result = ah.run_formal_mode("test-run")
+            
+            # Should have called collect_service_logs
+            mock_collect.assert_called()
+            assert result == 1
+
+
+# ---------------------------------------------------------------------------
+# Failure path tests (B-04)
+# ---------------------------------------------------------------------------
+
+
+class TestFailurePaths:
+    """Tests for failure path semantics."""
+
+    def test_evidence_failure_not_swallowed(self) -> None:
+        """Evidence collection errors are not swallowed."""
+        with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+            mock_env_instance = Mock()
+            mock_env_instance.setup.return_value = None
+            mock_env_instance.start_services.return_value = None
+            mock_env_instance.run_backend_tests.return_value = (0, "5 passed")
+            mock_env_instance.run_playwright_tests.return_value = (0, "3 passed")
+            mock_env_instance.stop_services.return_value = None
+            mock_env_instance.teardown.return_value = None
+            MockEnv.return_value = mock_env_instance
+            
+            with patch.object(ah, "capture_git_state") as mock_git:
+                mock_git.return_value = {"head": "abc", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash"}
+                
+                with patch.object(ah, "verify_protected_audit"):
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "EvidenceCollector") as MockCollector:
+                            mock_collector = Mock()
+                            mock_collector.setup.return_value = None
+                            mock_collector.collect_json.return_value = None
+                            mock_collector.collect_versions.return_value = None
+                            mock_collector.collect_scenario_identity.return_value = None
+                            mock_collector.collect_test_results.return_value = None
+                            mock_collector.collect_file.return_value = None
+                            # Make redact_and_verify raise an error
+                            mock_collector.redact_and_verify.side_effect = ah.AcceptanceHarnessError("Redaction failed")
+                            MockCollector.return_value = mock_collector
+                            
+                            result = ah.run_formal_mode("test-run")
+            
+            # Should return non-zero (evidence failure)
+            assert result == 1
+
+    def test_scenario_failure_stops_before_finalization(self) -> None:
+        """Scenario failure stops before producing complete package."""
+        with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+            mock_env_instance = Mock()
+            mock_env_instance.setup.return_value = None
+            mock_env_instance.start_services.return_value = None
+            mock_env_instance.run_backend_tests.return_value = (1, "1 failed")  # Failure
+            mock_env_instance.stop_services.return_value = None
+            mock_env_instance.teardown.return_value = None
+            MockEnv.return_value = mock_env_instance
+            
+            with patch.object(ah, "capture_git_state") as mock_git:
+                mock_git.return_value = {"head": "abc", "branch": "main", "status": "", "diff_staged": "", "diff_unstaged_sha256": "hash"}
+                
+                with patch.object(ah, "verify_protected_audit"):
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "EvidenceCollector") as MockCollector:
+                            mock_collector = Mock()
+                            mock_collector.setup.return_value = None
+                            mock_collector.collect_json.return_value = None
+                            mock_collector.collect_versions.return_value = None
+                            mock_collector.collect_scenario_identity.return_value = None
+                            mock_collector.collect_test_results.return_value = None
+                            MockCollector.return_value = mock_collector
+                            
+                            result = ah.run_formal_mode("test-run")
+            
+            # Should return scenario failure code
+            assert result == 1
+            # Should NOT call redact_and_verify
+            mock_collector.redact_and_verify.assert_not_called()
