@@ -851,47 +851,136 @@ class TestBrowserResultFailClosed:
 
 
 class TestBrowserResultArtifacts:
-    """validate_browser_result_artifacts fails closed on missing artifacts."""
+    """validate_browser_result_artifacts fails closed on missing or
+    out-of-root artifacts and accepts in-root regular files."""
+
+    def _validated(
+        self, shot_path: Path, dom_path: Path | None = None
+    ) -> ah.BrowserResult:
+        result = _base_browser_result()
+        shot: dict[str, Any] = {"name": "final-state", "path": str(shot_path)}
+        if dom_path is not None:
+            shot["dom_snapshot_path"] = str(dom_path)
+        result["screenshots"] = [shot]
+        return ah.validate_browser_result(
+            result, "AT008_INVALID_OUTPUT", "harness-123"
+        )
+
+    def _validate(
+        self,
+        root: Path,
+        shot_path: Path,
+        dom_path: Path | None = None,
+    ) -> None:
+        validated = self._validated(shot_path, dom_path)
+        ah.validate_browser_result_artifacts(validated, root)
+
+    def _make_root(self, tmp_path: Path) -> Path:
+        root = tmp_path / "browser-results"
+        root.mkdir(parents=True, exist_ok=True)
+        return root
+
+    # --- positive: in-root regular files are accepted ---
 
     def test_valid_artifacts_accepted(self, tmp_path: Path) -> None:
-        png_file = tmp_path / "screen.png"
+        root = self._make_root(tmp_path)
+        png_file = root / "screen.png"
         png_file.write_bytes(_make_png_bytes())
-        dom_file = tmp_path / "screen.dom.txt"
+        dom_file = root / "screen.dom.txt"
         dom_file.write_text("RUN STATE: FAILED_VALIDATION\n", encoding="utf-8")
-        result = _base_browser_result()
-        result["screenshots"] = [
-            {
-                "name": "final-state",
-                "path": str(png_file),
-                "dom_snapshot_path": str(dom_file),
-            },
-        ]
-        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
-        ah.validate_browser_result_artifacts(validated)  # must not raise
+        self._validate(root, png_file, dom_file)  # must not raise
+
+    def test_nested_path_inside_root_accepted(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        nested_dir = root / "scenarios" / "AT008_INVALID_OUTPUT"
+        nested_dir.mkdir(parents=True, exist_ok=True)
+        png_file = nested_dir / "final-state.png"
+        png_file.write_bytes(_make_png_bytes())
+        dom_file = nested_dir / "final-state.dom.txt"
+        dom_file.write_text("RUN STATE: FAILED_VALIDATION\n", encoding="utf-8")
+        self._validate(root, png_file, dom_file)  # must not raise
+
+    # --- negative: missing / wrong type ---
 
     def test_missing_screenshot_file_rejected(self, tmp_path: Path) -> None:
-        result = _base_browser_result()
-        result["screenshots"] = [
-            {"name": "final-state", "path": str(tmp_path / "missing.png")},
-        ]
-        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
-        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
-            ah.validate_browser_result_artifacts(validated)
+        root = self._make_root(tmp_path)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, root / "missing.png")
 
     def test_missing_dom_snapshot_file_rejected(self, tmp_path: Path) -> None:
-        png_file = tmp_path / "screen.png"
+        root = self._make_root(tmp_path)
+        png_file = root / "screen.png"
         png_file.write_bytes(_make_png_bytes())
-        result = _base_browser_result()
-        result["screenshots"] = [
-            {
-                "name": "final-state",
-                "path": str(png_file),
-                "dom_snapshot_path": str(tmp_path / "missing.dom.txt"),
-            },
-        ]
-        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
-        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
-            ah.validate_browser_result_artifacts(validated)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, png_file, root / "missing.dom.txt")
+
+    def test_in_root_directory_as_artifact_rejected(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        subdir = root / "subdir"
+        subdir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, subdir)
+
+    # --- negative: containment ---
+
+    def test_external_absolute_file_rejected(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        external = Path("/etc/passwd")
+        assert external.is_file()  # precondition: exists outside the root
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, external)
+
+    def test_relative_traversal_escaping_root_rejected(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        outside = tmp_path / "outside.png"
+        outside.write_bytes(_make_png_bytes())
+        traversal = root / ".." / "outside.png"
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, traversal)
+
+    def test_external_file_reached_through_in_root_symlink_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        root = self._make_root(tmp_path)
+        external_dir = tmp_path / "external-dir"
+        external_dir.mkdir(parents=True, exist_ok=True)
+        external_file = external_dir / "secret.txt"
+        external_file.write_text("secret", encoding="utf-8")
+        link = root / "link"
+        link.symlink_to(external_dir, target_is_directory=True)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, link / "secret.txt")
+
+    def test_symlink_artifact_rejected(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        target = tmp_path / "real.png"
+        target.write_bytes(_make_png_bytes())
+        link = root / "shot.png"
+        link.symlink_to(target)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, link)
+
+    def test_sibling_run_artifact_rejected(self, tmp_path: Path) -> None:
+        root = self._make_root(tmp_path)
+        sibling_root = tmp_path / "browser-results-sibling"
+        sibling_root.mkdir(parents=True, exist_ok=True)
+        sibling_file = sibling_root / "screen.png"
+        sibling_file.write_bytes(_make_png_bytes())
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(root, sibling_file)
+
+    def test_artifact_under_other_scenario_dir_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        root = self._make_root(tmp_path)
+        other_dir = root / "AT013_OUTAGE_UNTIL_RETRY"
+        other_dir.mkdir(parents=True, exist_ok=True)
+        other_file = other_dir / "screen.png"
+        other_file.write_bytes(_make_png_bytes())
+        current_dir = root / "AT008_INVALID_OUTPUT"
+        current_dir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ah.AcceptanceHarnessError):
+            self._validate(current_dir, other_file)
 
 
 # ===========================================================================
@@ -1941,10 +2030,19 @@ class TestRedaction:
         assert "eyJhbGci" not in result
 
     def test_openai_key_redacted(self) -> None:
-        content = "API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789"
-        result = ah.redact_secrets(content)
-        assert "sk-abcdefghijklmnopqrstuvwxyz0123456789" not in result
-        assert "[REDACTED]" in result
+        """The supported OpenAI API-key format is redacted by its own detector.
+
+        The fixture is a bare ``sk-`` key with no ``<name>=`` prefix, so no
+        ``api_key=``/``secret_key=``/``token=`` detector can match it. The
+        exact output ``[REDACTED]`` (not ``api_key=[REDACTED]`` or
+        ``secret_key=[REDACTED]``) proves the ``sk-[A-Za-z0-9]{20,}`` detector
+        performed the redaction, not an unrelated key-value detector.
+        """
+        api_key = "sk-" + "aB3dE5fG7hI9jK1lM2nO4pQ6rS8tU0vW2xY4"
+        result = ah.redact_secrets(api_key)
+        assert api_key not in result
+        assert result == "[REDACTED]"
+        assert ah.verify_redaction(result) == []
 
     def test_password_url_format_redacted(self) -> None:
         content = "DATABASE_URL=postgresql+asyncpg://forgemind:forgemind@localhost:5433/forgemind_acceptance"
@@ -2032,6 +2130,108 @@ class TestRedactionVerification:
         violations = ah.verify_redaction(content)
         # These are not secrets — no violations expected
         assert violations == [], f"Harmless values flagged: {violations}"
+
+
+# Full-cycle redaction cases: (secret text, exact secret marker that must vanish)
+_FULL_CYCLE_CASES: list[tuple[str, str]] = [
+    ("password=actual-secret", "actual-secret"),
+    ("secret_key=actual-secret", "actual-secret"),
+    ("secret-key=actual-secret", "actual-secret"),
+    ("token=actual-secret", "actual-secret"),
+    ("api_key=actual-secret", "actual-secret"),
+    ("api-key=actual-secret", "actual-secret"),
+    ('{"password": "json-password-secret"}', "json-password-secret"),
+    ('{"secret_key": "json-secret-key-value"}', "json-secret-key-value"),
+    ('{"api_key": "json-api-key-value"}', "json-api-key-value"),
+    ('{"token": "json-token-value"}', "json-token-value"),
+    ('{"auth_token": "json-auth-token-value"}', "json-auth-token-value"),
+    ("session_id=abc123xyz", "abc123xyz"),
+    ("auth_token=secret-token", "secret-token"),
+    (
+        "Authorization: Bearer abcDEF1234567890ghijklmnopqrstuvwxyz",
+        "abcDEF1234567890ghijklmnopqrstuvwxyz",
+    ),
+    (
+        "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+        "dXNlcjpwYXNzd29yZA==",
+    ),
+    ("https://alice:s3cret@example.com/api/data", "s3cret"),
+    (
+        "https://example.com/api?api_key=query-secret-123&other=1",
+        "query-secret-123",
+    ),
+    (
+        "postgresql://forgemind:dbpass123@localhost:5433/forgemind_acceptance",
+        "dbpass123",
+    ),
+    (
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+        "eyJzdWIiOiIxMjM0NTY3ODkwIn0.s3cr3t-s1gnatur3",
+        "s3cr3t-s1gnatur3",
+    ),
+    (
+        "sk-" + "aB3dE5fG7hI9jK1lM2nO4pQ6rS8tU0vW2xY4",
+        "aB3dE5fG7hI9jK1lM2nO4pQ6rS8tU0vW2xY4",
+    ),
+]
+
+
+def _finalize_evidence_with_secret(secret_text: str, tmp_path: Path) -> str:
+    """Run redact_and_verify() over evidence containing secret_text.
+
+    Writes the secret into a raw text artifact and runs the full collector
+    lifecycle; returns the redacted text of that artifact.
+    """
+    evidence_dir = tmp_path / "evidence" / "test-run"
+    collector = ah.EvidenceCollector(evidence_dir, "test-run")
+    collector.setup()
+    for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+        collector.collect_json(required, {"test": "data"})
+    collector.collect_text("secret.txt", secret_text + "\n")
+    collector.redact_and_verify()
+    return (evidence_dir / "redacted" / "secret.txt").read_text()
+
+
+class TestFullCycleRedaction:
+    """Full-cycle redaction coverage for every affected representation.
+
+    Each case proves: the original text contains a genuine matching secret;
+    redact_secrets() removes it; the replacement sentinel is present;
+    verify_redaction() reports no violation; a second redaction is identical
+    (idempotent); and redact_and_verify() successfully finalizes a
+    representative evidence file.
+    """
+
+    @pytest.mark.parametrize("secret_text, marker", _FULL_CYCLE_CASES)
+    def test_full_cycle_redaction(
+        self, tmp_path: Path, secret_text: str, marker: str
+    ) -> None:
+        # 1. The original text contains the genuine secret.
+        assert marker in secret_text
+
+        # 2-4. redact_secrets removes the secret, sentinel present, verify clean.
+        redacted_once = ah.redact_secrets(secret_text)
+        assert marker not in redacted_once
+        assert "[REDACTED]" in redacted_once
+        assert ah.verify_redaction(redacted_once) == []
+
+        # 5. Idempotent: a second redaction is identical to the first.
+        assert ah.redact_secrets(redacted_once) == redacted_once
+
+        # 6. redact_and_verify finalizes a representative evidence file.
+        finalized = _finalize_evidence_with_secret(secret_text, tmp_path)
+        assert marker not in finalized
+        assert "[REDACTED]" in finalized
+        assert ah.verify_redaction(finalized) == []
+
+    @pytest.mark.parametrize("secret_text, marker", _FULL_CYCLE_CASES)
+    def test_verify_detects_genuine_secret(
+        self, secret_text: str, marker: str
+    ) -> None:
+        # Negative proof: verify_redaction() flags the genuine unredacted form.
+        assert marker in secret_text
+        violations = ah.verify_redaction(secret_text)
+        assert len(violations) > 0, f"Genuine secret not detected: {secret_text!r}"
 
 
 # ===========================================================================

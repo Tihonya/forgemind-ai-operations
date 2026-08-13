@@ -50,23 +50,23 @@ REDACTION_PAIRS: list[tuple[str, str]] = [
     # OpenAI-style keys
     (r"sk-[A-Za-z0-9]{20,}", "[REDACTED]"),
     # password= values
-    (r"password=[^\s&]+", "password=[REDACTED]"),
+    (r"password=(?!\[REDACTED\])[^\s&]+", "password=[REDACTED]"),
     # secret_key= values
-    (r"secret[_-]?key=[^\s&]+", "secret_key=[REDACTED]"),
+    (r"secret[_-]?key=(?!\[REDACTED\])[^\s&]+", "secret_key=[REDACTED]"),
     # token= values
-    (r"token=[^\s&]+", "token=[REDACTED]"),
+    (r"token=(?!\[REDACTED\])[^\s&]+", "token=[REDACTED]"),
     # api_key= values
-    (r"api[_-]?key=[^\s&]+", "api_key=[REDACTED]"),
+    (r"api[_-]?key=(?!\[REDACTED\])[^\s&]+", "api_key=[REDACTED]"),
     # JSON-quoted secret fields: "secret_key": "value" (M-08)
-    (r'(?i)"secret[_-]?key"\s*:\s*"[^"]*"', '"secret_key":"[REDACTED]"'),
+    (r'(?i)"secret[_-]?key"\s*:\s*"(?!\[REDACTED\]")[^"]*"', '"secret_key":"[REDACTED]"'),
     # JSON-quoted api_key fields: "api_key": "value" (M-08)
-    (r'(?i)"api[_-]?key"\s*:\s*"[^"]*"', '"api_key":"[REDACTED]"'),
+    (r'(?i)"api[_-]?key"\s*:\s*"(?!\[REDACTED\]")[^"]*"', '"api_key":"[REDACTED]"'),
     # JSON-quoted password fields: "password": "value" (M-08)
-    (r'(?i)"password"\s*:\s*"[^"]*"', '"password":"[REDACTED]"'),
+    (r'(?i)"password"\s*:\s*"(?!\[REDACTED\]")[^"]*"', '"password":"[REDACTED]"'),
     # JSON-quoted token fields: "token": "value" (M-08)
-    (r'(?i)"token"\s*:\s*"[^"]*"', '"token":"[REDACTED]"'),
+    (r'(?i)"token"\s*:\s*"(?!\[REDACTED\]")[^"]*"', '"token":"[REDACTED]"'),
     # JSON-quoted auth_token fields: "auth_token": "value" (M-08)
-    (r'(?i)"auth[_-]?token"\s*:\s*"[^"]*"', '"auth_token":"[REDACTED]"'),
+    (r'(?i)"auth[_-]?token"\s*:\s*"(?!\[REDACTED\]")[^"]*"', '"auth_token":"[REDACTED]"'),
     # hardcoded test secret
     (r"acceptance-test-secret-key-must-be-32-chars", "[REDACTED]"),
     # URL-embedded credentials with username (M-08: preserve scheme and host)
@@ -81,9 +81,9 @@ REDACTION_PAIRS: list[tuple[str, str]] = [
     # Authorization: Basic — detect genuine unredacted basic credentials only
     (r"(?i)authorization:\s*basic\s+(?!\[REDACTED\])[^\s]+", "Authorization: Basic [REDACTED]"),
     # session_id= values
-    (r"session[_-]?id=[^\s;]+", "session_id=[REDACTED]"),
+    (r"session[_-]?id=(?!\[REDACTED\])[^\s;]+", "session_id=[REDACTED]"),
     # auth_token= values
-    (r"auth[_-]?token=[^\s;]+", "auth_token=[REDACTED]"),
+    (r"auth[_-]?token=(?!\[REDACTED\])[^\s;]+", "auth_token=[REDACTED]"),
 ]
 
 DEFAULT_REDACTION_PATTERNS: list[str] = [pattern for pattern, _ in REDACTION_PAIRS]
@@ -1010,21 +1010,85 @@ def validate_browser_result(
     )
 
 
-def validate_browser_result_artifacts(result: BrowserResult) -> None:
-    """Verify every artifact referenced by a BrowserResult exists on disk.
+def _require_artifact_within_root(
+    path_str: str, root: Path, kind: str, name: str
+) -> None:
+    """Require a referenced artifact to be a regular file strictly inside root.
 
-    Fail-closed: a BrowserResult that references a missing screenshot or
-    DOM snapshot is rejected. This closes the gap where a result could
-    reference artifacts that were never written (or were written to a
-    different location) while the harness silently skipped the review.
+    Fail-closed containment for a single BrowserResult-referenced artifact.
+    Rejects an artifact that:
+    - is itself a symlink;
+    - resolves (after following any intermediate symlinks and ``..``) outside
+      the authorized browser-results root;
+    - resolves to the root directory itself;
+    - is not a regular file (directories, sockets, devices, or missing paths).
+
+    The authoritative root is passed in from the harness execution context and
+    is never derived from the untrusted artifact path.
+
+    Args:
+        path_str: The untrusted artifact path from the BrowserResult.
+        root: The canonicalized current-run browser-results root.
+        kind: Human label for the artifact type ("Screenshot" or
+            "DOM snapshot").
+        name: Artifact name for the error message.
+
+    Raises:
+        AcceptanceHarnessError: On containment, symlink, or file-type failure.
+    """
+    raw_path = Path(path_str)
+    if raw_path.is_symlink():
+        raise AcceptanceHarnessError(
+            f"{kind} '{name}' is a symlink; symlink artifacts are not permitted"
+        )
+
+    resolved = raw_path.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        raise AcceptanceHarnessError(
+            f"{kind} '{name}' resolves outside the authorized "
+            "browser-results root"
+        ) from None
+
+    if resolved == root:
+        raise AcceptanceHarnessError(
+            f"{kind} '{name}' resolves to the browser-results root itself"
+        )
+
+    if not resolved.is_file():
+        raise AcceptanceHarnessError(
+            f"{kind} '{name}' is not a regular file "
+            "(missing, directory, or unsupported type)"
+        )
+
+
+def validate_browser_result_artifacts(
+    result: BrowserResult,
+    browser_results_root: Path,
+) -> None:
+    """Verify every BrowserResult-referenced artifact exists and is contained.
+
+    Fail-closed: a BrowserResult that references a missing screenshot or DOM
+    snapshot is rejected. Every referenced path must resolve to a regular file
+    strictly inside the current-run browser-results root — no symlinks, no
+    traversal escaping the root, no absolute paths outside the root, and no
+    directories or special entries. This closes the gap where a result could
+    reference artifacts written outside the task-owned evidence directory.
 
     Args:
         result: The validated BrowserResult whose artifacts must exist.
+        browser_results_root: The current-run browser-results root from the
+            harness execution context. This is the authoritative containment
+            boundary and is never inferred from an artifact path.
 
     Raises:
         AcceptanceHarnessError: If a referenced screenshot or DOM snapshot
-        path is absent, empty, or does not resolve to an existing file.
+        path is absent, empty, a non-regular file, a symlink, or resolves
+        outside the authorized root.
     """
+    root = browser_results_root.resolve()
+
     if not result.screenshots:
         raise AcceptanceHarnessError("BrowserResult has no screenshot artifacts")
 
@@ -1035,9 +1099,7 @@ def validate_browser_result_artifacts(result: BrowserResult) -> None:
             raise AcceptanceHarnessError(
                 f"Screenshot '{name}' is missing a path"
             )
-        path = Path(path_str)
-        if not path.exists():
-            raise AcceptanceHarnessError(f"Screenshot not found: {path}")
+        _require_artifact_within_root(path_str, root, "Screenshot", name)
 
         dom_path_str = shot.get("dom_snapshot_path")
         if dom_path_str is not None:
@@ -1045,9 +1107,9 @@ def validate_browser_result_artifacts(result: BrowserResult) -> None:
                 raise AcceptanceHarnessError(
                     f"Screenshot '{name}' has an invalid DOM snapshot path"
                 )
-            dom_path = Path(dom_path_str)
-            if not dom_path.exists():
-                raise AcceptanceHarnessError(f"DOM snapshot not found: {dom_path}")
+            _require_artifact_within_root(
+                dom_path_str, root, "DOM snapshot", name
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -2642,7 +2704,10 @@ def run_formal_mode(run_id: str) -> int:
             validate_semantic_evidence(semantic_evidence)
 
             # NF-09: Screenshot review with paired DOM snapshot (fail-closed)
-            validate_browser_result_artifacts(browser_result)
+            # Containment is scoped to this run's browser-results root.
+            validate_browser_result_artifacts(
+                browser_result, evidence_dir / "browser-results"
+            )
             for screenshot_info in browser_result.screenshots:
                 screenshot_path = Path(screenshot_info.get("path", ""))
                 dom_path = (
