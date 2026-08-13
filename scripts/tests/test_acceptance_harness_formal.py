@@ -361,10 +361,36 @@ class TestModeDistinction:
             mock_env_instance = Mock()
             mock_env_instance.setup.return_value = None
             mock_env_instance.start_services.return_value = None
-            mock_env_instance.run_backend_tests.return_value = (0, "5 passed")
-            mock_env_instance.run_playwright_tests.return_value = (0, "3 passed")
             mock_env_instance.stop_services.return_value = None
             mock_env_instance.teardown.return_value = None
+            mock_env_instance.evidence_dir = Path("/tmp/test-evidence")
+
+            # Backend tests pass (return ExecutionResult)
+            mock_backend_result = Mock(spec=ah.ExecutionResult)
+            mock_backend_result.exit_code = 0
+            mock_backend_result.command = ["pytest"]
+            mock_backend_result.working_directory = "/backend"
+            mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+            mock_backend_result.duration_seconds = 30.0
+            mock_backend_result.stdout = "5 passed"
+            mock_backend_result.stderr = ""
+            mock_backend_result.parsed_counts = {"passed": 5}
+            mock_env_instance.run_backend_tests.return_value = mock_backend_result
+
+            # Playwright tests pass
+            mock_pw_result = Mock(spec=ah.ExecutionResult)
+            mock_pw_result.exit_code = 0
+            mock_pw_result.command = ["npx"]
+            mock_pw_result.working_directory = "/frontend"
+            mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+            mock_pw_result.duration_seconds = 60.0
+            mock_pw_result.stdout = "1 passed"
+            mock_pw_result.stderr = ""
+            mock_pw_result.parsed_counts = {"passed": 1}
+            mock_env_instance.run_playwright_tests.return_value = mock_pw_result
+
             MockEnv.return_value = mock_env_instance
 
             result = ah.run_verify_mode("test-run")
@@ -763,13 +789,8 @@ class TestAT013PrePostRetry:
         result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
         result["pre_retry_snapshot"] = {"generation": 0, "workflow_run_id": _VALID_UUID}
         result["post_retry_snapshot"] = {"generation": 1, "workflow_run_id": _VALID_UUID_2}
-        # This should fail validation if the harness checks run_id continuity
-        try:
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
             ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
-            # If no explicit check yet, at least verify the data is there
-            assert result["pre_retry_snapshot"]["workflow_run_id"] != result["post_retry_snapshot"]["workflow_run_id"]
-        except (ah.AcceptanceHarnessError, ValueError):
-            pass  # Expected: continuity violation rejected
 
     def test_identity_and_generation_continuity_validated(self) -> None:
         """Both identity (run_id) and generation must be continuous."""
@@ -1555,19 +1576,39 @@ class TestPortSemantics:
                         mock_env = Mock()
                         mock_env.setup.return_value = None
                         mock_env.start_services.return_value = None
-                        mock_env.run_backend_tests.return_value = (0, "5 passed")
-                        mock_env.run_playwright_tests.return_value = (0, "3 passed")
                         mock_env.stop_services.return_value = None
                         mock_env.teardown.return_value = None
                         mock_env.evidence_dir = Path("/tmp/test-evidence")
+
+                        mock_backend_result = Mock(spec=ah.ExecutionResult)
+                        mock_backend_result.exit_code = 0
+                        mock_backend_result.command = ["pytest"]
+                        mock_backend_result.working_directory = "/backend"
+                        mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                        mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                        mock_backend_result.duration_seconds = 30.0
+                        mock_backend_result.stdout = "5 passed"
+                        mock_backend_result.stderr = ""
+                        mock_backend_result.parsed_counts = {"passed": 5}
+                        mock_env.run_backend_tests.return_value = mock_backend_result
+
+                        mock_pw_result = Mock(spec=ah.ExecutionResult)
+                        mock_pw_result.exit_code = 0
+                        mock_pw_result.command = ["npx"]
+                        mock_pw_result.working_directory = "/frontend"
+                        mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                        mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                        mock_pw_result.duration_seconds = 60.0
+                        mock_pw_result.stdout = "1 passed"
+                        mock_pw_result.stderr = ""
+                        mock_pw_result.parsed_counts = {"passed": 1}
+                        mock_env.run_playwright_tests.return_value = mock_pw_result
+
                         MockEnv.return_value = mock_env
 
                         with patch.object(ah, "check_port_available", return_value=False):
                             with patch.object(ah, "collect_service_logs"):
-                                # Run verify mode
                                 result = ah.run_verify_mode("test-run")
-                                # If ports are occupied, result should be non-zero
-                                # OR ports are checked separately (warning only)
                                 assert result is not None
 
 
@@ -1605,15 +1646,22 @@ class TestRedaction:
         assert "[REDACTED]" in result
 
     def test_authorization_bearer_redacted(self) -> None:
-        content = "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.test.sig"
+        content = (
+            "Authorization: Bearer "
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
         result = ah.redact_secrets(content)
-        # JWT pattern should be redacted
-        assert "eyJhbGciOiJIUzI1NiJ9" not in result or "Bearer" not in result
+        # Full JWT token must be gone
+        assert "eyJhbGciOiJIUzI1NiJ9" not in result
+        assert "[REDACTED]" in result
 
     def test_authorization_basic_redacted(self) -> None:
         content = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
         result = ah.redact_secrets(content)
-        assert "dXNlcjpwYXNzd29yZA==" not in result or "[REDACTED]" in result
+        # Full base64 credentials must be gone
+        assert "dXNlcjpwYXNzd29yZA==" not in result
+        assert "[REDACTED]" in result
 
     def test_quoted_json_secret_fields_redacted(self) -> None:
         content = '{"secret_key": "super-secret-value-12345", "api_key": "ak_live_12345"}'
@@ -1646,29 +1694,32 @@ class TestRedaction:
         assert ts in result
 
     def test_non_secret_host_port_preserved(self) -> None:
-        content = "DATABASE_URL=postgresql://user:pass@localhost:5433/mydb"
+        content = "DATABASE_URL=postgresql://user:password@localhost:5433/mydb"
         result = ah.redact_secrets(content)
         assert "localhost" in result
         assert "5433" in result
         assert "mydb" in result
+        assert "password" not in result
 
     def test_no_unredacted_duplicate_survives(self) -> None:
         """After redaction, no pattern that should be redacted remains."""
         content = (
-            "DB=postgresql://u:secret@host:5433/db\n"
-            "REDIS=redis://default:pass@host:6380\n"
-            "AUTH=Authorization: Bearer token-abc-123\n"
+            "DB=postgresql://u:secretpass@host:5433/db\n"
+            "REDIS=redis://default:redispass@host:6380\n"
+            "AUTH=Authorization: Bearer "
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c\n"
         )
         result = ah.redact_secrets(content)
-        # After proper redaction, violations should be minimal or empty
-        # (some patterns may match [REDACTED] itself — that's ok)
-        assert "secret@" not in result
-        assert "pass@" not in result
+        # After proper redaction, no secret material remains
+        assert "secretpass@" not in result
+        assert "redispass@" not in result
+        assert "eyJhbGci" not in result
 
     def test_openai_key_redacted(self) -> None:
-        content = "API_KEY=sk-abcdefghijklmnopqrstuvwxyz1234"
+        content = "API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789"
         result = ah.redact_secrets(content)
-        assert "sk-abcdefghijklmnopqrstuvwxyz1234" not in result
+        assert "sk-abcdefghijklmnopqrstuvwxyz0123456789" not in result
         assert "[REDACTED]" in result
 
     def test_password_url_format_redacted(self) -> None:
@@ -1698,29 +1749,65 @@ class TestRedaction:
 
 
 class TestRedactionVerification:
-    """Tests for verify_redaction()."""
+    """Tests for verify_redaction() — full redaction cycle (NF-01)."""
 
     def test_clean_content_passes(self) -> None:
         content = "Workflow state: COMPLETED"
         violations = ah.verify_redaction(content)
         assert violations == []
 
-    def test_secret_remains_detected(self) -> None:
-        content = "key=sk-abcdefghijklmnopqrstuvwxyz1234"
+    def test_real_bearer_token_detected(self) -> None:
+        """A genuine unredacted Bearer token is detected by verify_redaction."""
+        content = (
+            "Authorization: Bearer "
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
         violations = ah.verify_redaction(content)
         assert len(violations) > 0
 
-    def test_redacted_content_passes(self) -> None:
-        content = "key=sk-abcdefghijklmnopqrstuvwxyz1234"
+    def test_full_cycle_bearer_passes_verification(self) -> None:
+        """After redact_secrets, verify_redaction must NOT self-match (NF-01)."""
+        content = (
+            "Authorization: Bearer "
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        )
         redacted = ah.redact_secrets(content)
         violations = ah.verify_redaction(redacted)
-        assert violations == []
+        assert violations == [], f"Self-matching: {violations}"
+
+    def test_full_cycle_basic_auth_passes_verification(self) -> None:
+        """After redact_secrets, verify_redaction must NOT self-match (NF-01)."""
+        content = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
+        redacted = ah.redact_secrets(content)
+        violations = ah.verify_redaction(redacted)
+        assert violations == [], f"Self-matching: {violations}"
+
+    def test_full_cycle_url_credentials_passes_verification(self) -> None:
+        """After redact_secrets, verify_redaction must NOT self-match URL creds."""
+        content = "postgresql://forgemind:forgemind@localhost:5433/db"
+        redacted = ah.redact_secrets(content)
+        violations = ah.verify_redaction(redacted)
+        assert violations == [], f"Self-matching: {violations}"
 
     def test_redaction_fails_closed(self) -> None:
         content = "SPECIAL_TOKEN=xyzzy-12345-abcde"
         custom = [r"SPECIAL_TOKEN=[\w-]+"]
         violations = ah.verify_redaction(content, patterns=custom)
         assert len(violations) == 1
+
+    def test_harmless_values_preserved(self) -> None:
+        """UUIDs, hashes, and timestamps are not flagged by verify_redaction."""
+        content = (
+            f"run_id={_VALID_UUID}\n"
+            "sha256=b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9\n"
+            "timestamp=2026-08-13T10:00:00+00:00\n"
+            "git_sha=3b9332dcaa0468f69eeada03c13f4617201809bd\n"
+        )
+        violations = ah.verify_redaction(content)
+        # These are not secrets — no violations expected
+        assert violations == [], f"Harmless values flagged: {violations}"
 
 
 # ===========================================================================
@@ -2000,9 +2087,21 @@ class TestServiceLogLifecycle:
             mock_env_instance = Mock()
             mock_env_instance.setup.return_value = None
             mock_env_instance.start_services.return_value = None
-            mock_env_instance.run_backend_tests.return_value = (1, "1 failed")
+            # Backend tests fail (return ExecutionResult with exit_code=1)
+            mock_backend_result = Mock(spec=ah.ExecutionResult)
+            mock_backend_result.exit_code = 1
+            mock_backend_result.command = ["pytest"]
+            mock_backend_result.working_directory = "/backend"
+            mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+            mock_backend_result.duration_seconds = 30.0
+            mock_backend_result.stdout = "1 failed"
+            mock_backend_result.stderr = ""
+            mock_backend_result.parsed_counts = {"passed": 0, "failed": 1}
+            mock_env_instance.run_backend_tests.return_value = mock_backend_result
             mock_env_instance.stop_services.return_value = None
             mock_env_instance.teardown.return_value = None
+            mock_env_instance.evidence_dir = Path("/tmp/test-evidence")
             MockEnv.return_value = mock_env_instance
 
             with patch.object(ah, "capture_git_state") as mock_git:
@@ -2031,10 +2130,36 @@ class TestFailurePaths:
             mock_env_instance = Mock()
             mock_env_instance.setup.return_value = None
             mock_env_instance.start_services.return_value = None
-            mock_env_instance.run_backend_tests.return_value = (0, "5 passed")
-            mock_env_instance.run_playwright_tests.return_value = (0, "3 passed")
             mock_env_instance.stop_services.return_value = None
             mock_env_instance.teardown.return_value = None
+            mock_env_instance.evidence_dir = Path("/tmp/test-evidence")
+
+            # Backend tests pass (return ExecutionResult)
+            mock_backend_result = Mock(spec=ah.ExecutionResult)
+            mock_backend_result.exit_code = 0
+            mock_backend_result.command = ["pytest"]
+            mock_backend_result.working_directory = "/backend"
+            mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+            mock_backend_result.duration_seconds = 30.0
+            mock_backend_result.stdout = "5 passed"
+            mock_backend_result.stderr = ""
+            mock_backend_result.parsed_counts = {"passed": 5}
+            mock_env_instance.run_backend_tests.return_value = mock_backend_result
+
+            # Playwright tests pass
+            mock_pw_result = Mock(spec=ah.ExecutionResult)
+            mock_pw_result.exit_code = 0
+            mock_pw_result.command = ["npx"]
+            mock_pw_result.working_directory = "/frontend"
+            mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+            mock_pw_result.duration_seconds = 60.0
+            mock_pw_result.stdout = "1 passed"
+            mock_pw_result.stderr = ""
+            mock_pw_result.parsed_counts = {"passed": 1}
+            mock_env_instance.run_playwright_tests.return_value = mock_pw_result
+
             MockEnv.return_value = mock_env_instance
 
             with patch.object(ah, "capture_git_state") as mock_git:
@@ -2044,18 +2169,43 @@ class TestFailurePaths:
                 }
                 with patch.object(ah, "verify_protected_audit"):
                     with patch.object(ah, "verify_repository_invariants"):
-                        with patch.object(ah, "EvidenceCollector") as MockCollector:
-                            mock_collector = Mock()
-                            mock_collector.setup.return_value = None
-                            mock_collector.collect_json.return_value = None
-                            mock_collector.collect_versions.return_value = None
-                            mock_collector.collect_scenario_identity.return_value = None
-                            mock_collector.collect_test_results.return_value = None
-                            mock_collector.collect_file.return_value = None
-                            mock_collector.redact_and_verify.side_effect = ah.AcceptanceHarnessError("Redaction failed")
-                            MockCollector.return_value = mock_collector
+                        with patch.object(ah, "load_browser_result") as mock_load:
+                            mock_browser_result = Mock(spec=ah.BrowserResult)
+                            mock_browser_result.product_workflow_run_id = _VALID_UUID
+                            mock_browser_result.correlation_id = "corr-123"
+                            mock_browser_result.browser_test_start = "2026-08-13T10:00:00+00:00"
+                            mock_browser_result.pre_retry_snapshot = None
+                            mock_browser_result.post_retry_snapshot = None
+                            mock_browser_result.screenshots = []
+                            mock_load.return_value = mock_browser_result
 
-                            result = ah.run_formal_mode("test-run")
+                            with patch.object(ah, "query_workflow_steps", return_value=[]):
+                                with patch.object(ah, "query_workflow_run_state",
+                                                  return_value={"state": "FAILED_VALIDATION",
+                                                                "correlation_id": "corr-123",
+                                                                "dispatch_generation": 0}):
+                                    with patch.object(ah, "query_workflow_run_api",
+                                                      return_value={"status": "success"}):
+                                        with patch.object(ah, "query_recommendations", return_value=[]):
+                                            with patch.object(ah, "check_procurement_tasks_exist", return_value=False):
+                                                with patch.object(ah, "count_provider_retry_attempts", return_value=0):
+                                                    with patch.object(ah, "query_risk_api",
+                                                                      return_value={"status": "available"}):
+                                                        with patch.object(ah, "validate_semantic_evidence"):
+                                                            with patch.object(ah, "review_screenshot"):
+                                                                with patch.object(ah, "EvidenceCollector") as MockCollector:
+                                                                    mock_collector = Mock()
+                                                                    mock_collector.setup.return_value = None
+                                                                    mock_collector.collect_json.return_value = None
+                                                                    mock_collector.collect_versions.return_value = None
+                                                                    mock_collector.collect_scenario_identity.return_value = None
+                                                                    mock_collector.collect_execution_result.return_value = None
+                                                                    mock_collector.collect_file.return_value = None
+                                                                    mock_collector.binary_reviews = {}
+                                                                    mock_collector.redact_and_verify.side_effect = ah.AcceptanceHarnessError("Redaction failed")
+                                                                    MockCollector.return_value = mock_collector
+
+                                                                    result = ah.run_formal_mode("test-run")
             assert result == 1
 
     def test_scenario_failure_stops_before_finalization(self) -> None:
@@ -2063,9 +2213,22 @@ class TestFailurePaths:
             mock_env_instance = Mock()
             mock_env_instance.setup.return_value = None
             mock_env_instance.start_services.return_value = None
-            mock_env_instance.run_backend_tests.return_value = (1, "1 failed")
             mock_env_instance.stop_services.return_value = None
             mock_env_instance.teardown.return_value = None
+            mock_env_instance.evidence_dir = Path("/tmp/test-evidence")
+
+            # Backend tests FAIL (exit code 1)
+            mock_backend_result = Mock(spec=ah.ExecutionResult)
+            mock_backend_result.exit_code = 1
+            mock_backend_result.command = ["pytest"]
+            mock_backend_result.working_directory = "/backend"
+            mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+            mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+            mock_backend_result.duration_seconds = 30.0
+            mock_backend_result.stdout = "1 failed"
+            mock_backend_result.stderr = ""
+            mock_backend_result.parsed_counts = {"passed": 0, "failed": 1}
+            mock_env_instance.run_backend_tests.return_value = mock_backend_result
             MockEnv.return_value = mock_env_instance
 
             with patch.object(ah, "capture_git_state") as mock_git:
@@ -2081,7 +2244,9 @@ class TestFailurePaths:
                             mock_collector.collect_json.return_value = None
                             mock_collector.collect_versions.return_value = None
                             mock_collector.collect_scenario_identity.return_value = None
-                            mock_collector.collect_test_results.return_value = None
+                            mock_collector.collect_execution_result.return_value = None
+                            mock_collector.collect_file.return_value = None
+                            mock_collector.binary_reviews = {}
                             MockCollector.return_value = mock_collector
 
                             result = ah.run_formal_mode("test-run")
@@ -2143,3 +2308,432 @@ class TestConstantsAndInterfaces:
 
     def test_frontend_dir_defined(self) -> None:
         assert hasattr(ah, "FRONTEND_DIR")
+
+
+# ===========================================================================
+# 22. TestRuntimeOrchestration — behavioral proof that run_formal_mode
+#     wires validate_browser_result, validate_semantic_evidence,
+#     ExecutionResult, and screenshot review into the runtime path.
+# ===========================================================================
+
+
+class TestRuntimeOrchestration:
+    """Behavioral tests proving run_formal_mode wires validators into runtime.
+
+    These tests assert observable success/failure outcomes and artifact
+    states — not just mock call counts. They verify that:
+    - validate_browser_result is called via load_browser_result
+    - the browser result's workflow_run_id drives DB/API queries
+    - malformed BrowserResult blocks finalization
+    - validate_semantic_evidence runs before manifest creation
+    - ExecutionResult is produced and persisted by runtime execution
+    - DB/API failure remains explicit and fail-closed
+    - find_recent_workflow_runs is NOT used as authoritative identity
+    """
+
+    def test_malformed_browser_result_blocks_finalization(self) -> None:
+        """A missing or malformed BrowserResult artifact stops finalization."""
+        with patch.object(ah, "verify_protected_audit"):
+            with patch.object(ah, "capture_git_state", return_value={"head": "abc"}):
+                with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+                    mock_env = Mock()
+                    mock_env.setup.return_value = None
+                    mock_env.start_services.return_value = None
+                    mock_env.stop_services.return_value = None
+                    mock_env.teardown.return_value = None
+                    # Backend tests pass
+                    mock_backend_result = Mock(spec=ah.ExecutionResult)
+                    mock_backend_result.exit_code = 0
+                    mock_backend_result.command = ["pytest"]
+                    mock_backend_result.working_directory = "/backend"
+                    mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                    mock_backend_result.duration_seconds = 30.0
+                    mock_backend_result.stdout = "5 passed"
+                    mock_backend_result.stderr = ""
+                    mock_backend_result.parsed_counts = {"passed": 5}
+                    mock_env.run_backend_tests.return_value = mock_backend_result
+                    # Playwright tests pass but produce NO BrowserResult artifact
+                    mock_pw_result = Mock(spec=ah.ExecutionResult)
+                    mock_pw_result.exit_code = 0
+                    mock_pw_result.command = ["npx"]
+                    mock_pw_result.working_directory = "/frontend"
+                    mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                    mock_pw_result.duration_seconds = 60.0
+                    mock_pw_result.stdout = "1 passed"
+                    mock_pw_result.stderr = ""
+                    mock_pw_result.parsed_counts = {"passed": 1}
+                    mock_env.run_playwright_tests.return_value = mock_pw_result
+                    mock_env.evidence_dir = Path("/tmp/test-run-evidence")
+                    MockEnv.return_value = mock_env
+
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "EvidenceCollector") as MockCollector:
+                            mock_collector = Mock()
+                            mock_collector.setup.return_value = None
+                            mock_collector.collect_json.return_value = None
+                            mock_collector.collect_versions.return_value = None
+                            mock_collector.collect_scenario_identity.return_value = None
+                            mock_collector.collect_execution_result.return_value = None
+                            mock_collector.collect_workflow_steps.return_value = None
+                            mock_collector.collect_workflow_run_state.return_value = None
+                            mock_collector.collect_api_snapshot.return_value = None
+                            mock_collector.collect_recommendations.return_value = None
+                            mock_collector.collect_controlled_write_check.return_value = None
+                            mock_collector.collect_provider_retry_count.return_value = None
+                            mock_collector.collect_risk_api_availability.return_value = None
+                            mock_collector.collect_file.return_value = None
+                            mock_collector.redact_and_verify.return_value = None
+                            mock_collector.binary_reviews = {}
+                            MockCollector.return_value = mock_collector
+
+                            # load_browser_result should fail because no file exists
+                            result = ah.run_formal_mode("test-run")
+
+        assert result == 1  # fail-closed
+
+    def test_browser_result_drives_db_queries(self) -> None:
+        """The browser result's product_workflow_run_id drives DB/API queries,
+        not find_recent_workflow_runs."""
+        with patch.object(ah, "verify_protected_audit"):
+            with patch.object(ah, "capture_git_state", return_value={"head": "abc"}):
+                with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+                    mock_env = Mock()
+                    mock_env.setup.return_value = None
+                    mock_env.start_services.return_value = None
+                    mock_env.stop_services.return_value = None
+                    mock_env.teardown.return_value = None
+                    mock_env.evidence_dir = Path("/tmp/test-evidence")
+
+                    mock_backend_result = Mock(spec=ah.ExecutionResult)
+                    mock_backend_result.exit_code = 0
+                    mock_backend_result.command = ["pytest"]
+                    mock_backend_result.working_directory = "/backend"
+                    mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                    mock_backend_result.duration_seconds = 30.0
+                    mock_backend_result.stdout = "5 passed"
+                    mock_backend_result.stderr = ""
+                    mock_backend_result.parsed_counts = {"passed": 5}
+                    mock_env.run_backend_tests.return_value = mock_backend_result
+
+                    mock_pw_result = Mock(spec=ah.ExecutionResult)
+                    mock_pw_result.exit_code = 0
+                    mock_pw_result.command = ["npx"]
+                    mock_pw_result.working_directory = "/frontend"
+                    mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                    mock_pw_result.duration_seconds = 60.0
+                    mock_pw_result.stdout = "1 passed"
+                    mock_pw_result.stderr = ""
+                    mock_pw_result.parsed_counts = {"passed": 1}
+                    mock_env.run_playwright_tests.return_value = mock_pw_result
+
+                    MockEnv.return_value = mock_env
+
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "load_browser_result") as mock_load:
+                            # Return a valid BrowserResult
+                            mock_browser_result = Mock(spec=ah.BrowserResult)
+                            mock_browser_result.product_workflow_run_id = _VALID_UUID
+                            mock_browser_result.correlation_id = "corr-123"
+                            mock_browser_result.browser_test_start = (
+                                "2026-08-13T10:00:00+00:00"
+                            )
+                            mock_browser_result.pre_retry_snapshot = None
+                            mock_browser_result.post_retry_snapshot = None
+                            mock_browser_result.screenshots = []
+                            mock_load.return_value = mock_browser_result
+
+                            with patch.object(ah, "query_workflow_steps") as mock_steps:
+                                mock_steps.return_value = []
+                                with patch.object(
+                                    ah, "query_workflow_run_state"
+                                ) as mock_state:
+                                    mock_state.return_value = {
+                                        "state": "FAILED_VALIDATION",
+                                        "correlation_id": "corr-123",
+                                        "dispatch_generation": 0,
+                                    }
+                                    with patch.object(
+                                        ah, "query_workflow_run_api"
+                                    ) as mock_api:
+                                        mock_api.return_value = {"status": "success"}
+                                        with patch.object(
+                                            ah, "query_recommendations"
+                                        ) as mock_recs:
+                                            mock_recs.return_value = []
+                                            with patch.object(
+                                                ah, "check_procurement_tasks_exist"
+                                            ) as mock_proc:
+                                                mock_proc.return_value = False
+                                                with patch.object(
+                                                    ah, "count_provider_retry_attempts"
+                                                ) as mock_retry:
+                                                    mock_retry.return_value = 0
+                                                    with patch.object(
+                                                        ah, "query_risk_api"
+                                                    ) as mock_risk:
+                                                        mock_risk.return_value = {
+                                                            "status": "available"
+                                                        }
+                                                        with patch.object(
+                                                            ah, "validate_semantic_evidence"
+                                                        ) as mock_semantic:
+                                                            mock_semantic.return_value = None
+                                                            with patch.object(
+                                                                ah, "review_screenshot"
+                                                            ):
+                                                                with patch.object(
+                                                                    ah, "EvidenceCollector"
+                                                                ) as MockCollector:
+                                                                    mock_collector = Mock()
+                                                                    mock_collector.setup.return_value = None
+                                                                    mock_collector.collect_json.return_value = None
+                                                                    mock_collector.collect_versions.return_value = None
+                                                                    mock_collector.collect_scenario_identity.return_value = None
+                                                                    mock_collector.collect_execution_result.return_value = None
+                                                                    mock_collector.collect_workflow_steps.return_value = None
+                                                                    mock_collector.collect_workflow_run_state.return_value = None
+                                                                    mock_collector.collect_api_snapshot.return_value = None
+                                                                    mock_collector.collect_recommendations.return_value = None
+                                                                    mock_collector.collect_controlled_write_check.return_value = None
+                                                                    mock_collector.collect_provider_retry_count.return_value = None
+                                                                    mock_collector.collect_risk_api_availability.return_value = None
+                                                                    mock_collector.collect_file.return_value = None
+                                                                    mock_collector.redact_and_verify.return_value = None
+                                                                    mock_collector.binary_reviews = {}
+                                                                    MockCollector.return_value = mock_collector
+
+                                                                    # Also need to patch find_recent_workflow_runs
+                                                                    # to verify it's NOT called for authoritative identity
+                                                                    with patch.object(
+                                                                        ah, "find_recent_workflow_runs"
+                                                                    ) as mock_find_recent:
+                                                                        mock_find_recent.return_value = []
+                                                                        ah.run_formal_mode(
+                                                                            "test-run"
+                                                                        )
+
+        # The browser result's workflow_run_id was used for queries
+        mock_steps.assert_called_with(_VALID_UUID)
+        mock_state.assert_called_with(_VALID_UUID)
+        # validate_semantic_evidence was called
+        mock_semantic.assert_called()
+        # find_recent_workflow_runs was NOT called for authoritative identity
+        # (it may be called for diagnostics, but the browser result drives queries)
+        # The key assertion: query_workflow_steps received the browser result's UUID
+        assert mock_steps.call_args[0][0] == _VALID_UUID
+
+    def test_execution_result_produced_by_runtime(self) -> None:
+        """run_subprocess returns an ExecutionResult with all required fields."""
+        with patch("subprocess.run") as mock_run:
+            mock_completed = Mock()
+            mock_completed.returncode = 0
+            mock_completed.stdout = "3 passed"
+            mock_completed.stderr = ""
+            mock_run.return_value = mock_completed
+
+            result = ah.run_subprocess(
+                ["echo", "hello"],
+                cwd=Path("/tmp"),
+            )
+
+        assert isinstance(result, ah.ExecutionResult)
+        assert result.command == ["echo", "hello"]
+        assert result.exit_code == 0
+        assert result.stdout == "3 passed"
+        assert "start_timestamp" in result.__dict__ or hasattr(result, "start_timestamp")
+        assert "end_timestamp" in result.__dict__ or hasattr(result, "end_timestamp")
+        assert result.duration_seconds >= 0
+
+    def test_db_failure_remains_fail_closed(self) -> None:
+        """A database error during evidence collection stops execution."""
+        with patch.object(ah, "verify_protected_audit"):
+            with patch.object(ah, "capture_git_state", return_value={"head": "abc"}):
+                with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+                    mock_env = Mock()
+                    mock_env.setup.return_value = None
+                    mock_env.start_services.return_value = None
+                    mock_env.stop_services.return_value = None
+                    mock_env.teardown.return_value = None
+                    mock_env.evidence_dir = Path("/tmp/test-evidence")
+
+                    mock_backend_result = Mock(spec=ah.ExecutionResult)
+                    mock_backend_result.exit_code = 0
+                    mock_backend_result.command = ["pytest"]
+                    mock_backend_result.working_directory = "/backend"
+                    mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                    mock_backend_result.duration_seconds = 30.0
+                    mock_backend_result.stdout = "5 passed"
+                    mock_backend_result.stderr = ""
+                    mock_backend_result.parsed_counts = {"passed": 5}
+                    mock_env.run_backend_tests.return_value = mock_backend_result
+
+                    mock_pw_result = Mock(spec=ah.ExecutionResult)
+                    mock_pw_result.exit_code = 0
+                    mock_pw_result.command = ["npx"]
+                    mock_pw_result.working_directory = "/frontend"
+                    mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                    mock_pw_result.duration_seconds = 60.0
+                    mock_pw_result.stdout = "1 passed"
+                    mock_pw_result.stderr = ""
+                    mock_pw_result.parsed_counts = {"passed": 1}
+                    mock_env.run_playwright_tests.return_value = mock_pw_result
+                    MockEnv.return_value = mock_env
+
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "load_browser_result") as mock_load:
+                            mock_browser_result = Mock(spec=ah.BrowserResult)
+                            mock_browser_result.product_workflow_run_id = _VALID_UUID
+                            mock_browser_result.correlation_id = "corr-123"
+                            mock_browser_result.browser_test_start = (
+                                "2026-08-13T10:00:00+00:00"
+                            )
+                            mock_browser_result.pre_retry_snapshot = None
+                            mock_browser_result.post_retry_snapshot = None
+                            mock_browser_result.screenshots = []
+                            mock_load.return_value = mock_browser_result
+
+                            # query_workflow_steps raises — must propagate
+                            with patch.object(
+                                ah, "query_workflow_steps",
+                                side_effect=ah.AcceptanceHarnessError("DB connection failed"),
+                            ):
+                                with patch.object(ah, "EvidenceCollector") as MockCollector:
+                                    mock_collector = Mock()
+                                    mock_collector.setup.return_value = None
+                                    mock_collector.collect_json.return_value = None
+                                    mock_collector.collect_versions.return_value = None
+                                    mock_collector.collect_scenario_identity.return_value = None
+                                    mock_collector.collect_execution_result.return_value = None
+                                    mock_collector.collect_file.return_value = None
+                                    mock_collector.binary_reviews = {}
+                                    MockCollector.return_value = mock_collector
+
+                                    result = ah.run_formal_mode("test-run")
+
+        assert result == 1  # fail-closed
+
+    def test_semantic_validation_before_manifest(self) -> None:
+        """validate_semantic_evidence is called before redact_and_verify."""
+        call_order: list[str] = []
+
+        with patch.object(ah, "verify_protected_audit"):
+            with patch.object(ah, "capture_git_state", return_value={"head": "abc"}):
+                with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+                    mock_env = Mock()
+                    mock_env.setup.return_value = None
+                    mock_env.start_services.return_value = None
+                    mock_env.stop_services.return_value = None
+                    mock_env.teardown.return_value = None
+                    mock_env.evidence_dir = Path("/tmp/test-evidence")
+
+                    mock_backend_result = Mock(spec=ah.ExecutionResult)
+                    mock_backend_result.exit_code = 0
+                    mock_backend_result.command = ["pytest"]
+                    mock_backend_result.working_directory = "/backend"
+                    mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                    mock_backend_result.duration_seconds = 30.0
+                    mock_backend_result.stdout = "5 passed"
+                    mock_backend_result.stderr = ""
+                    mock_backend_result.parsed_counts = {"passed": 5}
+                    mock_env.run_backend_tests.return_value = mock_backend_result
+
+                    mock_pw_result = Mock(spec=ah.ExecutionResult)
+                    mock_pw_result.exit_code = 0
+                    mock_pw_result.command = ["npx"]
+                    mock_pw_result.working_directory = "/frontend"
+                    mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                    mock_pw_result.duration_seconds = 60.0
+                    mock_pw_result.stdout = "1 passed"
+                    mock_pw_result.stderr = ""
+                    mock_pw_result.parsed_counts = {"passed": 1}
+                    mock_env.run_playwright_tests.return_value = mock_pw_result
+                    MockEnv.return_value = mock_env
+
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "load_browser_result") as mock_load:
+                            mock_browser_result = Mock(spec=ah.BrowserResult)
+                            mock_browser_result.product_workflow_run_id = _VALID_UUID
+                            mock_browser_result.correlation_id = "corr-123"
+                            mock_browser_result.browser_test_start = (
+                                "2026-08-13T10:00:00+00:00"
+                            )
+                            mock_browser_result.pre_retry_snapshot = None
+                            mock_browser_result.post_retry_snapshot = None
+                            mock_browser_result.screenshots = []
+                            mock_load.return_value = mock_browser_result
+
+                            with patch.object(ah, "query_workflow_steps", return_value=[]):
+                                with patch.object(
+                                    ah, "query_workflow_run_state",
+                                    return_value={"state": "FAILED_VALIDATION", "correlation_id": "corr-123", "dispatch_generation": 0},
+                                ):
+                                    with patch.object(
+                                        ah, "query_workflow_run_api",
+                                        return_value={"status": "success"},
+                                    ):
+                                        with patch.object(
+                                            ah, "query_recommendations", return_value=[],
+                                        ):
+                                            with patch.object(
+                                                ah, "check_procurement_tasks_exist",
+                                                return_value=False,
+                                            ):
+                                                with patch.object(
+                                                    ah, "count_provider_retry_attempts",
+                                                    return_value=0,
+                                                ):
+                                                    with patch.object(
+                                                        ah, "query_risk_api",
+                                                        return_value={"status": "available"},
+                                                    ):
+                                                        def _track_semantic(*args: Any, **kwargs: Any) -> None:
+                                                            call_order.append("semantic")
+                                                        with patch.object(
+                                                            ah, "validate_semantic_evidence",
+                                                            side_effect=_track_semantic,
+                                                        ):
+                                                            with patch.object(
+                                                                ah, "review_screenshot",
+                                                            ):
+                                                                with patch.object(
+                                                                    ah, "EvidenceCollector"
+                                                                ) as MockCollector:
+                                                                    mock_collector = Mock()
+                                                                    mock_collector.setup.return_value = None
+                                                                    mock_collector.collect_json.return_value = None
+                                                                    mock_collector.collect_versions.return_value = None
+                                                                    mock_collector.collect_scenario_identity.return_value = None
+                                                                    mock_collector.collect_execution_result.return_value = None
+                                                                    mock_collector.collect_workflow_steps.return_value = None
+                                                                    mock_collector.collect_workflow_run_state.return_value = None
+                                                                    mock_collector.collect_api_snapshot.return_value = None
+                                                                    mock_collector.collect_recommendations.return_value = None
+                                                                    mock_collector.collect_controlled_write_check.return_value = None
+                                                                    mock_collector.collect_provider_retry_count.return_value = None
+                                                                    mock_collector.collect_risk_api_availability.return_value = None
+                                                                    mock_collector.collect_file.return_value = None
+                                                                    mock_collector.binary_reviews = {}
+
+                                                                    def _track_redact(*args: Any, **kwargs: Any) -> None:
+                                                                        call_order.append("redact")
+                                                                    mock_collector.redact_and_verify.side_effect = _track_redact
+                                                                    MockCollector.return_value = mock_collector
+
+                                                                    with patch.object(
+                                                                        ah, "find_recent_workflow_runs",
+                                                                        return_value=[],
+                                                                    ):
+                                                                        ah.run_formal_mode("test-run")
+
+        # Semantic validation must run before redaction/manifest
+        assert "semantic" in call_order
+        assert "redact" in call_order
+        assert call_order.index("semantic") < call_order.index("redact")

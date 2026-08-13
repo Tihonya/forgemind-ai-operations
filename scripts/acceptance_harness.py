@@ -37,7 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import psycopg
+# psycopg is imported lazily inside query_database() so that --mode=verify
+# does not acquire a formal-only DB dependency (§19).
 
 # Repository root (parent of scripts/)
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -74,10 +75,11 @@ REDACTION_PAIRS: list[tuple[str, str]] = [
     (r"(://):[^/\s@]+@", r"\1:[REDACTED]@"),
     # JWT tokens
     (r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", "[REDACTED]"),
-    # Authorization: Bearer
-    (r"(?i)authorization:\s*bearer\s+[^\s]+", "Authorization: Bearer [REDACTED]"),
-    # Authorization: Basic
-    (r"(?i)authorization:\s*basic\s+[^\s]+", "Authorization: Basic [REDACTED]"),
+    # Authorization: Bearer — detect genuine unredacted bearer tokens only
+    # (negative lookahead for [REDACTED] prevents self-matching after replacement)
+    (r"(?i)authorization:\s*bearer\s+(?!\[REDACTED\])[^\s]+", "Authorization: Bearer [REDACTED]"),
+    # Authorization: Basic — detect genuine unredacted basic credentials only
+    (r"(?i)authorization:\s*basic\s+(?!\[REDACTED\])[^\s]+", "Authorization: Basic [REDACTED]"),
     # session_id= values
     (r"session[_-]?id=[^\s;]+", "session_id=[REDACTED]"),
     # auth_token= values
@@ -546,7 +548,12 @@ def query_database(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, A
     Returns list of dicts with column names as keys.
     Preserves NULL values as None.
     Fails closed on any psycopg.Error.
+    
+    Imports psycopg lazily so --mode=verify does not require the formal DB
+    dependency (§19).
     """
+    import psycopg  # lazy import (§19)
+
     # Convert postgresql+asyncpg:// to postgresql:// for psycopg
     sync_url = ACCEPTANCE_DATABASE_URL.replace("+asyncpg", "")
     
@@ -752,10 +759,16 @@ def query_workflow_run_api(workflow_run_id: str) -> dict[str, Any]:
 def find_recent_workflow_runs(
     after_time: datetime.datetime, scenario: str
 ) -> list[str]:
-    """Find workflow runs created after a given time (for evidence collection).
-    
+    """Find workflow runs created after a given time (diagnostics only).
+
+    NON-AUTHORITATIVE: This function is used for diagnostic context only.
+    It must NOT be used to select the authoritative workflow run ID for
+    formal evidence. The authoritative run ID comes from the BrowserResult
+    artifact written by the Playwright spec (NF-04, NF-06).
+
     Returns list of workflow run IDs (as strings).
     Uses parameterized query (M-09: no f-string SQL).
+    Fails closed on database errors (NF-08: no broad except swallowing).
     """
     query = """
         SELECT id FROM workflow_runs
@@ -763,12 +776,10 @@ def find_recent_workflow_runs(
         ORDER BY created_at DESC
         LIMIT 5
     """
-    
-    try:
-        rows = query_database(query, (after_time.isoformat(),))
-        return [str(row.get("id", "")) for row in rows if row.get("id")]
-    except Exception:
-        return []
+
+    # NF-08: do not swallow database errors — propagate as harness failure
+    rows = query_database(query, (after_time.isoformat(),))
+    return [str(row.get("id", "")) for row in rows if row.get("id")]
 
 
 # ---------------------------------------------------------------------------
@@ -1403,6 +1414,30 @@ class EvidenceCollector:
             source=test_type,
         )
 
+    def collect_execution_result(
+        self, scenario: str, test_type: str, exec_result: ExecutionResult
+    ) -> None:
+        """Persist a structured ExecutionResult as evidence (NF-07).
+
+        Stores command, cwd, timestamps, duration, exit code, stdout,
+        stderr, and parsed test counts in a structured JSON artifact.
+        """
+        self.collect_json(
+            f"scenarios/{scenario}/tests/{test_type}.json",
+            {
+                "command": exec_result.command,
+                "working_directory": exec_result.working_directory,
+                "start_timestamp": exec_result.start_timestamp,
+                "end_timestamp": exec_result.end_timestamp,
+                "duration_seconds": exec_result.duration_seconds,
+                "exit_code": exec_result.exit_code,
+                "stdout": exec_result.stdout,
+                "stderr": exec_result.stderr,
+                "parsed_counts": exec_result.parsed_counts,
+            },
+            source=test_type,
+        )
+
     def collect_workflow_steps(
         self, scenario: str, run_id: str, steps: list[dict[str, Any]]
     ) -> None:
@@ -1940,11 +1975,12 @@ class AcceptanceEnvironment:
         
         time.sleep(2)  # Allow ports to be released
 
-    def run_backend_tests(self, scenario: str) -> tuple[int, str]:
-        """Run backend integration tests for AT-008 or AT-013 (B-08).
-        
+    def run_backend_tests(self, scenario: str) -> ExecutionResult:
+        """Run backend integration tests for AT-008 or AT-013 (B-08, NF-07).
+
         Returns:
-            Tuple of (exit_code, stdout_output)
+            ExecutionResult with command, timestamps, exit code, stdout,
+            stderr, and parsed test counts.
         """
         print(f"[{self.run_id}] Running backend acceptance tests for {scenario}...")
         env = os.environ.copy()
@@ -1958,7 +1994,7 @@ class AcceptanceEnvironment:
         else:
             raise AcceptanceHarnessError(f"Unknown scenario: {scenario}")
 
-        result = subprocess.run(
+        return run_subprocess(
             [
                 str(VENV_BIN / "pytest"),
                 test_file,
@@ -1966,21 +2002,32 @@ class AcceptanceEnvironment:
             ],
             cwd=BACKEND_DIR,
             env=env,
-            capture_output=True,
-            text=True,
         )
-        return result.returncode, result.stdout
 
-    def run_playwright_tests(self, scenario: str) -> tuple[int, str]:
-        """Run Playwright acceptance scenarios for the given scenario only (B-08).
-        
+    def run_playwright_tests(
+        self, scenario: str, browser_result_path: Path
+    ) -> ExecutionResult:
+        """Run Playwright acceptance scenarios (B-08, NF-05, NF-06, NF-07).
+
+        Passes task-owned environment to the Playwright spec so it can write
+        a structured BrowserResult artifact to the exact expected path.
+
+        Args:
+            scenario: Scenario name (AT008_INVALID_OUTPUT or AT013_OUTAGE_UNTIL_RETRY).
+            browser_result_path: Exact path where the spec must write its result.
+
         Returns:
-            Tuple of (exit_code, stdout_output)
+            ExecutionResult with command, timestamps, exit code, stdout,
+            stderr, and parsed test counts.
         """
         print(f"[{self.run_id}] Running Playwright acceptance tests for {scenario}...")
         env = os.environ.copy()
         env["PLAYWRIGHT_ACCEPTANCE_BASE_URL"] = ACCEPTANCE_FRONTEND_URL
         env["ACCEPTANCE_FRONTEND_PORT"] = str(ACCEPTANCE_FRONTEND_PORT)
+        # NF-05/NF-06: pass task-owned identity to the spec
+        env["HARNESS_EXECUTION_ID"] = self.run_id
+        env["ACCEPTANCE_SCENARIO"] = scenario
+        env["BROWSER_RESULT_PATH"] = str(browser_result_path)
 
         if scenario == "AT008_INVALID_OUTPUT":
             spec_file = "acceptance-e2e/at008-acceptance.spec.ts"
@@ -1989,7 +2036,7 @@ class AcceptanceEnvironment:
         else:
             raise AcceptanceHarnessError(f"Unknown scenario: {scenario}")
 
-        result = subprocess.run(
+        return run_subprocess(
             [
                 "npx", "playwright", "test",
                 spec_file,
@@ -1997,10 +2044,7 @@ class AcceptanceEnvironment:
             ],
             cwd=FRONTEND_DIR,
             env=env,
-            capture_output=True,
-            text=True,
         )
-        return result.returncode, result.stdout
 
     def teardown(self) -> None:
         """Stop processes and remove owned containers."""
@@ -2087,17 +2131,19 @@ def run_verify_mode(run_id: str) -> int:
 
             env.start_services(scenario)
 
-            backend_rc, _ = env.run_backend_tests(scenario)
-            if backend_rc != 0:
-                print(f"Backend tests failed for {scenario} (exit code {backend_rc})")
+            backend_result = env.run_backend_tests(scenario)
+            if backend_result.exit_code != 0:
+                print(f"Backend tests failed for {scenario} (exit code {backend_result.exit_code})")
                 env.stop_services()
-                return backend_rc
+                return backend_result.exit_code
 
-            playwright_rc, _ = env.run_playwright_tests(scenario)
-            if playwright_rc != 0:
-                print(f"Playwright tests failed for {scenario} (exit code {playwright_rc})")
+            pw_result_path = env.evidence_dir / "browser-results" / f"{scenario}.json"
+            pw_result_path.parent.mkdir(parents=True, exist_ok=True)
+            playwright_result = env.run_playwright_tests(scenario, pw_result_path)
+            if playwright_result.exit_code != 0:
+                print(f"Playwright tests failed for {scenario} (exit code {playwright_result.exit_code})")
                 env.stop_services()
-                return playwright_rc
+                return playwright_result.exit_code
 
             env.stop_services()
 
@@ -2154,6 +2200,84 @@ def parse_pytest_output(output: str) -> dict[str, int]:
     return counts
 
 
+def run_subprocess(
+    command: list[str],
+    cwd: Path,
+    env: dict[str, str] | None = None,
+    timeout: int = 600,
+) -> ExecutionResult:
+    """Run a subprocess and return a structured ExecutionResult (NF-07).
+
+    Captures exact command, working directory, timestamps, duration, exit
+    code, stdout, stderr, and parsed test counts. This replaces ad-hoc
+    subprocess.run calls so every subprocess is tracked uniformly.
+    """
+    start_dt = datetime.datetime.now(datetime.timezone.utc)
+    start_ts = start_dt.isoformat()
+
+    result = subprocess.run(
+        command,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+    end_dt = datetime.datetime.now(datetime.timezone.utc)
+    end_ts = end_dt.isoformat()
+    duration = (end_dt - start_dt).total_seconds()
+
+    parsed = parse_pytest_output(result.stdout)
+
+    return ExecutionResult(
+        command=command,
+        working_directory=str(cwd),
+        start_timestamp=start_ts,
+        end_timestamp=end_ts,
+        duration_seconds=duration,
+        exit_code=result.returncode,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        parsed_counts=parsed,
+    )
+
+
+def load_browser_result(
+    result_path: Path, scenario: str, harness_id: str
+) -> BrowserResult:
+    """Load and validate a BrowserResult artifact from an exact expected path.
+
+    The Playwright spec writes a structured JSON result to the exact
+    task-owned path. This function loads it, parses it, and validates it
+    through validate_browser_result(). The returned BrowserResult's
+    product_workflow_run_id is the authoritative evidence key.
+
+    Raises AcceptanceHarnessError if the file is missing, malformed, or
+    fails validation.
+    """
+    if not result_path.exists():
+        raise AcceptanceHarnessError(
+            f"BrowserResult artifact not found: {result_path}"
+        )
+
+    try:
+        result_dict = json.loads(
+            result_path.read_text(encoding="utf-8")
+        )
+    except json.JSONDecodeError as e:
+        raise AcceptanceHarnessError(
+            f"BrowserResult artifact is not valid JSON: {result_path}. Error: {e}"
+        ) from e
+
+    if not isinstance(result_dict, dict):
+        raise AcceptanceHarnessError(
+            f"BrowserResult artifact must be a JSON object, got {type(result_dict).__name__}"
+        )
+
+    return validate_browser_result(result_dict, scenario, harness_id)
+
+
 def collect_service_logs(collector: EvidenceCollector, logs_dir: Path) -> None:
     """Collect service logs into raw artifacts (H-03).
     
@@ -2175,14 +2299,23 @@ def run_formal_mode(run_id: str) -> int:
     Runs both deterministic scenarios sequentially, collects complete
     evidence, redacts secrets, generates checksums, and writes a manifest.
 
+    Runtime architecture (§7):
+    1. Playwright spec writes structured BrowserResult to exact task-owned path
+    2. Harness loads artifact via load_browser_result() → validate_browser_result()
+    3. The validated product_workflow_run_id becomes the authoritative evidence key
+    4. DB/API evidence is queried for that exact workflow ID
+    5. correlation_id and dispatch_generation cross-checked across artifacts
+    6. validate_semantic_evidence() runs on collected evidence
+    7. Screenshot review with paired DOM snapshot
+    8. Redaction and binary review execute
+    9. Completeness and cross-artifact consistency execute
+    10. Checksums and manifest created only after all preceding gates succeed
+
+    No time-based "most recent workflow run" lookup is used as the
+    authoritative identity source (NF-04). find_recent_workflow_runs()
+    is retained for diagnostics only.
+
     Does NOT declare AT-008 or AT-013 PASS — that belongs to Phase D.
-    
-    Single finalization path ensures:
-    - Logs collected on all paths (H-03)
-    - Protected audit reverified on all paths (H-04)
-    - Repository invariants checked on all paths (H-07)
-    - No evidence failures swallowed (B-10)
-    - No unredacted logs survive (B-02)
     """
     # Pre-flight: verify protected audit integrity
     verify_protected_audit()
@@ -2198,9 +2331,13 @@ def run_formal_mode(run_id: str) -> int:
     collector.collect_json("repository/baseline.json", baseline_git, source="git")
 
     env = AcceptanceEnvironment(run_id=run_id, mode="formal")
-    
+
     # Track scenario failures (B-10: no swallowing)
     scenario_failure: int | None = None
+
+    # NF-10: explicit initialized state — no "run_state" in dir() check
+    run_state: dict[str, Any] = {}
+    workflow_run_id: str | None = None
 
     try:
         env.setup()
@@ -2213,86 +2350,156 @@ def run_formal_mode(run_id: str) -> int:
             print(f"[FORMAL] Scenario: {scenario}")
             print('='*70)
 
-            # Collect scenario identity (B-07: will be populated from API later)
+            # Collect initial scenario identity placeholder
             collector.collect_scenario_identity(scenario)
 
             env.start_services(scenario)
 
-            # Record test start time for DB queries
-            test_start_time = datetime.datetime.now(datetime.timezone.utc)
+            # Run backend tests with structured ExecutionResult (NF-07)
+            backend_result = env.run_backend_tests(scenario)
+            collector.collect_execution_result(scenario, "backend", backend_result)
 
-            # Run backend tests and capture output (B-08)
-            backend_rc, backend_output = env.run_backend_tests(scenario)
-            backend_counts = parse_pytest_output(backend_output)
-            collector.collect_test_results(
-                scenario, "backend", backend_rc, backend_output, backend_counts
+            if backend_result.exit_code != 0:
+                print(f"Backend tests failed for {scenario} (exit code {backend_result.exit_code})")
+                scenario_failure = backend_result.exit_code
+                env.stop_services()
+                collect_service_logs(collector, evidence_dir / "logs")
+                break
+
+            # Run Playwright tests — spec writes structured BrowserResult (NF-05)
+            browser_result_path = evidence_dir / "browser-results" / f"{scenario}.json"
+            browser_result_path.parent.mkdir(parents=True, exist_ok=True)
+
+            playwright_result = env.run_playwright_tests(
+                scenario, browser_result_path
+            )
+            collector.collect_execution_result(
+                scenario, "playwright", playwright_result
             )
 
-            # Collect DB/API evidence (B-10: no broad except swallowing)
-            # Query for workflow runs created during this test
-            workflow_run_ids = find_recent_workflow_runs(test_start_time, scenario)
-            run_state: dict[str, Any] = {}
-            
-            if workflow_run_ids:
-                primary_run_id = workflow_run_ids[0]
-                
-                # Update scenario identity with actual workflow_run_id (B-07)
-                collector.collect_scenario_identity(
-                    scenario,
-                    workflow_run_id=primary_run_id,
-                )
-                
-                # Collect workflow steps audit trail (B-01 category 4)
-                steps = query_workflow_steps(primary_run_id)
-                collector.collect_workflow_steps(scenario, primary_run_id, steps)
-                
-                # Collect workflow run state (B-01 category 5)
-                run_state = query_workflow_run_state(primary_run_id)
-                collector.collect_workflow_run_state(scenario, run_state)
-                
-                # Collect dispatch generation from API (B-01 category 7)
-                api_snapshot = query_workflow_run_api(primary_run_id)
-                collector.collect_api_snapshot(scenario, "dispatch_generation", api_snapshot)
-                
-                # Collect recommendations (B-01 category 8)
-                recommendations = query_recommendations(primary_run_id)
-                collector.collect_recommendations(scenario, primary_run_id, recommendations)
-                
-                # Collect controlled-write check (B-01 category 9)
-                procurement_exist = check_procurement_tasks_exist()
-                collector.collect_controlled_write_check(scenario, procurement_exist)
-            
+            if playwright_result.exit_code != 0:
+                print(f"Playwright tests failed for {scenario} "
+                      f"(exit code {playwright_result.exit_code})")
+                scenario_failure = playwright_result.exit_code
+                env.stop_services()
+                collect_service_logs(collector, evidence_dir / "logs")
+                break
+
+            # NF-02: Load and validate BrowserResult — the authoritative identity
+            browser_result = load_browser_result(
+                browser_result_path, scenario, run_id
+            )
+
+            # The browser-created workflow run ID is the authoritative key
+            workflow_run_id = browser_result.product_workflow_run_id
+
+            # NF-06: Collect scenario identity with actual correlation_id and
+            # dispatch_generation from the browser result
+            collector.collect_scenario_identity(
+                scenario,
+                correlation_id=browser_result.correlation_id,
+                workflow_run_id=workflow_run_id,
+                dispatch_generation=(
+                    browser_result.pre_retry_snapshot.get("generation")
+                    if scenario == "AT013_OUTAGE_UNTIL_RETRY"
+                    and browser_result.pre_retry_snapshot
+                    else None
+                ),
+            )
+
+            # Collect DB/API evidence for the EXACT browser-created run ID
+            # (NF-04: no time-based lookup as authoritative source)
+            steps = query_workflow_steps(workflow_run_id)
+            collector.collect_workflow_steps(scenario, workflow_run_id, steps)
+
+            run_state = query_workflow_run_state(workflow_run_id)
+            collector.collect_workflow_run_state(scenario, run_state)
+
+            api_snapshot = query_workflow_run_api(workflow_run_id)
+            collector.collect_api_snapshot(scenario, "dispatch_generation", api_snapshot)
+
+            recommendations = query_recommendations(workflow_run_id)
+            collector.collect_recommendations(
+                scenario, workflow_run_id, recommendations
+            )
+
+            procurement_exist = check_procurement_tasks_exist()
+            collector.collect_controlled_write_check(scenario, procurement_exist)
+
             # Collect provider retry count from logs (B-01 category 6)
-            # Use the actual log path for this run
             log_path = evidence_dir / "logs" / f"worker-{scenario}.log"
-            correlation_id: str | None = None
-            if workflow_run_ids and "run_state" in dir():
-                correlation_id = run_state.get("correlation_id")
+            correlation_id = run_state.get("correlation_id")
             if correlation_id:
-                retry_count = count_provider_retry_attempts(log_path, str(correlation_id))
+                retry_count = count_provider_retry_attempts(
+                    log_path, str(correlation_id)
+                )
             else:
                 retry_count = 0
             collector.collect_provider_retry_count(scenario, retry_count)
-            
+
             # Collect risk API availability (B-01 category 10)
             risk_data = query_risk_api("PLAN-2026-W31")
             collector.collect_risk_api_availability(scenario, risk_data)
 
-            if backend_rc != 0:
-                print(f"Backend tests failed for {scenario} (exit code {backend_rc})")
-                scenario_failure = backend_rc
-                # Stop services to flush logs (H-03)
-                env.stop_services()
-                # Collect logs before breaking (H-03)
-                collect_service_logs(collector, evidence_dir / "logs")
-                break
+            # NF-03: Semantic evidence validation on collected artifacts
+            # Build semantic evidence dict from the collected DB/API data
+            semantic_evidence = {
+                "category": "workflow_run_state",
+                "workflow_run_id": workflow_run_id,
+                "state": run_state.get("state"),
+                "dispatch_generation": run_state.get("dispatch_generation"),
+                "correlation_id": correlation_id,
+                "error_code": run_state.get("error_code"),
+                "error_detail": run_state.get("error_detail"),
+                "started_at": run_state.get("started_at"),
+                "completed_at": run_state.get("completed_at"),
+                "created_at": run_state.get("created_at"),
+                "updated_at": run_state.get("updated_at"),
+                "step_count": len(steps),
+                "retry_count": retry_count,
+                "recommendation_count": len(recommendations),
+                "timestamp": datetime.datetime.now(
+                    datetime.timezone.utc
+                ).isoformat(),
+                "browser_test_start": browser_result.browser_test_start,
+            }
 
-            # Run Playwright tests (B-08)
-            playwright_rc, playwright_output = env.run_playwright_tests(scenario)
-            playwright_counts = parse_pytest_output(playwright_output)
-            collector.collect_test_results(
-                scenario, "playwright", playwright_rc, playwright_output, playwright_counts
-            )
+            # For AT-013, verify pre/post retry continuity
+            if scenario == "AT013_OUTAGE_UNTIL_RETRY":
+                if browser_result.pre_retry_snapshot:
+                    semantic_evidence["pre_retry_generation"] = (
+                        browser_result.pre_retry_snapshot.get("generation")
+                    )
+                    semantic_evidence["pre_retry_state"] = (
+                        browser_result.pre_retry_snapshot.get("state")
+                    )
+                if browser_result.post_retry_snapshot:
+                    semantic_evidence["post_retry_generation"] = (
+                        browser_result.post_retry_snapshot.get("generation")
+                    )
+                    semantic_evidence["post_retry_state"] = (
+                        browser_result.post_retry_snapshot.get("state")
+                    )
+
+            # Run semantic validation — fail-closed (NF-03)
+            validate_semantic_evidence(semantic_evidence)
+
+            # NF-09: Screenshot review with paired DOM snapshot
+            for screenshot_info in browser_result.screenshots:
+                screenshot_path_str = screenshot_info.get("path", "")
+                dom_path_str = screenshot_info.get("dom_snapshot_path")
+                if screenshot_path_str:
+                    screenshot_path = Path(screenshot_path_str)
+                    dom_path = Path(dom_path_str) if dom_path_str else None
+                    if screenshot_path.exists():
+                        review = review_screenshot(
+                            screenshot_path,
+                            screenshot_info.get("name", "screenshot"),
+                            dom_snapshot_path=dom_path,
+                        )
+                        collector.binary_reviews[
+                            screenshot_info.get("name", "screenshot")
+                        ] = review
 
             # Collect Playwright artifacts if available
             pw_results_dir = FRONTEND_DIR / "test-results" / "acceptance"
@@ -2303,21 +2510,11 @@ def run_formal_mode(run_id: str) -> int:
                     source="playwright",
                 )
 
-            if playwright_rc != 0:
-                print(f"Playwright tests failed for {scenario} (exit code {playwright_rc})")
-                scenario_failure = playwright_rc
-                # Stop services to flush logs (H-03)
-                env.stop_services()
-                # Collect logs before breaking (H-03)
-                collect_service_logs(collector, evidence_dir / "logs")
-                break
-
             env.stop_services()
-            # Collect logs after each successful scenario (H-03)
             collect_service_logs(collector, evidence_dir / "logs")
 
         # Post-execution finalization (single path for all outcomes)
-        
+
         # Capture final repository state
         final_git = capture_git_state()
         collector.collect_json("repository/final.json", final_git, source="git")
@@ -2354,32 +2551,32 @@ def run_formal_mode(run_id: str) -> int:
             verify_protected_audit()
         except AcceptanceHarnessError as audit_err:
             print(f"PROTECTED AUDIT FAILURE: {audit_err}", file=sys.stderr)
-        
+
         # H-07: Verify repository invariants on exception path
         try:
             final_git = capture_git_state()
             verify_repository_invariants(baseline_git, final_git)
         except AcceptanceHarnessError as inv_err:
             print(f"REPOSITORY INVARIANT FAILURE: {inv_err}", file=sys.stderr)
-        
+
         return 1
     except KeyboardInterrupt:
         print("\nInterrupted by user.")
         # Collect logs on interruption (H-03)
         collect_service_logs(collector, evidence_dir / "logs")
-        # Re-verify protected audit even on interruption (H-04)
+        # NF-11: Re-verify protected audit — report, don't swallow
         try:
             verify_protected_audit()
-        except AcceptanceHarnessError:
-            pass
-        
-        # H-07: Verify repository invariants on interruption path
+        except AcceptanceHarnessError as audit_err:
+            print(f"PROTECTED AUDIT FAILURE: {audit_err}", file=sys.stderr)
+
+        # NF-11: Verify repository invariants — report, don't swallow
         try:
             final_git = capture_git_state()
             verify_repository_invariants(baseline_git, final_git)
-        except AcceptanceHarnessError:
-            pass
-        
+        except AcceptanceHarnessError as inv_err:
+            print(f"REPOSITORY INVARIANT FAILURE: {inv_err}", file=sys.stderr)
+
         return 130
     finally:
         env.teardown()
