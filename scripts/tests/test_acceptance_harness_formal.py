@@ -3166,3 +3166,280 @@ class TestRuntimeOrchestration:
         assert "semantic" in call_order
         assert "redact" in call_order
         assert call_order.index("semantic") < call_order.index("redact")
+
+
+# ===========================================================================
+# 23. TestFormalBinaryReviewFinalization — canonical binary-review routing
+#     regression coverage for the formal-finalization KeyError: 'findings'.
+# ===========================================================================
+
+
+class TestFormalBinaryReviewFinalization:
+    """Behavioral regression tests for the formal-finalization binary-review
+    contract.
+
+    The formal runtime previously stored the raw ``review_screenshot()`` result
+    (which omits ``findings``) directly into ``collector.binary_reviews``,
+    bypassing the canonical ``review_binary_artifact()`` wrapper. Finalization
+    then raised ``KeyError: 'findings'`` in ``_write_manifest()``. These tests
+    pin the corrected routing contract through real behavior — not source
+    introspection and not by fully mocking the review functions.
+    """
+
+    def test_screenshot_review_routed_through_canonical_wrapper(
+        self, tmp_path: Path
+    ) -> None:
+        """review_screenshot() routed through review_binary_artifact() yields
+        every canonical review key, including ``findings``."""
+        png = tmp_path / "screen.png"
+        png.write_bytes(_make_png_bytes(100, 100))
+        dom = tmp_path / "screen.dom.txt"
+        dom.write_text("<div>state: COMPLETED</div>")
+
+        collector = ah.EvidenceCollector(tmp_path / "evidence" / "test-run", "test-run")
+        collector.setup()
+
+        review = collector.review_binary_artifact(
+            png, "screen.png", dom_snapshot_path=dom
+        )
+
+        for key in ("artifact", "reviewed", "method", "safe", "findings"):
+            assert key in review
+        assert review["artifact"] == "screen.png"
+        assert review["reviewed"] is True
+        assert isinstance(review["method"], str) and review["method"]
+        assert isinstance(review["safe"], bool)
+        assert review["safe"] is True
+        assert isinstance(review["findings"], list)
+        assert review["findings"] == []
+        # The paired DOM snapshot is forwarded through the canonical wrapper.
+        assert review.get("dom_snapshot_reviewed") is True
+
+    def test_formal_finalization_writes_canonical_manifest(self, tmp_path: Path) -> None:
+        """A representative formal finalization path with a real PNG + DOM
+        snapshot stores the canonical record and writes a manifest whose
+        binary_reviews carry serialized ``findings``."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+
+        png = tmp_path / "final-state.png"
+        png.write_bytes(_make_png_bytes(100, 100))
+        dom = tmp_path / "final-state.dom.txt"
+        dom.write_text("<div>state: COMPLETED</div>")
+
+        # The formal runtime routes screenshots through the canonical wrapper.
+        collector.review_binary_artifact(
+            png, "final-state.png", dom_snapshot_path=dom
+        )
+        collector.redact_and_verify()
+
+        manifest_path = evidence_dir / "redacted" / "manifest.json"
+        assert manifest_path.exists()
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["run_id"] == "test-run"
+        assert manifest["complete"] is True
+        reviews = manifest["binary_reviews"]
+        assert len(reviews) == 1
+        entry = reviews[0]
+        assert entry["artifact"] == "final-state.png"
+        assert entry["reviewed"] is True
+        assert isinstance(entry["method"], str) and entry["method"]
+        assert entry["safe"] is True
+        assert entry["findings"] == []
+
+    def test_unsafe_dom_review_fails_closed(self, tmp_path: Path) -> None:
+        """An unsafe DOM snapshot produces non-empty findings and safe=False via
+        the canonical wrapper, so it can never be treated as a clean review."""
+        png = tmp_path / "screen.png"
+        png.write_bytes(_make_png_bytes(100, 100))
+        dom = tmp_path / "screen.dom.txt"
+        dom.write_text('<input value="password=SuperSecret123">')
+
+        collector = ah.EvidenceCollector(tmp_path / "evidence" / "test-run", "test-run")
+        collector.setup()
+        review = collector.review_binary_artifact(
+            png, "screen.png", dom_snapshot_path=dom
+        )
+
+        assert review["safe"] is False
+        assert isinstance(review["findings"], list)
+        assert len(review["findings"]) > 0
+
+    def test_unsafe_screenshot_fails_closed_before_manifest(self, tmp_path: Path) -> None:
+        """An unsafe binary in the raw tree makes redact_and_verify() raise
+        before any manifest is written (fail-closed)."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+        # Place an invalid binary directly into raw/ so redact_and_verify
+        # reviews it through the canonical wrapper and fails closed.
+        (evidence_dir / "raw" / "bad.png").write_bytes(b"NOT_A_PNG")
+
+        with pytest.raises(ah.AcceptanceHarnessError, match="Binary artifact review failed"):
+            collector.redact_and_verify()
+
+        assert not (evidence_dir / "redacted" / "manifest.json").exists()
+
+    def test_malformed_binary_review_without_findings_rejected(
+        self, tmp_path: Path
+    ) -> None:
+        """A malformed binary-review record lacking ``findings`` is rejected by
+        strict indexed access (KeyError), not silently normalized."""
+        evidence_dir = tmp_path / "evidence" / "test-run"
+        collector = ah.EvidenceCollector(evidence_dir, "test-run")
+        collector.setup()
+        for required in ah.REQUIRED_EVIDENCE_CATEGORIES:
+            collector.collect_json(required, {"test": "data"})
+
+        # Simulate the pre-fix defect: a raw review_screenshot() result with
+        # 'safe' but no 'findings'.
+        collector.binary_reviews["screen.png"] = {
+            "artifact": "screen.png",
+            "reviewed": True,
+            "method": "signature_and_dom_scan",
+            "safe": True,
+        }
+
+        with pytest.raises(KeyError):
+            collector._write_manifest()
+
+    def test_runtime_orchestration_routes_screenshot_review_canonically(
+        self, tmp_path: Path
+    ) -> None:
+        """run_formal_mode() stores canonical binary-review records (with
+        ``findings``) rather than the incomplete review_screenshot() result."""
+        png = tmp_path / "final-state.png"
+        png.write_bytes(_make_png_bytes(100, 100))
+        dom = tmp_path / "final-state.dom.txt"
+        dom.write_text("<div>state: COMPLETED</div>")
+
+        real_collector = ah.EvidenceCollector(tmp_path / "evidence" / "test-run", "test-run")
+        real_collector.setup()
+
+        def _collector_factory(*args: Any, **kwargs: Any) -> ah.EvidenceCollector:
+            return real_collector
+
+        br = ah.BrowserResult(
+            schema_version="1.0",
+            scenario="AT008_INVALID_OUTPUT",
+            harness_execution_id="harness-123",
+            product_workflow_run_id=_VALID_UUID,
+            correlation_id=_VALID_CORRELATION_ID,
+            plan_id="PLAN-2026-W31",
+            browser_test_start="2026-08-13T10:00:00+00:00",
+            browser_test_end="2026-08-13T10:05:00+00:00",
+            final_state="FAILED_VALIDATION",
+            dispatch_generation=0,
+            screenshots=[
+                {
+                    "name": "final-state",
+                    "path": str(png),
+                    "dom_snapshot_path": str(dom),
+                }
+            ],
+        )
+
+        with patch.object(ah, "verify_protected_audit"):
+            with patch.object(ah, "capture_git_state", return_value={"head": "abc"}):
+                with patch.object(ah, "AcceptanceEnvironment") as MockEnv:
+                    mock_env = Mock()
+                    mock_env.setup.return_value = None
+                    mock_env.start_services.return_value = None
+                    mock_env.stop_services.return_value = None
+                    mock_env.teardown.return_value = None
+                    mock_env.evidence_dir = tmp_path / "evidence" / "test-run"
+
+                    mock_backend_result = Mock(spec=ah.ExecutionResult)
+                    mock_backend_result.exit_code = 0
+                    mock_backend_result.command = ["pytest"]
+                    mock_backend_result.working_directory = "/backend"
+                    mock_backend_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_backend_result.end_timestamp = "2026-08-13T10:00:30+00:00"
+                    mock_backend_result.duration_seconds = 30.0
+                    mock_backend_result.stdout = "5 passed"
+                    mock_backend_result.stderr = ""
+                    mock_backend_result.parsed_counts = {"passed": 5}
+                    mock_env.run_backend_tests.return_value = mock_backend_result
+
+                    mock_pw_result = Mock(spec=ah.ExecutionResult)
+                    mock_pw_result.exit_code = 0
+                    mock_pw_result.command = ["npx"]
+                    mock_pw_result.working_directory = "/frontend"
+                    mock_pw_result.start_timestamp = "2026-08-13T10:00:00+00:00"
+                    mock_pw_result.end_timestamp = "2026-08-13T10:01:00+00:00"
+                    mock_pw_result.duration_seconds = 60.0
+                    mock_pw_result.stdout = "1 passed"
+                    mock_pw_result.stderr = ""
+                    mock_pw_result.parsed_counts = {"passed": 1}
+                    mock_env.run_playwright_tests.return_value = mock_pw_result
+
+                    MockEnv.return_value = mock_env
+
+                    with patch.object(ah, "verify_repository_invariants"):
+                        with patch.object(ah, "load_browser_result", return_value=br):
+                            with patch.object(ah, "query_workflow_steps", return_value=[]):
+                                with patch.object(
+                                    ah,
+                                    "query_workflow_run_state",
+                                    return_value={
+                                        "state": "FAILED_VALIDATION",
+                                        "correlation_id": _VALID_CORRELATION_ID,
+                                        "dispatch_generation": 0,
+                                    },
+                                ):
+                                    with patch.object(
+                                        ah, "query_workflow_run_api",
+                                        return_value={"status": "success"},
+                                    ):
+                                        with patch.object(
+                                            ah, "query_recommendations", return_value=[]
+                                        ):
+                                            with patch.object(
+                                                ah, "check_procurement_tasks_exist",
+                                                return_value=False,
+                                            ):
+                                                with patch.object(
+                                                    ah, "count_provider_retry_attempts",
+                                                    return_value=0,
+                                                ):
+                                                    with patch.object(
+                                                        ah, "query_risk_api",
+                                                        return_value={"status": "available"},
+                                                    ):
+                                                        with patch.object(
+                                                            ah, "validate_semantic_evidence"
+                                                        ):
+                                                            with (
+                                                                patch.object(
+                                                                    ah,
+                                                                    "validate_browser_result_artifacts",
+                                                                ),
+                                                                patch.object(
+                                                                    ah,
+                                                                    "collect_service_logs",
+                                                                ),
+                                                                patch.object(
+                                                                    ah,
+                                                                    "EvidenceCollector",
+                                                                    side_effect=_collector_factory,
+                                                                ),
+                                                                patch.object(
+                                                                    real_collector,
+                                                                    "redact_and_verify",
+                                                                    return_value=None,
+                                                                ),
+                                                            ):
+                                                                result = ah.run_formal_mode("test-run")
+
+        assert result == 0
+        assert "final-state" in real_collector.binary_reviews
+        stored = real_collector.binary_reviews["final-state"]
+        for key in ("artifact", "reviewed", "method", "safe", "findings"):
+            assert key in stored
+        assert stored["safe"] is True
+        assert stored["findings"] == []
