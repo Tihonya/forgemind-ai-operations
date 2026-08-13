@@ -57,6 +57,12 @@ import acceptance_harness as ah  # noqa: E402
 
 _VALID_UUID = "550e8400-e29b-41d4-a716-446655440000"
 _VALID_UUID_2 = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+_VALID_CORRELATION_ID = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+
+_EXPECTED_FINAL_STATE = {
+    "AT008_INVALID_OUTPUT": "FAILED_VALIDATION",
+    "AT013_OUTAGE_UNTIL_RETRY": "COMPLETED",
+}
 
 
 def _make_png_bytes(width: int = 100, height: int = 100) -> bytes:
@@ -117,19 +123,50 @@ def _base_browser_result(
     workflow_run_id: str = _VALID_UUID,
     plan_id: str = "PLAN-2026-W31",
 ) -> dict[str, Any]:
-    """Build a minimal valid browser result dict."""
+    """Build a schema-valid browser result dict (artifacts not materialized)."""
     return {
         "schema_version": "1.0",
         "scenario": scenario,
         "harness_execution_id": harness_id,
         "product_workflow_run_id": workflow_run_id,
-        "correlation_id": None,
+        "correlation_id": _VALID_CORRELATION_ID,
         "plan_id": plan_id,
         "browser_test_start": "2026-08-13T10:00:00+00:00",
         "browser_test_end": "2026-08-13T10:05:00+00:00",
-        "final_state": "COMPLETED",
-        "screenshots": [],
+        "final_state": _EXPECTED_FINAL_STATE.get(scenario, "COMPLETED"),
+        "dispatch_generation": 0,
+        "screenshots": [
+            {"name": "final-state", "path": "/tmp/browser-result-final-state.png"},
+        ],
     }
+
+
+def _base_at013_browser_result(
+    harness_id: str = "harness-123",
+    workflow_run_id: str = _VALID_UUID,
+) -> dict[str, Any]:
+    """Build a schema-valid AT-013 result with realistic pre/post snapshots."""
+    result = _base_browser_result(
+        scenario="AT013_OUTAGE_UNTIL_RETRY",
+        harness_id=harness_id,
+        workflow_run_id=workflow_run_id,
+    )
+    result["dispatch_generation"] = 1
+    result["pre_retry_snapshot"] = {
+        "workflow_run_id": workflow_run_id,
+        "generation": 0,
+        "state": "FAILED_PROVIDER",
+        "correlation_id": _VALID_CORRELATION_ID,
+        "timestamp": "2026-08-13T10:02:00+00:00",
+    }
+    result["post_retry_snapshot"] = {
+        "workflow_run_id": workflow_run_id,
+        "generation": 1,
+        "state": "COMPLETED",
+        "correlation_id": _VALID_CORRELATION_ID,
+        "timestamp": "2026-08-13T10:04:00+00:00",
+    }
+    return result
 
 
 def _base_execution_result() -> dict[str, Any]:
@@ -693,9 +730,7 @@ class TestBrowserResultSchema:
         assert validated.product_workflow_run_id == _VALID_UUID
 
     def test_valid_at013_result_passes(self) -> None:
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 0}
-        result["post_retry_snapshot"] = {"generation": 1}
+        result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
         assert validated.scenario == "AT013_OUTAGE_UNTIL_RETRY"
 
@@ -751,6 +786,114 @@ class TestBrowserResultSchema:
         assert validated.product_workflow_run_id == _VALID_UUID
 
 
+class TestBrowserResultFailClosed:
+    """validate_browser_result rejects fabricated or missing evidence identity."""
+
+    def test_null_correlation_id_rejected(self) -> None:
+        result = _base_browser_result()
+        result["correlation_id"] = None
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_empty_correlation_id_rejected(self) -> None:
+        result = _base_browser_result()
+        result["correlation_id"] = ""
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_invalid_correlation_uuid_rejected(self) -> None:
+        result = _base_browser_result()
+        result["correlation_id"] = "not-a-uuid"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_missing_dispatch_generation_rejected(self) -> None:
+        result = _base_browser_result()
+        del result["dispatch_generation"]
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_non_integer_dispatch_generation_rejected(self) -> None:
+        result = _base_browser_result()
+        result["dispatch_generation"] = "0"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_negative_dispatch_generation_rejected(self) -> None:
+        result = _base_browser_result()
+        result["dispatch_generation"] = -1
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_wrong_final_state_rejected(self) -> None:
+        result = _base_browser_result(scenario="AT008_INVALID_OUTPUT")
+        result["final_state"] = "COMPLETED"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_unrecognized_final_state_rejected(self) -> None:
+        result = _base_browser_result()
+        result["final_state"] = "BOGUS_STATE"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_empty_screenshots_rejected(self) -> None:
+        result = _base_browser_result()
+        result["screenshots"] = []
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+    def test_screenshot_missing_path_rejected(self) -> None:
+        result = _base_browser_result()
+        result["screenshots"] = [{"name": "final-state"}]
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+
+
+class TestBrowserResultArtifacts:
+    """validate_browser_result_artifacts fails closed on missing artifacts."""
+
+    def test_valid_artifacts_accepted(self, tmp_path: Path) -> None:
+        png_file = tmp_path / "screen.png"
+        png_file.write_bytes(_make_png_bytes())
+        dom_file = tmp_path / "screen.dom.txt"
+        dom_file.write_text("RUN STATE: FAILED_VALIDATION\n", encoding="utf-8")
+        result = _base_browser_result()
+        result["screenshots"] = [
+            {
+                "name": "final-state",
+                "path": str(png_file),
+                "dom_snapshot_path": str(dom_file),
+            },
+        ]
+        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+        ah.validate_browser_result_artifacts(validated)  # must not raise
+
+    def test_missing_screenshot_file_rejected(self, tmp_path: Path) -> None:
+        result = _base_browser_result()
+        result["screenshots"] = [
+            {"name": "final-state", "path": str(tmp_path / "missing.png")},
+        ]
+        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result_artifacts(validated)
+
+    def test_missing_dom_snapshot_file_rejected(self, tmp_path: Path) -> None:
+        png_file = tmp_path / "screen.png"
+        png_file.write_bytes(_make_png_bytes())
+        result = _base_browser_result()
+        result["screenshots"] = [
+            {
+                "name": "final-state",
+                "path": str(png_file),
+                "dom_snapshot_path": str(tmp_path / "missing.dom.txt"),
+            },
+        ]
+        validated = ah.validate_browser_result(result, "AT008_INVALID_OUTPUT", "harness-123")
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result_artifacts(validated)
+
+
 # ===========================================================================
 # 5. TestAT013PrePostRetry (B-12, B-13)
 # ===========================================================================
@@ -760,45 +903,120 @@ class TestAT013PrePostRetry:
     """AT-013 result must have pre/post retry snapshots with generation continuity."""
 
     def test_at013_has_pre_and_post_retry_snapshots(self) -> None:
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 0, "state": "pending"}
-        result["post_retry_snapshot"] = {"generation": 1, "state": "completed"}
+        result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
-        assert hasattr(validated, "pre_retry_snapshot") or "pre_retry" in str(vars(validated))
+        assert validated.pre_retry_snapshot is not None
+        assert validated.post_retry_snapshot is not None
+        assert validated.pre_retry_snapshot["state"] == "FAILED_PROVIDER"
+        assert validated.post_retry_snapshot["state"] == "COMPLETED"
 
     def test_generation_increment_verified(self) -> None:
         """Post-retry generation must be exactly pre_retry + 1."""
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 0}
-        result["post_retry_snapshot"] = {"generation": 1}
+        result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
-        # If validate_browser_result checks generation increment, it passes
-        # If it doesn't check yet, we verify the data is preserved
-        assert validated is not None
+        assert validated.pre_retry_snapshot["generation"] == 0
+        assert validated.post_retry_snapshot["generation"] == 1
 
     def test_same_run_id_continuity_required(self) -> None:
         """Pre and post retry snapshots must reference the same workflow run."""
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 0, "workflow_run_id": _VALID_UUID}
-        result["post_retry_snapshot"] = {"generation": 1, "workflow_run_id": _VALID_UUID}
+        result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
-        assert validated is not None
+        assert validated.pre_retry_snapshot["workflow_run_id"] == _VALID_UUID
+        assert validated.post_retry_snapshot["workflow_run_id"] == _VALID_UUID
 
     def test_different_run_ids_in_snapshots_rejected(self) -> None:
         """Pre/post snapshots with different workflow_run_ids must be rejected."""
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 0, "workflow_run_id": _VALID_UUID}
-        result["post_retry_snapshot"] = {"generation": 1, "workflow_run_id": _VALID_UUID_2}
+        result = _base_at013_browser_result()
+        result["post_retry_snapshot"]["workflow_run_id"] = _VALID_UUID_2
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_snapshot_run_id_must_match_top_level_rejected(self) -> None:
+        """A snapshot run_id that drifts from product_workflow_run_id is rejected."""
+        result = _base_at013_browser_result(workflow_run_id=_VALID_UUID)
+        result["product_workflow_run_id"] = _VALID_UUID_2
         with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
             ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
 
     def test_identity_and_generation_continuity_validated(self) -> None:
         """Both identity (run_id) and generation must be continuous."""
-        result = _base_browser_result(scenario="AT013_OUTAGE_UNTIL_RETRY")
-        result["pre_retry_snapshot"] = {"generation": 2, "workflow_run_id": _VALID_UUID}
-        result["post_retry_snapshot"] = {"generation": 3, "workflow_run_id": _VALID_UUID}
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["generation"] = 2
+        result["post_retry_snapshot"]["generation"] = 3
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
-        assert validated is not None
+        assert validated.pre_retry_snapshot["generation"] == 2
+        assert validated.post_retry_snapshot["generation"] == 3
+
+    def test_equal_generations_rejected(self) -> None:
+        """post == pre (no advancement) is rejected — no fabricated 0/0 or 1/1."""
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["generation"] = 1
+        result["post_retry_snapshot"]["generation"] = 1
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_decreasing_generations_rejected(self) -> None:
+        """post < pre is rejected."""
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["generation"] = 2
+        result["post_retry_snapshot"]["generation"] = 1
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_jump_by_more_than_one_rejected(self) -> None:
+        """post == pre + 2 is rejected (generation must advance by exactly 1)."""
+        result = _base_at013_browser_result()
+        result["post_retry_snapshot"]["generation"] = 2
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_non_integer_pre_generation_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["generation"] = "0"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_non_integer_post_generation_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["post_retry_snapshot"]["generation"] = "1"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_missing_pre_generation_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        del result["pre_retry_snapshot"]["generation"]
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_missing_post_generation_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        del result["post_retry_snapshot"]["generation"]
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_wrong_pre_state_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["state"] = "COMPLETED"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_wrong_post_state_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["post_retry_snapshot"]["state"] = "FAILED_PROVIDER"
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_null_pre_correlation_id_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["pre_retry_snapshot"]["correlation_id"] = None
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+
+    def test_null_post_correlation_id_rejected(self) -> None:
+        result = _base_at013_browser_result()
+        result["post_retry_snapshot"]["correlation_id"] = None
+        with pytest.raises((ah.AcceptanceHarnessError, ValueError)):
+            ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
 
 
 # ===========================================================================
@@ -2192,7 +2410,10 @@ class TestFailurePaths:
                                                     with patch.object(ah, "query_risk_api",
                                                                       return_value={"status": "available"}):
                                                         with patch.object(ah, "validate_semantic_evidence"):
-                                                            with patch.object(ah, "review_screenshot"):
+                                                            with (
+                                                                patch.object(ah, "validate_browser_result_artifacts"),
+                                                                patch.object(ah, "review_screenshot"),
+                                                            ):
                                                                 with patch.object(ah, "EvidenceCollector") as MockCollector:
                                                                     mock_collector = Mock()
                                                                     mock_collector.setup.return_value = None
@@ -2482,8 +2703,9 @@ class TestRuntimeOrchestration:
                                                             ah, "validate_semantic_evidence"
                                                         ) as mock_semantic:
                                                             mock_semantic.return_value = None
-                                                            with patch.object(
-                                                                ah, "review_screenshot"
+                                                            with (
+                                                                patch.object(ah, "validate_browser_result_artifacts"),
+                                                                patch.object(ah, "review_screenshot"),
                                                             ):
                                                                 with patch.object(
                                                                     ah, "EvidenceCollector"
@@ -2700,8 +2922,9 @@ class TestRuntimeOrchestration:
                                                             ah, "validate_semantic_evidence",
                                                             side_effect=_track_semantic,
                                                         ):
-                                                            with patch.object(
-                                                                ah, "review_screenshot",
+                                                            with (
+                                                                patch.object(ah, "validate_browser_result_artifacts"),
+                                                                patch.object(ah, "review_screenshot"),
                                                             ):
                                                                 with patch.object(
                                                                     ah, "EvidenceCollector"

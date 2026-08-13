@@ -225,11 +225,12 @@ class BrowserResult:
     scenario: str
     harness_execution_id: str
     product_workflow_run_id: str
-    correlation_id: str | None
+    correlation_id: str
     plan_id: str
     browser_test_start: str
     browser_test_end: str
     final_state: str
+    dispatch_generation: int
     screenshots: list[dict[str, Any]] = field(default_factory=list)
     # AT-013 specific
     pre_retry_snapshot: dict[str, Any] | None = None
@@ -791,47 +792,62 @@ def validate_browser_result(
     result_dict: dict[str, Any], scenario: str, harness_id: str
 ) -> BrowserResult:
     """Validate a Playwright scenario result JSON.
-    
+
     Args:
         result_dict: The parsed JSON from the Playwright spec.
         scenario: Expected scenario name.
         harness_id: Expected harness execution ID.
-    
+
     Returns:
         Validated BrowserResult.
-    
+
     Raises:
         AcceptanceHarnessError: If validation fails.
+
+    Fail-closed contract (third remediation):
+    - correlation_id must be a non-empty, valid UUID (no null/fallback identity).
+    - final_state must be a recognized state matching the scenario's
+      expected terminal state (no fabricated/mismatched state).
+    - dispatch_generation must be a non-negative integer (no missing or
+      non-integer generation).
+    - screenshots must be a non-empty list of objects each carrying a
+      non-empty ``path`` (no empty screenshot evidence).
+    - AT-013 pre/post snapshots must carry integer generations advancing by
+      exactly one, the same workflow run ID (also equal to the top-level
+      ``product_workflow_run_id``), the correct per-boundary states, and
+      non-null correlation IDs (no hardcoded 0/1 generations, no fabricated
+      continuity).
     """
     # Required fields
     required_fields = [
         "schema_version", "scenario", "harness_execution_id",
-        "product_workflow_run_id", "plan_id",
-        "browser_test_start", "browser_test_end", "final_state"
+        "product_workflow_run_id", "correlation_id", "plan_id",
+        "browser_test_start", "browser_test_end", "final_state",
+        "dispatch_generation",
     ]
-    
+
     for field_name in required_fields:
         if field_name not in result_dict:
             raise AcceptanceHarnessError(f"Missing required field: {field_name}")
-    
+
     # Validate schema version
     if result_dict["schema_version"] != "1.0":
         raise AcceptanceHarnessError(
             f"Unsupported schema version: {result_dict['schema_version']}"
         )
-    
+
     # Validate scenario matches
     if result_dict["scenario"] != scenario:
         raise AcceptanceHarnessError(
             f"Scenario mismatch: expected {scenario}, got {result_dict['scenario']}"
         )
-    
+
     # Validate harness ID matches
     if result_dict["harness_execution_id"] != harness_id:
         raise AcceptanceHarnessError(
             f"Harness ID mismatch: expected {harness_id}, got {result_dict['harness_execution_id']}"
         )
-    
+
     # Validate workflow_run_id is a valid UUID
     workflow_run_id = result_dict["product_workflow_run_id"]
     try:
@@ -840,7 +856,66 @@ def validate_browser_result(
         raise AcceptanceHarnessError(
             f"Invalid workflow_run_id UUID: {workflow_run_id}. Error: {e}"
         )
-    
+
+    # Reject null/empty correlation identity (no fabricated fallback)
+    correlation_id = result_dict["correlation_id"]
+    if not isinstance(correlation_id, str) or not correlation_id.strip():
+        raise AcceptanceHarnessError(
+            f"correlation_id must be a non-empty string, got {correlation_id!r}"
+        )
+    try:
+        uuid.UUID(correlation_id)
+    except (ValueError, AttributeError) as e:
+        raise AcceptanceHarnessError(
+            f"Invalid correlation_id UUID: {correlation_id!r}. Error: {e}"
+        )
+
+    # Reject unrecognized or scenario-mismatched final state
+    final_state = result_dict["final_state"]
+    if not isinstance(final_state, str) or final_state not in VALID_WORKFLOW_STATES:
+        raise AcceptanceHarnessError(
+            f"Invalid final_state: {final_state!r}. "
+            f"Must be one of {sorted(VALID_WORKFLOW_STATES)}"
+        )
+    expected_final_state = {
+        "AT008_INVALID_OUTPUT": "FAILED_VALIDATION",
+        "AT013_OUTAGE_UNTIL_RETRY": "COMPLETED",
+    }[scenario]
+    if final_state != expected_final_state:
+        raise AcceptanceHarnessError(
+            f"Unexpected final_state for {scenario}: {final_state!r}, "
+            f"expected {expected_final_state!r}"
+        )
+
+    # Reject missing or non-integer generation
+    dispatch_generation = result_dict["dispatch_generation"]
+    if (
+        not isinstance(dispatch_generation, int)
+        or isinstance(dispatch_generation, bool)
+        or dispatch_generation < 0
+    ):
+        raise AcceptanceHarnessError(
+            f"dispatch_generation must be a non-negative integer, "
+            f"got {dispatch_generation!r}"
+        )
+
+    # Reject missing screenshot evidence (non-empty list, each with a path)
+    screenshots = result_dict.get("screenshots")
+    if not isinstance(screenshots, list) or len(screenshots) == 0:
+        raise AcceptanceHarnessError(
+            "BrowserResult requires at least one screenshot artifact"
+        )
+    for shot in screenshots:
+        if not isinstance(shot, dict):
+            raise AcceptanceHarnessError(
+                f"Each screenshot entry must be an object, got {shot!r}"
+            )
+        shot_path = shot.get("path")
+        if not isinstance(shot_path, str) or not shot_path.strip():
+            raise AcceptanceHarnessError(
+                f"Screenshot entry missing path: {shot!r}"
+            )
+
     # Validate timestamps are ISO format
     for ts_field in ["browser_test_start", "browser_test_end"]:
         try:
@@ -849,54 +924,130 @@ def validate_browser_result(
             raise AcceptanceHarnessError(
                 f"Invalid timestamp in {ts_field}: {result_dict[ts_field]}. Error: {e}"
             )
-    
+
     # AT-013 specific validation
     if scenario == "AT013_OUTAGE_UNTIL_RETRY":
         pre_retry = result_dict.get("pre_retry_snapshot")
         post_retry = result_dict.get("post_retry_snapshot")
-        
+
         if pre_retry is None or post_retry is None:
             raise AcceptanceHarnessError(
                 "AT-013 requires both pre_retry_snapshot and post_retry_snapshot"
             )
-        
-        # Validate generation increment
+
+        # Reject missing or non-integer generations (no hardcoded 0/1)
         pre_gen = pre_retry.get("generation")
         post_gen = post_retry.get("generation")
-        
-        if pre_gen is None or post_gen is None:
+        if not isinstance(pre_gen, int) or isinstance(pre_gen, bool):
             raise AcceptanceHarnessError(
-                "AT-013 pre/post retry snapshots must include generation"
+                f"AT-013 pre_retry generation must be an integer, got {pre_gen!r}"
             )
-        
+        if not isinstance(post_gen, int) or isinstance(post_gen, bool):
+            raise AcceptanceHarnessError(
+                f"AT-013 post_retry generation must be an integer, got {post_gen!r}"
+            )
+
+        # Reject equal/decreasing/fabricated generation advancement
         if post_gen != pre_gen + 1:
             raise AcceptanceHarnessError(
-                f"AT-013 generation increment invalid: pre={pre_gen}, post={post_gen}"
+                f"AT-013 generation increment invalid: pre={pre_gen}, post={post_gen} "
+                f"(expected post == pre + 1)"
             )
-        
-        # Validate same workflow_run_id in both snapshots
+
+        # Reject wrong run IDs (snapshot mismatch or drift from top-level)
         pre_run_id = pre_retry.get("workflow_run_id")
         post_run_id = post_retry.get("workflow_run_id")
-        
         if pre_run_id != post_run_id:
             raise AcceptanceHarnessError(
                 f"AT-013 run ID continuity violated: pre={pre_run_id}, post={post_run_id}"
             )
-    
+        if pre_run_id != workflow_run_id:
+            raise AcceptanceHarnessError(
+                f"AT-013 snapshot run ID mismatch: {pre_run_id!r} "
+                f"!= {workflow_run_id!r}"
+            )
+
+        # Reject wrong per-boundary states
+        pre_state = pre_retry.get("state")
+        post_state = post_retry.get("state")
+        if pre_state != "FAILED_PROVIDER":
+            raise AcceptanceHarnessError(
+                f"AT-013 pre_retry state must be FAILED_PROVIDER, got {pre_state!r}"
+            )
+        if post_state != "COMPLETED":
+            raise AcceptanceHarnessError(
+                f"AT-013 post_retry state must be COMPLETED, got {post_state!r}"
+            )
+
+        # Reject null snapshot correlation identity
+        pre_corr = pre_retry.get("correlation_id")
+        post_corr = post_retry.get("correlation_id")
+        if not isinstance(pre_corr, str) or not pre_corr.strip():
+            raise AcceptanceHarnessError(
+                f"AT-013 pre_retry correlation_id must be a non-empty string, "
+                f"got {pre_corr!r}"
+            )
+        if not isinstance(post_corr, str) or not post_corr.strip():
+            raise AcceptanceHarnessError(
+                f"AT-013 post_retry correlation_id must be a non-empty string, "
+                f"got {post_corr!r}"
+            )
+
     return BrowserResult(
         schema_version=result_dict["schema_version"],
         scenario=result_dict["scenario"],
         harness_execution_id=result_dict["harness_execution_id"],
         product_workflow_run_id=result_dict["product_workflow_run_id"],
-        correlation_id=result_dict.get("correlation_id"),
+        correlation_id=correlation_id,
         plan_id=result_dict["plan_id"],
         browser_test_start=result_dict["browser_test_start"],
         browser_test_end=result_dict["browser_test_end"],
-        final_state=result_dict["final_state"],
-        screenshots=result_dict.get("screenshots", []),
+        final_state=final_state,
+        dispatch_generation=dispatch_generation,
+        screenshots=screenshots,
         pre_retry_snapshot=result_dict.get("pre_retry_snapshot"),
         post_retry_snapshot=result_dict.get("post_retry_snapshot"),
     )
+
+
+def validate_browser_result_artifacts(result: BrowserResult) -> None:
+    """Verify every artifact referenced by a BrowserResult exists on disk.
+
+    Fail-closed: a BrowserResult that references a missing screenshot or
+    DOM snapshot is rejected. This closes the gap where a result could
+    reference artifacts that were never written (or were written to a
+    different location) while the harness silently skipped the review.
+
+    Args:
+        result: The validated BrowserResult whose artifacts must exist.
+
+    Raises:
+        AcceptanceHarnessError: If a referenced screenshot or DOM snapshot
+        path is absent, empty, or does not resolve to an existing file.
+    """
+    if not result.screenshots:
+        raise AcceptanceHarnessError("BrowserResult has no screenshot artifacts")
+
+    for shot in result.screenshots:
+        name = shot.get("name", "screenshot")
+        path_str = shot.get("path")
+        if not isinstance(path_str, str) or not path_str:
+            raise AcceptanceHarnessError(
+                f"Screenshot '{name}' is missing a path"
+            )
+        path = Path(path_str)
+        if not path.exists():
+            raise AcceptanceHarnessError(f"Screenshot not found: {path}")
+
+        dom_path_str = shot.get("dom_snapshot_path")
+        if dom_path_str is not None:
+            if not isinstance(dom_path_str, str) or not dom_path_str:
+                raise AcceptanceHarnessError(
+                    f"Screenshot '{name}' has an invalid DOM snapshot path"
+                )
+            dom_path = Path(dom_path_str)
+            if not dom_path.exists():
+                raise AcceptanceHarnessError(f"DOM snapshot not found: {dom_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -2024,6 +2175,12 @@ class AcceptanceEnvironment:
         env = os.environ.copy()
         env["PLAYWRIGHT_ACCEPTANCE_BASE_URL"] = ACCEPTANCE_FRONTEND_URL
         env["ACCEPTANCE_FRONTEND_PORT"] = str(ACCEPTANCE_FRONTEND_PORT)
+        # Direct acceptance-backend API base for spec-side evidence enrichment
+        # (NF-06/D2: specs must not resolve /api/v1 through the Vite proxy).
+        env["ACCEPTANCE_API_BASE_URL"] = (
+            f"http://localhost:{ACCEPTANCE_BACKEND_PORT}/api/v1"
+        )
+        env["ACCEPTANCE_BACKEND_PORT"] = str(ACCEPTANCE_BACKEND_PORT)
         # NF-05/NF-06: pass task-owned identity to the spec
         env["HARNESS_EXECUTION_ID"] = self.run_id
         env["ACCEPTANCE_SCENARIO"] = scenario
@@ -2484,22 +2641,23 @@ def run_formal_mode(run_id: str) -> int:
             # Run semantic validation — fail-closed (NF-03)
             validate_semantic_evidence(semantic_evidence)
 
-            # NF-09: Screenshot review with paired DOM snapshot
+            # NF-09: Screenshot review with paired DOM snapshot (fail-closed)
+            validate_browser_result_artifacts(browser_result)
             for screenshot_info in browser_result.screenshots:
-                screenshot_path_str = screenshot_info.get("path", "")
-                dom_path_str = screenshot_info.get("dom_snapshot_path")
-                if screenshot_path_str:
-                    screenshot_path = Path(screenshot_path_str)
-                    dom_path = Path(dom_path_str) if dom_path_str else None
-                    if screenshot_path.exists():
-                        review = review_screenshot(
-                            screenshot_path,
-                            screenshot_info.get("name", "screenshot"),
-                            dom_snapshot_path=dom_path,
-                        )
-                        collector.binary_reviews[
-                            screenshot_info.get("name", "screenshot")
-                        ] = review
+                screenshot_path = Path(screenshot_info.get("path", ""))
+                dom_path = (
+                    Path(screenshot_info["dom_snapshot_path"])
+                    if screenshot_info.get("dom_snapshot_path")
+                    else None
+                )
+                review = review_screenshot(
+                    screenshot_path,
+                    screenshot_info.get("name", "screenshot"),
+                    dom_snapshot_path=dom_path,
+                )
+                collector.binary_reviews[
+                    screenshot_info.get("name", "screenshot")
+                ] = review
 
             # Collect Playwright artifacts if available
             pw_results_dir = FRONTEND_DIR / "test-results" / "acceptance"
