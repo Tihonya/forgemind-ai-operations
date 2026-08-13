@@ -914,6 +914,8 @@ class TestAT013PrePostRetry:
         """Post-retry generation must be exactly pre_retry + 1."""
         result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+        assert validated.pre_retry_snapshot is not None
+        assert validated.post_retry_snapshot is not None
         assert validated.pre_retry_snapshot["generation"] == 0
         assert validated.post_retry_snapshot["generation"] == 1
 
@@ -921,6 +923,8 @@ class TestAT013PrePostRetry:
         """Pre and post retry snapshots must reference the same workflow run."""
         result = _base_at013_browser_result()
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+        assert validated.pre_retry_snapshot is not None
+        assert validated.post_retry_snapshot is not None
         assert validated.pre_retry_snapshot["workflow_run_id"] == _VALID_UUID
         assert validated.post_retry_snapshot["workflow_run_id"] == _VALID_UUID
 
@@ -944,6 +948,8 @@ class TestAT013PrePostRetry:
         result["pre_retry_snapshot"]["generation"] = 2
         result["post_retry_snapshot"]["generation"] = 3
         validated = ah.validate_browser_result(result, "AT013_OUTAGE_UNTIL_RETRY", "harness-123")
+        assert validated.pre_retry_snapshot is not None
+        assert validated.post_retry_snapshot is not None
         assert validated.pre_retry_snapshot["generation"] == 2
         assert validated.post_retry_snapshot["generation"] == 3
 
