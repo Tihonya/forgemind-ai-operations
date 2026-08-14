@@ -84,7 +84,6 @@ No conclusion is made about the readiness of WP-REC-05 or later phases.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
 - WP-REC-05-DEC (RAG integration planning): PLANNING AUTHORIZED — planning-only package (DEC-044, 2026-08-14); deliverable `docs/planning/wp_rec_05_rag_integration.md`. Does not authorize implementation or verification.
 - WP-REC-05-VFY (bounded AT-006/AT-007 verification): NOT AUTHORIZED — separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
-- Bounded AT-006/AT-007 verification package: NOT AUTHORIZED — separate from WP-ARCH-01 (SD-2).
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED
 - Activation of agent automation: NOT AUTHORIZED (deferred until available on general terms; not a Release 1 blocker)

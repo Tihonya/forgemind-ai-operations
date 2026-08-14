@@ -98,8 +98,12 @@ precise and cite exact repository paths and symbols.
    preserved by DEC-043.
 
 10. **Deterministic risk result survives provider failure.** Already
-    implemented in `execute_workflow`: risk calculation is persisted
-    independently of provider success (AT-013 pattern).
+    implemented in `execute_workflow`: the deterministic risk result is not
+    persisted in a risk table or workflow step; it is deterministically
+    recomputable and remains available through the read-only risk API
+    (`GET /api/v1/production-plans/{plan_code}/risks`). Retrieval or provider
+    failure must not change the underlying production-plan inputs or prevent
+    deterministic recomputation (AT-013 pattern).
 
 11. **The Golden Scenario step 6 is the earliest incomplete critical-path
     step.** `01_PRODUCT_AND_MVP_SCOPE.md` §2 step 6: "RAG шукає лише доступні
@@ -219,7 +223,7 @@ authorization; the expected areas are:
 - `backend/app/ai/rag/citations.py` (citation allow-list construction)
 - `backend/app/models/workflow.py` (authorization-context persistence)
 - `backend/app/api/workflow.py` (resolve + persist role context at start/retry)
-- `backend/app/schemas/recommendation.py` (bounded `Source` identity-mapping clarification only, if required)
+- `backend/app/schemas/recommendation.py` (bounded `Source` identity-mapping change, if required and only after M3 is decided)
 - a new Alembic migration file
 - new backend tests under `backend/tests/` (implementation phase only)
 
@@ -268,9 +272,12 @@ protected audit file.
 ### D10. Failure behavior and rollback
 
 - Retrieval failure, no-result, provider failure, and validation failure are
-  specified in §F and §G. The deterministic risk result must remain persisted
-  and independently available regardless of retrieval or provider outcome
-  (consistent with the existing AT-013 contract).
+  specified in §F and §G. The deterministic risk result is not persisted in a
+  risk table or workflow step; it is deterministically recomputable and
+  remains available through the read-only risk API
+  (`GET /api/v1/production-plans/{plan_code}/risks`). Retrieval or provider
+  failure must not change the underlying production-plan inputs or prevent
+  deterministic recomputation (consistent with the existing AT-013 contract).
 - Rollback: WP-REC-05 changes are additive within the existing workflow
   vertical. There is no destructive migration; the authorization-context
   migration must be forward-compatible (additive column) with a downgrade that
@@ -338,9 +345,10 @@ implementation begins.
   `WorkflowRun` (see migration status below).
 - `backend/app/api/workflow.py` — resolve the authenticated user's role UUIDs
   at start/retry and persist them on the run for the worker.
-- `backend/app/schemas/recommendation.py` — bounded clarification of the
-  `Source` identity mapping only if the citation-integrity contract (§G)
-  requires a docstring/semantics change; no schema-version bump.
+- `backend/app/schemas/recommendation.py` — bounded `Source` identity-mapping
+  change only if the citation-integrity contract (§G) requires it; the exact
+  form (docstring clarification, semantic change, or schema-version change)
+  depends on the open M3 decision.
 
 **Possible new files:**
 
@@ -385,8 +393,10 @@ M1). The migration is not authorized by this planning package.
 
 After deterministic risk calculation succeeds and before prompt construction,
 inside `execute_workflow` (`backend/app/ai/workflow/vertical.py`). The risk
-result is already computed and persisted independently; retrieval is inserted
-between that step and `build_system_prompt`.
+result is not persisted in a risk table or workflow step; it is
+deterministically recomputable and remains available through the read-only
+risk API (`GET /api/v1/production-plans/{plan_code}/risks`). Retrieval is
+inserted between that step and `build_system_prompt`.
 
 ### Retrieval granularity
 
@@ -449,13 +459,17 @@ existing wire-schema contract: empty `sources` = not grounded.)
 ### Retrieval-failure behavior
 
 Retrieval failure (embedding provider error, database error, validation
-error) is distinguished from no-result. The deterministic risk result remains
-persisted and available. Whether the run then (a) fails closed with a safe
-retrieval error code (retryable) or (b) degrades to an ungrounded
-recommendation with explicit retrieval-failure metadata is a genuine Product
-Owner decision — see §M, M2. The recommended default is **fail-closed** with a
-safe, retryable retrieval error code, consistent with AT-013's "failed step is
-visible and retryable" pattern.
+error) is distinguished from no-result. The deterministic risk result is not
+persisted in a risk table or workflow step; it is deterministically
+recomputable and remains available through the read-only risk API
+(`GET /api/v1/production-plans/{plan_code}/risks`). Retrieval failure must not
+change the underlying production-plan inputs or prevent deterministic
+recomputation. Whether the run then (a) fails closed with a safe retrieval
+error code (retryable) or (b) degrades to an ungrounded recommendation with
+explicit retrieval-failure metadata is a genuine Product Owner decision — see
+§M, M2. The recommended default is **fail-closed** with a safe, retryable
+retrieval error code, consistent with AT-013's "failed step is visible and
+retryable" pattern.
 
 ### Retry behavior
 
@@ -481,17 +495,23 @@ what may appear in persisted `sources`.
 The authoritative retrieval identity is the UUID tuple `(document_id,
 version_id, chunk_id)`. The wire `Source` schema
 (`backend/app/schemas/recommendation.py`) carries `document_id: str`,
-`version: str`, `chunk_id: UUID`. The deterministic mapping is:
+`version: str`, `chunk_id: UUID`. A candidate deterministic mapping is:
 
 - `Source.document_id` ← `str(document_id UUID)` (unique, stable);
 - `Source.version` ← `DocumentVersion.version_number` (string, e.g. `"1.0"`);
 - `Source.chunk_id` ← `KnowledgeChunk.id` (UUID, already matches).
 
-Note: the `Source.document_id` docstring's "external document identifier
-(e.g. 'DOC-…')" predates the current document model; documents carry a UUID
-`id` and a `title`, no external code. The mapping above is deterministic and
-unambiguous. WP-REC-05 implementation may record a bounded docstring
-clarification but must not bump the schema version.
+The `Source.document_id` field is documented as an "external document
+identifier (e.g. 'DOC-…')", which predates the current document model;
+documents carry a UUID `id` and a `title`, no external code. Populating this
+existing versioned wire field with the document UUID **changes its documented
+semantics** — it is not merely a docstring clarification, and it does not
+automatically leave the schema version unchanged. Whether this mapping is
+acceptable within the existing wire schema version, or instead requires an
+authoritative external document identifier or a schema-version change, is an
+unresolved decision recorded as M3 that must be decided before WP-REC-05
+implementation authorization. The mapping above is therefore not adopted
+here.
 
 ### Validation against retrieved chunks
 
@@ -592,7 +612,8 @@ created or run in this planning task.**
 6. Zero-result behavior yields empty `sources` marked ungrounded.
 7. Retrieval-failure behavior follows the chosen contract (§M M2).
 8. Retry re-derives authorization context and re-runs retrieval.
-9. Deterministic risk result survives retrieval/provider failure (no
+9. Retrieval/provider failure does not change the underlying production-plan
+   inputs or prevent deterministic recomputation of the risk result (no
    regression to AT-013).
 10. No regression to AT-008/AT-013.
 11. Authorization context is server-derived and durable (persisted on the run,
@@ -684,8 +705,10 @@ WP-REC-05 implementation
 → separate Product Owner Phase 4 acceptance/closure
 ```
 
-"Verification first" and "fold verification into implementation" are
-**rejected** sequences. The Product Owner has already rejected them.
+The accepted sequence is implementation first followed by separate bounded
+verification. Alternative sequences are not part of the accepted order. The
+Product Owner decision does not record a broader permanent rejection of those
+alternatives.
 
 ---
 
@@ -707,12 +730,39 @@ DEC-035, DEC-037, DEC-039, DEC-040, DEC-043, and the new sequencing decision
      roles from the user at execution time.
   3. No migration; worker re-resolves roles from the stored `triggered_by`
      username at execution time.
-- **Recommendation:** Option 1 — freeze the role snapshot at the authenticated
-  request. It is durable, auditable, and independent of later role changes,
-  and it avoids trusting a mutable username→role resolution at execution time.
 - **Consequence:** Options 1 and 2 require a migration; option 3 does not but
   weakens the authorization guarantee (roles may change between start and
   execution; `triggered_by` is nullable for system runs).
+
+  For the frozen role-snapshot option (Option 1), the following must be
+  specified before it could be selected:
+  - role membership is frozen at the authenticated dispatch boundary (the
+    start/retry request), not at worker execution time;
+  - document permissions remain **dynamically evaluated** by the retrieval
+    query (`document_permissions` join + `dv.status = 'APPROVED'`) at worker
+    execution time — the snapshot freezes roles, not document permissions;
+  - a role revoked after dispatch may still be honored for that in-flight run;
+    this is a security/reproducibility trade-off, not an unconditional
+    benefit;
+  - retry by a **different** authorized user requires an explicit rule;
+  - the retry contract must specify whether retry replaces the stored
+    snapshot, creates a new authorization event, or requires a new immutable
+    snapshot record;
+  - `triggered_by` attribution and role-snapshot provenance are distinct
+    (attribution records who triggered the run; provenance records the
+    authorization capture);
+  - audit evidence must identify the user, the dispatch generation, the
+    snapshot, and the time at which authorization was captured;
+  - null/system-triggered runs require explicit fail-closed semantics;
+  - migration validation, empty snapshots, malformed UUIDs, downgrade, and
+    rollback behavior must be specified.
+
+  A hybrid user-identity plus role-snapshot design (persist both a `user_id`
+  foreign key and a frozen role snapshot) is a **variant of the options**
+  (combining Options 1 and 2), not a separate option.
+
+- **Recommendation:** none selected — M1 remains unresolved; no persistence
+  strategy is chosen by this planning artifact.
 - **Blocks WP-REC-05 implementation authorization?** Yes — the migration
   decision must be recorded before implementation.
 
@@ -722,18 +772,85 @@ DEC-035, DEC-037, DEC-039, DEC-040, DEC-043, and the new sequencing decision
   deterministic risk calculation succeeds, does the run fail closed or degrade
   to an ungrounded recommendation?
 - **Options:**
-  1. Fail closed with a safe, retryable retrieval error code; deterministic
-     risk result remains persisted and available (mirrors AT-013).
+  1. Fail closed with a safe, retryable retrieval error code (mirrors AT-013).
   2. Degrade to an ungrounded recommendation with empty `sources` and explicit
      retrieval-failure step metadata.
-- **Recommendation:** Option 1 — fail closed. Phase 6 depends on grounded
-  citations (DEC-037); silently producing an ungrounded recommendation on
-  retrieval failure would under-deliver that dependency.
+- **Distinction (applies regardless of option):** three cases must remain
+  distinguishable in the step/state/error contracts:
+  - successful retrieval **with results** (`result_count > 0`);
+  - successful retrieval **with zero accessible results**
+    (`result_count = 0`, legitimate empty `sources`, ungrounded);
+  - **retrieval execution failure** (embedding/database/validation error) —
+    not a zero-result.
+- **Option 1 — conditional contract (if the Product Owner selects
+  fail-closed):** the following is the proposed implementation contract, not an
+  accepted decision:
+  - either a dedicated `FAILED_RETRIEVAL` terminal state or an explicit,
+    justified mapping to an existing failure state;
+  - the allowed RUNNING-to-failure transition is specified;
+  - retry transitions back to PENDING, and the failure is included in retry
+    eligibility;
+  - a safe run-level error code such as `RETRIEVAL_FAILED`;
+  - the failed retrieval `WorkflowStep` records a failure status with safe
+    step metadata (no restricted content, no raw chunk text);
+  - dispatch-generation and stale-job protection are preserved;
+  - the API/UI represents the run as failed and retryable without indefinite
+    polling;
+  - **no persistence claim for the deterministic risk result** — it is not
+    persisted in a risk table or workflow step; it remains deterministically
+    recomputable and available via the read-only risk API
+    (`GET /api/v1/production-plans/{plan_code}/risks`);
+  - no AT-008 or AT-013 regression.
+  `FAILED_RETRIEVAL` is presented here as the recommended technical shape for
+  Option 1 — it is **not** an accepted Product Owner decision.
+- **Option 2 — conditional contract (if the Product Owner selects
+  degrade-to-ungrounded):**
+  - the run may complete only with empty `sources`;
+  - the output must be explicitly represented as ungrounded;
+  - retrieval failure must remain distinguishable from a legitimate zero-result
+    (e.g. via safe failure metadata, not just `result_count = 0`);
+  - safe failure metadata must be recorded;
+  - no restricted or fabricated citation may be persisted;
+  - the API/UI must not represent the result as grounded.
+- **Recommendation:** none selected — M2 remains unresolved; neither
+  fail-closed nor degrade-to-ungrounded is chosen by this planning artifact.
 - **Consequence:** Option 1 adds a retrieval-failure terminal/retry path; the
   retry eligibility must include the new failure. Option 2 would allow runs to
   complete without grounding.
 - **Blocks WP-REC-05 implementation authorization?** Yes — the failure
   behavior must be recorded before implementation.
+
+### M3. Citation document-identity wire contract
+
+- **Question:** What authoritative identity must `Source.document_id` expose?
+- **Options:**
+  1. Formally adopt the repository document UUID as `Source.document_id`,
+     documenting compatibility and whether this is acceptable within the
+     existing wire schema version.
+  2. Preserve the documented external-identifier semantics by introducing an
+     authoritative external document identifier and mapping it to the
+     `Source` field.
+  3. If required by compatibility analysis, evolve the wire schema to
+     distinguish the document UUID from the external document identifier.
+- **Consequences** (apply to whichever option is selected):
+  - existing API consumers — the identity they currently receive for
+    `Source.document_id` changes semantics if a UUID replaces an external
+    identifier;
+  - frontend rendering — any UI that displays or links `Source.document_id`
+    must render the chosen identity correctly;
+  - citation allow-list validation — §G validation must compare against the
+    same identity space the wire field now exposes;
+  - stored `Recommendation` content — already-persisted `sources` were written
+    under the current semantics and must remain interpretable;
+  - future Phase 6 consumers — approval/audit UI and any downstream citation
+    consumers depend on a stable, documented identity;
+  - schema-version compatibility — whether the chosen identity can be
+    expressed within the existing wire schema version or requires a version
+    change must be established.
+- **Recommendation:** none selected — M3 remains unresolved; no option is
+  selected or accepted here.
+- **Blocks WP-REC-05 implementation authorization?** Yes — alongside M1 and
+  M2. M3 must be decided before WP-REC-05 implementation authorization.
 
 ---
 
