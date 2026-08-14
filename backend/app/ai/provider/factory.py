@@ -21,6 +21,7 @@ from app.config import settings as application_settings
 from .chat_provider import ChatProvider
 from .exceptions import ChatProviderConfigurationError
 from .fake_chat_provider import FakeChatProvider
+from .fallback_chain import FallbackChatProvider
 from .openai_chat_provider import OpenAIChatProvider
 
 # Sentinel value used only when the OpenAI SDK requires a non-empty
@@ -30,6 +31,15 @@ _SENTINEL_API_KEY = "sentinel-not-a-real-key"
 
 # The canonical official OpenAI chat endpoint.
 _OFFICIAL_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+# Provider names accepted in the configured fallback chain order.
+_CHAIN_PROVIDER_GROQ = "groq"
+_CHAIN_PROVIDER_OPENROUTER = "openrouter"
+
+_KNOWN_CHAIN_PROVIDERS: frozenset[str] = frozenset({
+    _CHAIN_PROVIDER_GROQ,
+    _CHAIN_PROVIDER_OPENROUTER,
+})
 
 
 def _normalize_base_url(url: str) -> str:
@@ -119,25 +129,25 @@ def create_chat_provider(
     Arguments:
         config: Explicit settings object. When ``None``, falls back to the
             global :data:`app.config.settings` singleton.
-        provider_name: Explicit provider name override (``"openai"`` or
-            ``"fake"``). When ``None``, the provider is selected from
-            ``config.embedding_provider`` — the existing config field —
-            since Settings does not yet have a dedicated ``chat_provider``
-            field. This avoids modifying config.py (out of scope for 03A).
+        provider_name: Explicit provider name override (``"fake"``,
+            ``"openai"``, or ``"chain"``). When ``None``, the provider is
+            selected from ``config.chat_provider_mode`` — the dedicated
+            chat-provider field (independent of ``embedding_provider``).
 
     Returns:
-        An instance implementing :class:`ChatProvider` (wrapped in
-        :class:`RetryingChatProvider`).
+        An instance implementing :class:`ChatProvider`. Single providers are
+        wrapped in :class:`RetryingChatProvider`; ``chain`` returns a
+        :class:`FallbackChatProvider` whose members are individually wrapped.
 
     Raises:
         ChatProviderConfigurationError: When the provider name is unknown,
             when the fake provider is requested outside development/test
-            environments, or when the official OpenAI endpoint is used
-            without an API key.
+            environments, when the official OpenAI endpoint is used without
+            an API key, or when external chain configuration is missing.
     """
     effective_config = config if config is not None else application_settings
 
-    name = provider_name if provider_name is not None else effective_config.embedding_provider
+    name = provider_name if provider_name is not None else effective_config.chat_provider_mode
 
     # --- Acceptance scenario override (development-only, positive allowlist). ---
     # When FORGEMIND_ACCEPTANCE_SCENARIO is set and the environment is
@@ -170,6 +180,9 @@ def create_chat_provider(
     if name == "openai":
         delegate = _create_openai_provider(effective_config)
         return _wrap_with_retry(delegate, effective_config)
+
+    if name == "chain":
+        return _create_chain_provider(effective_config)
 
     raise ChatProviderConfigurationError(
         f"Unknown chat provider: {name!r}"
@@ -235,4 +248,131 @@ def _create_openai_provider(
         base_url=effective_base_url,
         timeout_seconds=cfg.llm_timeout_seconds,
         rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
+        provider_name="openai",
+        structured_output_mode=cfg.openai_structured_output_mode,
     )
+
+
+def _create_groq_provider(
+    cfg: Settings,
+) -> OpenAIChatProvider:
+    """Build the Groq (free primary) OpenAI-compatible provider.
+
+    Groq always requires a real API key (no sentinel — it is an external
+    authenticated provider). The pinned model and base URL are preserved
+    exactly from configuration.
+    """
+    if not cfg.groq_api_key:
+        raise ChatProviderConfigurationError(
+            "Groq API key is required for the Groq provider"
+        )
+    return OpenAIChatProvider(
+        api_key=cfg.groq_api_key,
+        model=cfg.groq_chat_model,
+        base_url=cfg.groq_api_base,
+        timeout_seconds=cfg.llm_timeout_seconds,
+        rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
+        provider_name=_CHAIN_PROVIDER_GROQ,
+        structured_output_mode=cfg.groq_structured_output_mode,
+    )
+
+
+def _create_openrouter_provider(
+    cfg: Settings,
+) -> OpenAIChatProvider:
+    """Build the OpenRouter (paid fallback) OpenAI-compatible provider.
+
+    OpenRouter always requires a real API key and an explicitly pinned paid
+    model (the model has no default — it is never guessed). The application
+    does not enforce the external budget; that is an OpenRouter account/key
+    control (HTTP 402 on exhaustion).
+    """
+    if not cfg.openrouter_api_key:
+        raise ChatProviderConfigurationError(
+            "OpenRouter API key is required for the OpenRouter provider"
+        )
+    if not cfg.openrouter_chat_model:
+        raise ChatProviderConfigurationError(
+            "OpenRouter chat model must be explicitly pinned "
+            "(openrouter_chat_model has no default)"
+        )
+    return OpenAIChatProvider(
+        api_key=cfg.openrouter_api_key,
+        model=cfg.openrouter_chat_model,
+        base_url=cfg.openrouter_api_base,
+        timeout_seconds=cfg.llm_timeout_seconds,
+        rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
+        provider_name=_CHAIN_PROVIDER_OPENROUTER,
+        structured_output_mode=cfg.openrouter_structured_output_mode,
+    )
+
+
+def _parse_chain_order(raw: str) -> list[str]:
+    """Parse and validate the configured fallback chain order.
+
+    The order is server-configured and exact. A client cannot choose or
+    reorder providers. Duplicate entries and unknown providers are rejected
+    (fail fast).
+
+    Args:
+        raw: Comma-separated provider order (e.g. ``"groq,openrouter"``).
+
+    Returns:
+        The ordered list of known provider names.
+
+    Raises:
+        ChatProviderConfigurationError: If the order is empty, contains an
+            unknown provider, or contains duplicates.
+    """
+    parts = [p.strip() for p in raw.split(",")]
+    parts = [p for p in parts if p]
+    if not parts:
+        raise ChatProviderConfigurationError(
+            "chat_provider_chain must not be empty"
+        )
+    seen: set[str] = set()
+    order: list[str] = []
+    for name in parts:
+        if name not in _KNOWN_CHAIN_PROVIDERS:
+            raise ChatProviderConfigurationError(
+                f"Unknown chain provider: {name!r}. "
+                f"Known providers: {sorted(_KNOWN_CHAIN_PROVIDERS)}"
+            )
+        if name in seen:
+            raise ChatProviderConfigurationError(
+                f"Duplicate chain provider: {name!r}"
+            )
+        seen.add(name)
+        order.append(name)
+    return order
+
+
+def _create_chain_provider(
+    cfg: Settings,
+) -> FallbackChatProvider:
+    """Build the ordered fallback chain from configuration.
+
+    Each member is a concrete adapter wrapped exactly once in a
+    :class:`RetryingChatProvider` (bounded retry). The chain itself performs
+    no retry and is NOT wrapped again — avoiding nested retry loops.
+
+    Total provider calls are bounded by ``len(chain) × (1 + llm_max_retries)``.
+
+    Raises:
+        ChatProviderConfigurationError: If the chain order is invalid or any
+            member's required external configuration is missing (fail early,
+            only when external mode is actually selected).
+    """
+    order = _parse_chain_order(cfg.chat_provider_chain)
+    providers: list[tuple[str, ChatProvider]] = []
+    for name in order:
+        if name == _CHAIN_PROVIDER_GROQ:
+            delegate = _create_groq_provider(cfg)
+        elif name == _CHAIN_PROVIDER_OPENROUTER:
+            delegate = _create_openrouter_provider(cfg)
+        else:  # pragma: no cover - unreachable after _parse_chain_order
+            raise ChatProviderConfigurationError(
+                f"Unknown chain provider: {name!r}"
+            )
+        providers.append((name, _wrap_with_retry(delegate, cfg)))
+    return FallbackChatProvider(providers=providers)

@@ -51,9 +51,10 @@ from app.ai.rag.orchestration import (
     WORKFLOW_TOP_K,
     FabricatedCitationError,
     build_citation_allow_list,
+    build_per_risk_citation_allow_lists,
     build_retrieval_query_text,
     serialize_retrieval_context,
-    validate_sources_against_allow_list,
+    validate_per_risk_sources,
 )
 from app.ai.rag.retriever import RetrievalResult, RetrievalService
 from app.ai.workflow.engine import WorkflowEngine
@@ -72,7 +73,10 @@ from app.models.workflow import (
     WorkflowRun,
     WorkflowStep,
 )
-from app.schemas.recommendation import RECOMMENDATION_SCHEMA_VERSION
+from app.schemas.recommendation import (
+    RECOMMENDATION_SCHEMA_VERSION,
+    RecommendationData,
+)
 from app.services.embedding_provider import EmbeddingProvider
 from app.services.risk_engine import analyze_plan
 
@@ -84,6 +88,12 @@ _ERROR_CODE_PROVIDER_PERMANENT = "PROVIDER_PERMANENT"
 _ERROR_CODE_VALIDATION = "VALIDATION_FAILED"
 _ERROR_CODE_INTERNAL = "INTERNAL_ERROR"
 _ERROR_CODE_RETRIEVAL = "RETRIEVAL_FAILED"
+
+# Authoritative Recommendation JSON Schema passed through the provider
+# contract for capability-aware structured output (§6). Computed once from
+# the wire schema (deterministic, no side effects). Server-side validation
+# remains authoritative regardless of the provider's structured-output mode.
+RECOMMENDATION_JSON_SCHEMA: dict[str, Any] = RecommendationData.model_json_schema()
 
 
 class VerticalExecutionResult:
@@ -306,6 +316,8 @@ async def execute_workflow(
 
     retrieval_results: list[RetrievalResult] = []
     citation_allow_list: frozenset[tuple[str, str, UUID]] = frozenset()
+    results_by_risk: dict[str, list[RetrievalResult]] = {}
+    per_risk_allow_lists: dict[str, frozenset[tuple[str, str, UUID]]] = {}
     retrieval_context_json = "[]"
 
     if effective_role_ids is None:
@@ -346,6 +358,7 @@ async def execute_workflow(
         retrieval_service = RetrievalService()
         seen: set[tuple[UUID, UUID, UUID]] = set()
         for risk_item in risk_items:
+            risk_id = risk_item["risk_id"]
             query_text = build_retrieval_query_text(risk_item)
             query_embedding = (
                 await embedding_provider.embed_text([query_text])
@@ -356,6 +369,9 @@ async def execute_workflow(
                 allowed_role_ids=effective_role_ids,
                 top_k=WORKFLOW_TOP_K,
             )
+            # Preserve per-risk retrieval provenance (§7): each risk keeps its
+            # own results so its allow-list is authoritative for that risk only.
+            results_by_risk[risk_id] = list(risk_results)
             for retrieved in risk_results:
                 identity = (
                     retrieved.document_id,
@@ -399,6 +415,7 @@ async def execute_workflow(
 
     retrieval_latency_ms = int((time.monotonic() - retrieval_start) * 1000)
     citation_allow_list = build_citation_allow_list(retrieval_results)
+    per_risk_allow_lists = build_per_risk_citation_allow_lists(results_by_risk)
     retrieval_context_json = serialize_retrieval_context(retrieval_results)
 
     # Record the successful retrieval step (§I observability contract).
@@ -480,7 +497,7 @@ async def execute_workflow(
         }
         chat_result = await provider.complete(
             prompt=prompt,
-            schema=None,
+            schema=RECOMMENDATION_JSON_SCHEMA,
             context=context,
         )
     except TransientChatProviderError:
@@ -546,17 +563,20 @@ async def execute_workflow(
                 WorkflowState.FAILED_VALIDATION.value, False
             )
 
-        # 6.5 Citation-integrity validation (WP-REC-05 §G): every persisted
-        #     Source must be in the run's citation allow-list. A fabricated
-        #     or unauthorized citation is a validation failure (never a
-        #     retrieval execution failure, per §M M2). Raw model output and
-        #     the fabricated identity are never logged or returned.
+        # 6.5 Citation-integrity validation (§7): every persisted Source is
+        #     validated against ITS OWN risk's allow-list (per-risk, not
+        #     run-global). A fabricated, cross-risk, or duplicate citation is a
+        #     validation failure (never a retrieval execution failure, per
+        #     M2). Raw model output and the offending identity are never
+        #     logged or returned.
         try:
             for rec_risk in recommendation_data.risks:
-                validate_sources_against_allow_list(
-                    rec_risk.sources, citation_allow_list
+                validate_per_risk_sources(
+                    rec_risk.sources,
+                    risk_id=rec_risk.risk_id,
+                    allow_lists_by_risk=per_risk_allow_lists,
                 )
-        except FabricatedCitationError:
+        except FabricatedCitationError as exc:
             step_record = WorkflowStep(
                 run_id=run.id,
                 correlation_id=run.correlation_id,
@@ -564,7 +584,7 @@ async def execute_workflow(
                 step_name="validation",
                 status="failed",
                 error_code=_ERROR_CODE_VALIDATION,
-                error_detail="FabricatedCitationError",
+                error_detail=type(exc).__name__,
                 started_at=datetime.now(UTC),
                 completed_at=datetime.now(UTC),
             )
@@ -574,7 +594,7 @@ async def execute_workflow(
             await engine.transition_to_failed_validation(
                 run,
                 error_code=_ERROR_CODE_VALIDATION,
-                error_detail="FabricatedCitationError",
+                error_detail=type(exc).__name__,
             )
             _logger.warning(
                 "workflow.vertical.citation_validation_failed",

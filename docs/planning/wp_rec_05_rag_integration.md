@@ -973,3 +973,56 @@ authorization or action; none is authorized by this planning artifact:
 - WP-REC-05 implementation;
 - WP-REC-05-VFY;
 - Phase 4 acceptance.
+
+---
+
+## O. Accepted provider-extension contract (DEC-048)
+
+The following extension contract was accepted by the Product Owner as
+DEC-048 (2026-08-14). It extends the WP-REC-05 retrieval/RAG integration
+contract with an external chat-provider chain and grounded-output hardening;
+it does not alter the M1/M2/M3 citation, retrieval, or failure-ownership
+contracts recorded above.
+
+**Chat/embedding separation.** Chat-provider selection is independent of
+embedding-provider selection. The chat provider has its own configuration
+surface (`CHAT_PROVIDER_MODE=fake|openai|chain`,
+`CHAT_PROVIDER_CHAIN=groq,openrouter`). Production/external mode never
+silently selects fake; missing external configuration fails early with a safe
+configuration error only when external mode is actually selected. Importing
+settings and running offline tests never require keys.
+
+**External provider chain.** Groq free is primary; OpenRouter paid is the
+fallback. The chain is server-configured (a client cannot choose or reorder
+providers) and advances only after the current provider's bounded retry
+budget is exhausted with a transient failure (connection, timeout, HTTP 429,
+retryable 5xx). It never falls back on permanent errors (including
+OpenRouter HTTP 402 budget exhaustion), configuration errors, schema-invalid
+or citation-invalid responses, internal errors, or cancellation. Total calls
+are bounded by `provider_count × attempts_per_provider`.
+
+**Structured output.** The authoritative Recommendation JSON Schema is passed
+through the workflow/provider contract. Each provider carries an explicit
+capability mode (`json_schema`, `json_object`, `prompt_json`); an unsupported
+mode fails safely and is never silently downgraded after a provider 400.
+Server-side Pydantic validation and citation validation remain authoritative
+in every mode. Recommendation wire shape and `schema_version="1.0"` are
+unchanged.
+
+**Per-risk citation allow-list.** Retrieval provenance is preserved per risk;
+every `RiskItem.sources` is validated only against its own risk's allow-list.
+A tuple retrieved for another risk is invalid; duplicates are rejected
+deterministically; zero-result risks require `sources=[]`. Fabricated,
+cross-risk, and duplicate citations remain terminal `FAILED_VALIDATION` and
+never route to another provider.
+
+**Formal VFY pinning.** WP-REC-05-VFY will later run AT-006 and AT-007
+against one exact pinned commercial provider/model with automatic provider
+fallback disabled inside those scenarios; a failover smoke test is a
+separate scenario. AT-006 and AT-007 remain NOT PASS until that separate,
+authorized verification.
+
+**Boundary.** This extension authorizes implementation only: no live external
+provider calls, no WP-REC-05-VFY rerun, no Product Owner acceptance, and no
+AT-006/AT-007 PASS declaration. Phase 4 remains PARTIALLY COMPLETE and
+Release 1 remains NOT READY/NOT DEPLOYED.

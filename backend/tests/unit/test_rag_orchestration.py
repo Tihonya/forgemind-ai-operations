@@ -17,10 +17,13 @@ import pytest
 from app.ai.rag.orchestration import (
     MAX_CHUNK_TEXT_LENGTH,
     WORKFLOW_TOP_K,
+    DuplicateCitationError,
     FabricatedCitationError,
     build_citation_allow_list,
+    build_per_risk_citation_allow_lists,
     build_retrieval_query_text,
     serialize_retrieval_context,
+    validate_per_risk_sources,
     validate_sources_against_allow_list,
 )
 from app.ai.rag.retriever import TOP_K_DEFAULT, RetrievalResult
@@ -195,3 +198,147 @@ class TestTopKBound:
 
     def test_workflow_top_k_matches_retriever_default(self) -> None:
         assert WORKFLOW_TOP_K == TOP_K_DEFAULT == 10
+
+
+class TestPerRiskCitationAllowLists:
+    """§7: per-risk allow-lists preserve authoritative retrieval provenance."""
+
+    def test_per_risk_allow_lists_from_per_risk_results(self) -> None:
+        doc_a = uuid4()
+        doc_b = uuid4()
+        chunk_a = uuid4()
+        chunk_b = uuid4()
+        results = {
+            "RISK-001": [
+                _result(document_id=doc_a, version_number="1.0", chunk_id=chunk_a)
+            ],
+            "RISK-002": [
+                _result(document_id=doc_b, version_number="2.0", chunk_id=chunk_b)
+            ],
+        }
+        lists = build_per_risk_citation_allow_lists(results)
+        assert lists["RISK-001"] == frozenset({(str(doc_a), "1.0", chunk_a)})
+        assert lists["RISK-002"] == frozenset({(str(doc_b), "2.0", chunk_b)})
+
+    def test_per_risk_allow_lists_empty(self) -> None:
+        assert build_per_risk_citation_allow_lists({}) == {}
+
+    def test_same_chunk_retrieved_for_multiple_risks_is_in_both(self) -> None:
+        doc_id = uuid4()
+        chunk_id = uuid4()
+        result = _result(document_id=doc_id, chunk_id=chunk_id)
+        results = {
+            "RISK-001": [result],
+            "RISK-002": [result],
+        }
+        lists = build_per_risk_citation_allow_lists(results)
+        assert lists["RISK-001"] == frozenset({(str(doc_id), "1.0", chunk_id)})
+        assert lists["RISK-002"] == frozenset({(str(doc_id), "1.0", chunk_id)})
+
+
+class TestPerRiskCitationValidation:
+    """§7: every RiskItem.sources validates only against its own allow-list."""
+
+    def _lists(self) -> dict[str, frozenset[tuple[str, str, UUID]]]:
+        doc_a = uuid4()
+        chunk_a = uuid4()
+        doc_b = uuid4()
+        chunk_b = uuid4()
+        self.doc_a = doc_a
+        self.chunk_a = chunk_a
+        self.doc_b = doc_b
+        self.chunk_b = chunk_b
+        return {
+            "RISK-001": frozenset({(str(doc_a), "1.0", chunk_a)}),
+            "RISK-002": frozenset({(str(doc_b), "2.0", chunk_b)}),
+        }
+
+    def test_correct_source_on_correct_risk(self) -> None:
+        lists = self._lists()
+        source = Source(
+            document_id=str(self.doc_a), version="1.0", chunk_id=self.chunk_a
+        )
+        validate_per_risk_sources(
+            [source], risk_id="RISK-001", allow_lists_by_risk=lists
+        )
+
+    def test_source_from_risk_a_attached_to_risk_b(self) -> None:
+        lists = self._lists()
+        source = Source(
+            document_id=str(self.doc_a), version="1.0", chunk_id=self.chunk_a
+        )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [source], risk_id="RISK-002", allow_lists_by_risk=lists
+            )
+
+    def test_fabricated_tuple_rejected(self) -> None:
+        source = Source(
+            document_id=str(uuid4()), version="1.0", chunk_id=uuid4()
+        )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [source], risk_id="RISK-001", allow_lists_by_risk={}
+            )
+
+    def test_duplicate_source_rejected(self) -> None:
+        lists = self._lists()
+        source = Source(
+            document_id=str(self.doc_a), version="1.0", chunk_id=self.chunk_a
+        )
+        with pytest.raises(DuplicateCitationError):
+            validate_per_risk_sources(
+                [source, source], risk_id="RISK-001", allow_lists_by_risk=lists
+            )
+
+    def test_empty_retrieval_requires_empty_sources(self) -> None:
+        lists: dict[str, frozenset[tuple[str, str, UUID]]] = {
+            "RISK-001": frozenset()
+        }
+        # Zero-result → empty sources is valid (ungrounded).
+        validate_per_risk_sources(
+            [], risk_id="RISK-001", allow_lists_by_risk=lists
+        )
+        # Any non-empty source on a zero-result risk is rejected.
+        source = Source(
+            document_id=str(uuid4()), version="1.0", chunk_id=uuid4()
+        )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [source], risk_id="RISK-001", allow_lists_by_risk=lists
+            )
+
+    def test_multiple_risks_with_distinct_allow_lists(self) -> None:
+        lists = self._lists()
+        sa = Source(
+            document_id=str(self.doc_a), version="1.0", chunk_id=self.chunk_a
+        )
+        sb = Source(
+            document_id=str(self.doc_b), version="2.0", chunk_id=self.chunk_b
+        )
+        validate_per_risk_sources(
+            [sa], risk_id="RISK-001", allow_lists_by_risk=lists
+        )
+        validate_per_risk_sources(
+            [sb], risk_id="RISK-002", allow_lists_by_risk=lists
+        )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [sa], risk_id="RISK-002", allow_lists_by_risk=lists
+            )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [sb], risk_id="RISK-001", allow_lists_by_risk=lists
+            )
+
+    def test_unknown_risk_id_has_empty_allow_list(self) -> None:
+        source = Source(
+            document_id=str(uuid4()), version="1.0", chunk_id=uuid4()
+        )
+        with pytest.raises(FabricatedCitationError):
+            validate_per_risk_sources(
+                [source], risk_id="UNKNOWN", allow_lists_by_risk={}
+            )
+        validate_per_risk_sources(
+            [], risk_id="UNKNOWN", allow_lists_by_risk={}
+        )

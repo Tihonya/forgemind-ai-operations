@@ -781,6 +781,41 @@ M3 — The repository document UUID string is the canonical `Source.document_id`
 
 ---
 
+## DEC-048 — WP-REC-05 external provider architecture and formal VFY pinning
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:**
+- WP-REC-05 implementation is complete and incorporated into main (DEC-047).
+- A follow-up bounded implementation package (WP-REC-05-PROVIDER-IMP) was authorized to decouple chat-provider selection from embedding-provider selection and to harden grounded output for an external chat-provider chain.
+- The historical WP-REC-05-VFY run (`wp-rec-05-vfy-20260814-01`) remains FAILED/INCOMPLETE: AT-006 (grounded-source assertion) failed, AT-007 (negative assertions) succeeded, and both remain NOT PASS.
+
+**Decision:**
+- Groq free is the primary external chat provider, using a compatible model pinned at implementation time (`llama-3.3-70b-versatile`).
+- OpenRouter paid is the commercial fallback, protected by an externally configured hard budget of approximately USD 5.
+- The application does not claim to enforce the USD 5 budget; that budget is an external OpenRouter account/key control configured separately by the Product Owner (on exhaustion OpenRouter returns HTTP 402, treated as a permanent failure).
+- The formal WP-REC-05-VFY will later run AT-006 and AT-007 against one exact pinned commercial provider/model with automatic provider fallback disabled inside those scenarios. A failover smoke test is a separate scenario.
+- Structured-output capability modes (`json_schema`, `json_object`, `prompt_json`) are configuration-driven and observable, with server-side validation remaining authoritative.
+- Per-risk citation allow-list validation closes the run-global citation gap (a tuple retrieved for one risk cannot be attached to another).
+- This package authorizes implementation only: no live external-provider calls, no WP-REC-05-VFY rerun, no Product Owner acceptance, and no AT-006/AT-007 PASS declaration.
+
+**Reason:**
+- Decouples chat-provider selection from embedding-provider selection and introduces a bounded, fail-closed external provider chain without changing the Recommendation wire shape, `schema_version`, database schema, or frontend.
+
+**Consequences:**
+- Phase 4 remains PARTIALLY COMPLETE.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- WP-REC-05-VFY rerun and Product Owner acceptance remain separate, not-authorized actions.
+- The only next lifecycle action for this package is a separate independent implementation review.
+
+**Affected documents/tests:** `backend/app/config.py`, `backend/app/ai/provider/*`, `backend/app/ai/rag/orchestration.py`, `backend/app/ai/workflow/vertical.py`, bounded provider/workflow/RAG tests, `.env.example`, `README.md`, `docs/planning/wp_rec_05_rag_integration.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown
