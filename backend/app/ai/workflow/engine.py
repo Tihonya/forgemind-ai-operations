@@ -68,6 +68,7 @@ _ERROR_CODE_PROVIDER_TRANSIENT = "PROVIDER_TRANSIENT"
 _ERROR_CODE_PROVIDER_PERMANENT = "PROVIDER_PERMANENT"
 _ERROR_CODE_PROVIDER_CONFIG = "PROVIDER_CONFIG"
 _ERROR_CODE_INTERNAL = "INTERNAL_ERROR"
+_ERROR_CODE_RETRIEVAL = "RETRIEVAL_FAILED"
 
 # Allowlist of safe, deterministic error codes that may be stored in
 # WorkflowRun.error_code. Any caller-provided error_code not in this set
@@ -77,6 +78,7 @@ _SAFE_ERROR_CODES: frozenset[str] = frozenset({
     _ERROR_CODE_PROVIDER_TRANSIENT,
     _ERROR_CODE_PROVIDER_PERMANENT,
     _ERROR_CODE_PROVIDER_CONFIG,
+    _ERROR_CODE_RETRIEVAL,
 })
 
 # Allowlist of safe, deterministic error detail strings that may be
@@ -93,6 +95,8 @@ _SAFE_ERROR_DETAIL_REASONS: frozenset[str] = frozenset({
     "INVALID_TRANSITION",
     "STEP_RECORD_ERROR",
     "STEP_SEQ_ERROR",
+    "RETRIEVAL_FAILED",
+    "AUTHORIZATION_CONTEXT_EMPTY",
 })
 
 
@@ -381,8 +385,8 @@ class WorkflowEngine:
         (WP-REC-03F D1). It atomically:
 
         - transitions the run from an eligible failed state
-          (``FAILED_PROVIDER``, ``FAILED_VALIDATION``, ``FAILED_INTERNAL``)
-          to ``PENDING``;
+          (``FAILED_PROVIDER``, ``FAILED_VALIDATION``, ``FAILED_INTERNAL``,
+          ``FAILED_RETRIEVAL``) to ``PENDING``;
         - increments ``dispatch_generation`` by exactly 1 (D5 §1);
         - resets ``pending_since`` to the current authoritative UTC
           timestamp (D6 §1);
@@ -423,6 +427,7 @@ class WorkflowEngine:
             WorkflowState.FAILED_PROVIDER.value,
             WorkflowState.FAILED_VALIDATION.value,
             WorkflowState.FAILED_INTERNAL.value,
+            WorkflowState.FAILED_RETRIEVAL.value,
         )
 
         # Use expanding bindparam for the IN clause (asyncpg-compatible).
@@ -633,6 +638,43 @@ class WorkflowEngine:
         )
         await self._session.flush()
 
+    async def transition_to_failed_retrieval(
+        self,
+        run: WorkflowRun,
+        *,
+        error_code: str = _ERROR_CODE_RETRIEVAL,
+        error_detail: str = _ERROR_CODE_RETRIEVAL,
+    ) -> None:
+        """Transition a run from RUNNING to FAILED_RETRIEVAL (WP-REC-05 M2).
+
+        Used by the vertical wiring when retrieval execution fails
+        (embedding-provider error, retrieval-query/database error, or
+        retrieval-orchestration error) or when the effective role set is
+        empty (fail-closed authorization failure, DEC-046).
+
+        Args:
+            run: The WorkflowRun to fail. Must be in RUNNING state.
+            error_code: Safe error classification code. Defaults to
+                ``RETRIEVAL_FAILED``.
+            error_detail: Safe bounded error summary. Defaults to
+                ``RETRIEVAL_FAILED``; the empty-authorization case passes
+                ``AUTHORIZATION_CONTEXT_EMPTY``.
+
+        Raises:
+            StateMachineError: If the transition is invalid.
+            TransitionConflictError: If the conditional UPDATE lost
+                the race.
+        """
+        safe_code = error_code if error_code in _SAFE_ERROR_CODES else _ERROR_CODE_RETRIEVAL
+        safe_detail = _classify_safe_error_detail(error_detail)
+        await self._transition_run(
+            run,
+            WorkflowState.FAILED_RETRIEVAL,
+            error_code=safe_code,
+            error_detail=safe_detail,
+        )
+        await self._session.flush()
+
     async def transition_to_failed_internal(
         self,
         run: WorkflowRun,
@@ -732,6 +774,7 @@ class WorkflowEngine:
             WorkflowState.FAILED_VALIDATION,
             WorkflowState.FAILED_PROVIDER,
             WorkflowState.FAILED_INTERNAL,
+            WorkflowState.FAILED_RETRIEVAL,
         )
 
         # Build the conditional UPDATE with timestamp columns.

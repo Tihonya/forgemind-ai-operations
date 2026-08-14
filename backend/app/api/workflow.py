@@ -44,8 +44,10 @@ from app.core.logging import get_logger
 from app.database import get_async_session
 from app.dependencies import get_current_user, require_role
 from app.models.production import ProductionPlan
+from app.models.user import Role
 from app.models.workflow import (
     Recommendation,
+    WorkflowAuthorizationRecord,
     WorkflowRun,
 )
 from app.schemas.workflow import (
@@ -239,12 +241,33 @@ async def _default_pool_factory() -> ArqRedis:
 # Module-level reference; monkeypatchable by tests.
 _pool_factory: PoolFactory = _default_pool_factory
 
-# Retry-eligible failed states (D1).
+# Retry-eligible failed states (D1 + WP-REC-05 M2).
 _RETRY_ELIGIBLE_STATES = frozenset({
     WorkflowState.FAILED_PROVIDER.value,
     WorkflowState.FAILED_VALIDATION.value,
     WorkflowState.FAILED_INTERNAL.value,
+    WorkflowState.FAILED_RETRIEVAL.value,
 })
+
+
+async def _resolve_role_ids(
+    session: AsyncSession,
+    role_codes: frozenset[str],
+) -> set[UUID]:
+    """Resolve role codes to role UUIDs server-side (WP-REC-05 M1).
+
+    Args:
+        session: Async database session.
+        role_codes: Set of role codes from the authenticated user.
+
+    Returns:
+        Set of role UUIDs (empty when the user has no roles).
+    """
+    if not role_codes:
+        return set()
+    stmt = select(Role.id).where(Role.code.in_(role_codes))
+    result = await session.execute(stmt)
+    return {row[0] for row in result.fetchall()}
 
 
 def _build_location(run_id: UUID) -> str:
@@ -315,6 +338,19 @@ async def start_workflow_run(
         plan_id=plan.id,
         triggered_by=current_user.username,
     )
+
+    # WP-REC-05 M1: resolve role UUIDs server-side and capture the
+    # generation-specific authorization record before enqueue. The
+    # snapshot is immutable and committed atomically with the run.
+    role_ids = await _resolve_role_ids(session, current_user.roles)
+    auth_record = WorkflowAuthorizationRecord(
+        run_id=run.id,
+        dispatch_generation=run.dispatch_generation,
+        user_id=current_user.user_id,
+        role_snapshot=[str(role_id) for role_id in sorted(role_ids)],
+        capture_action="start",
+    )
+    session.add(auth_record)
     await session.commit()
 
     logger.info(
@@ -488,6 +524,18 @@ async def retry_workflow_run(
             },
         )
 
+    # WP-REC-05 M1: capture a new generation-specific authorization record
+    # from the retrying authenticated user. Prior generation records remain
+    # unchanged; the record is committed atomically with the transition.
+    role_ids = await _resolve_role_ids(session, current_user.roles)
+    auth_record = WorkflowAuthorizationRecord(
+        run_id=run.id,
+        dispatch_generation=run.dispatch_generation,
+        user_id=current_user.user_id,
+        role_snapshot=[str(role_id) for role_id in sorted(role_ids)],
+        capture_action="retry",
+    )
+    session.add(auth_record)
     await session.commit()
 
     logger.info(

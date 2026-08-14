@@ -27,7 +27,12 @@ from app.models.production import (
 from app.models.supplier import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.user import Role, User, UserRole
 from app.models.warehouse import InventoryBalance, InventoryReservation, Warehouse
-from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
+from app.models.workflow import (
+    Recommendation,
+    WorkflowAuthorizationRecord,
+    WorkflowRun,
+    WorkflowStep,
+)
 
 __all__ = [
     # Diagnostic (Phase 1)
@@ -73,4 +78,6 @@ __all__ = [
     "WorkflowRun",
     "WorkflowStep",
     "Recommendation",
+    # Workflow authorization context (WP-REC-05 M1)
+    "WorkflowAuthorizationRecord",
 ]

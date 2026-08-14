@@ -29,6 +29,9 @@ class RetrievalResult:
     Attributes:
         document_id: UUID of the parent document.
         version_id: UUID of the document version.
+        version_number: The document version's version_number string
+            (e.g. ``"1.0"``) — required by the WP-REC-05 M3 citation
+            identity contract.
         chunk_id: UUID of the knowledge chunk.
         chunk_index: Zero-based index of the chunk within the version.
         chunk_text: The text content of the chunk.
@@ -38,6 +41,7 @@ class RetrievalResult:
 
     document_id: UUID
     version_id: UUID
+    version_number: str
     chunk_id: UUID
     chunk_index: int
     chunk_text: str
@@ -164,6 +168,7 @@ class RetrievalService:
                 kc.chunk_text,
                 kc.metadata,
                 dv.id AS version_id,
+                dv.version_number AS version_number,
                 d.id AS document_id,
                 1 - (kc.embedding <=> CAST(:query_vector AS vector)) AS similarity
             FROM knowledge_chunks kc
@@ -203,6 +208,7 @@ class RetrievalService:
                 RetrievalResult(
                     document_id=row.document_id,
                     version_id=row.version_id,
+                    version_number=row.version_number,
                     chunk_id=row.chunk_id,
                     chunk_index=row.chunk_index,
                     chunk_text=row.chunk_text,

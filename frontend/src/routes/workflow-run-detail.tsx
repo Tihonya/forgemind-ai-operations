@@ -32,6 +32,7 @@ const STATE_STYLES: Record<string, string> = {
   FAILED_VALIDATION: 'bg-red-600/20 text-red-300 border-red-600/40',
   FAILED_PROVIDER: 'bg-red-600/20 text-red-300 border-red-600/40',
   FAILED_INTERNAL: 'bg-red-600/20 text-red-300 border-red-600/40',
+  FAILED_RETRIEVAL: 'bg-red-600/20 text-red-300 border-red-600/40',
 };
 
 const STEP_STATUS_STYLES: Record<string, string> = {

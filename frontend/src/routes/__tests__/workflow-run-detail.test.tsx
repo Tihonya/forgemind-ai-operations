@@ -303,6 +303,52 @@ describe('WorkflowRunDetail — route rendering', () => {
     );
   });
 
+  it('renders FAILED_RETRIEVAL state with failed presentation', async () => {
+    const run = makeRun({
+      state: 'FAILED_RETRIEVAL',
+      error_code: 'RETRIEVAL_FAILED',
+      error_detail: 'RETRIEVAL_FAILED',
+      steps: [
+        {
+          id: 'step-001',
+          run_id: 'run-001',
+          correlation_id: 'corr-001',
+          seq: 0,
+          step_name: 'retrieval',
+          status: 'failed',
+          model_name: null,
+          latency_ms: null,
+          token_usage: null,
+          step_metadata: null,
+          error_code: 'RETRIEVAL_FAILED',
+          error_detail: 'RETRIEVAL_FAILED',
+          started_at: '2026-01-01T10:00:00Z',
+          completed_at: '2026-01-01T10:00:30Z',
+          created_at: '2026-01-01T10:00:00Z',
+        },
+      ],
+    });
+
+    const mockedApi = vi.mocked(workflowApi);
+    mockedApi.fetchWorkflowRun = vi.fn<(runId: string) => Promise<WorkflowRunDetailType>>(async () => run);
+
+    const queryClient = createQueryClient();
+    renderWithRouter(<WorkflowRunDetail />, queryClient);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('run-detail')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('run-state-badge').getAttribute('data-state')).toBe(
+      'FAILED_RETRIEVAL',
+    );
+    expect(screen.getByTestId('step-error-code').textContent).toBe(
+      'RETRIEVAL_FAILED',
+    );
+    expect(screen.getByTestId('step-error-detail').textContent).toBe(
+      'RETRIEVAL_FAILED',
+    );
+  });
+
   it('renders recommendation with content', async () => {
     const run = makeRun({
       recommendation: {
@@ -555,6 +601,26 @@ describe('useWorkflowRun — polling behavior', () => {
   it('FAILED_INTERNAL stops polling', async () => {
     const mockedApi = vi.mocked(workflowApi);
     const run = makeRun({ state: 'FAILED_INTERNAL' });
+    mockedApi.fetchWorkflowRun = vi.fn<(runId: string) => Promise<WorkflowRunDetailType>>(async () => run);
+
+    const queryClient = createQueryClient();
+    renderHook(() => useWorkflowRun('run-001'), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await settleQuery();
+    expect(mockedApi.fetchWorkflowRun).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    await settleQuery();
+    expect(mockedApi.fetchWorkflowRun).toHaveBeenCalledTimes(1);
+  });
+
+  it('FAILED_RETRIEVAL stops polling', async () => {
+    const mockedApi = vi.mocked(workflowApi);
+    const run = makeRun({ state: 'FAILED_RETRIEVAL' });
     mockedApi.fetchWorkflowRun = vi.fn<(runId: string) => Promise<WorkflowRunDetailType>>(async () => run);
 
     const queryClient = createQueryClient();

@@ -410,6 +410,7 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
     'FAILED_PROVIDER',
     'FAILED_VALIDATION',
     'FAILED_INTERNAL',
+    'FAILED_RETRIEVAL',
   ])(
     'retry-eligible terminal state %s exposes Retry',
     async (state) => {
@@ -427,6 +428,67 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
       });
     },
   );
+
+  // -----------------------------------------------------------------------
+  // FAILED_RETRIEVAL — terminal presentation (WP-REC-05 frontend scope)
+  // -----------------------------------------------------------------------
+
+  it('FAILED_RETRIEVAL is terminal — no perpetual running spinner', async () => {
+    setStartResponse('run-fr-001', 'PENDING');
+    vi.mocked(workflowApi.fetchWorkflowRun).mockResolvedValue(
+      makeRun({ id: 'run-fr-001', state: 'FAILED_RETRIEVAL' }),
+    );
+    const { user } = renderDetail();
+
+    await user.click(screen.getByTestId('start-workflow-button'));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId('workflow-state').getAttribute('data-state'),
+      ).toBe('FAILED_RETRIEVAL');
+    });
+
+    // Terminal state must not render the "updates automatically" running
+    // indicator (no perpetual spinner).
+    expect(screen.queryByText('(updates automatically)')).not.toBeInTheDocument();
+  });
+
+  it('non-manager non-creator does not see Retry for FAILED_RETRIEVAL', async () => {
+    setStartResponse('run-fr-nc-001', 'PENDING');
+    vi.mocked(workflowApi.fetchWorkflowRun).mockResolvedValue(
+      makeRun({
+        id: 'run-fr-nc-001',
+        state: 'FAILED_RETRIEVAL',
+        triggered_by: 'someone-else',
+      }),
+    );
+    const { user, rerender, queryClient } = renderDetail();
+
+    await user.click(screen.getByTestId('start-workflow-button'));
+    await waitFor(() => {
+      expect(screen.getByTestId('retry-workflow-button')).toBeInTheDocument();
+    });
+
+    // Re-render as a non-manager non-creator.
+    authUser = {
+      id: 'u-fr-other',
+      username: 'other-user',
+      roles: ['engineer'],
+    };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('retry-workflow-button')).not.toBeInTheDocument();
+    });
+  });
 
   // -----------------------------------------------------------------------
   // Retry — hidden for non-retryable states
@@ -760,6 +822,7 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
     'FAILED_PROVIDER',
     'FAILED_VALIDATION',
     'FAILED_INTERNAL',
+    'FAILED_RETRIEVAL',
   ])(
     'non-manager creator sees Retry for %s (Target B)',
     async (state) => {

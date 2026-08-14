@@ -20,6 +20,7 @@ def test_citation_identity_fields_copied_from_result() -> None:
     result = RetrievalResult(
         document_id=doc_id,
         version_id=version_id,
+        version_number="1.0",
         chunk_id=chunk_id,
         chunk_index=5,
         chunk_text="test chunk text",
@@ -31,6 +32,7 @@ def test_citation_identity_fields_copied_from_result() -> None:
 
     assert citation.document_id == doc_id
     assert citation.version_id == version_id
+    assert citation.version_number == "1.0"
     assert citation.chunk_id == chunk_id
     assert citation.chunk_index == 5
     assert citation.similarity == 0.87
@@ -41,6 +43,7 @@ def test_citation_chunk_index_preserved() -> None:
     result = RetrievalResult(
         document_id=uuid4(),
         version_id=uuid4(),
+        version_number="1.0",
         chunk_id=uuid4(),
         chunk_index=0,
         chunk_text="first chunk",
@@ -58,6 +61,7 @@ def test_citation_similarity_preserved() -> None:
     result = RetrievalResult(
         document_id=uuid4(),
         version_id=uuid4(),
+        version_number="1.0",
         chunk_id=uuid4(),
         chunk_index=0,
         chunk_text="test",
@@ -75,6 +79,7 @@ def test_citation_metadata_not_included() -> None:
     result = RetrievalResult(
         document_id=uuid4(),
         version_id=uuid4(),
+        version_number="1.0",
         chunk_id=uuid4(),
         chunk_index=0,
         chunk_text="test",
@@ -97,6 +102,7 @@ def test_citation_immutable() -> None:
     result = RetrievalResult(
         document_id=doc_id,
         version_id=version_id,
+        version_number="1.0",
         chunk_id=chunk_id,
         chunk_index=0,
         chunk_text="test",
@@ -120,6 +126,7 @@ def test_citation_typed_fields() -> None:
     result = RetrievalResult(
         document_id=uuid4(),
         version_id=uuid4(),
+        version_number="1.0",
         chunk_id=uuid4(),
         chunk_index=3,
         chunk_text="test",

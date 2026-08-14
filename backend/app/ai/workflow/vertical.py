@@ -33,6 +33,7 @@ Design contract (WP-REC-03F):
 from __future__ import annotations
 
 import json
+import time
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -46,6 +47,15 @@ from app.ai.provider.exceptions import (
     PermanentChatProviderError,
     TransientChatProviderError,
 )
+from app.ai.rag.orchestration import (
+    WORKFLOW_TOP_K,
+    FabricatedCitationError,
+    build_citation_allow_list,
+    build_retrieval_query_text,
+    serialize_retrieval_context,
+    validate_sources_against_allow_list,
+)
+from app.ai.rag.retriever import RetrievalResult, RetrievalService
 from app.ai.workflow.engine import WorkflowEngine
 from app.ai.workflow.prompts import build_system_prompt
 from app.ai.workflow.schema_validator import (
@@ -55,8 +65,15 @@ from app.ai.workflow.schema_validator import (
 from app.ai.workflow.state_machine import WorkflowState
 from app.core.logging import get_logger
 from app.models.production import ProductionPlan
-from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
+from app.models.user import User, UserRole
+from app.models.workflow import (
+    Recommendation,
+    WorkflowAuthorizationRecord,
+    WorkflowRun,
+    WorkflowStep,
+)
 from app.schemas.recommendation import RECOMMENDATION_SCHEMA_VERSION
+from app.services.embedding_provider import EmbeddingProvider
 from app.services.risk_engine import analyze_plan
 
 _logger = get_logger(__name__)
@@ -66,6 +83,7 @@ _ERROR_CODE_PROVIDER_TRANSIENT = "PROVIDER_TRANSIENT"
 _ERROR_CODE_PROVIDER_PERMANENT = "PROVIDER_PERMANENT"
 _ERROR_CODE_VALIDATION = "VALIDATION_FAILED"
 _ERROR_CODE_INTERNAL = "INTERNAL_ERROR"
+_ERROR_CODE_RETRIEVAL = "RETRIEVAL_FAILED"
 
 
 class VerticalExecutionResult:
@@ -83,10 +101,75 @@ class VerticalExecutionResult:
         self.success = success
 
 
+async def _resolve_effective_role_ids(
+    session: AsyncSession,
+    run_id: UUID,
+    dispatch_generation: int,
+) -> set[UUID] | None:
+    """Resolve the effective role IDs for a dispatch generation (M1).
+
+    Implements the WP-REC-05 M1 worker-execution contract: load the
+    authorization record for the exact claimed dispatch generation, resolve
+    the user's currently active role UUIDs, and compute
+    ``effective_role_ids = captured_role_snapshot ∩ current_role_ids``.
+
+    Returns ``None`` to signal a fail-closed authorization failure in any
+    of the M1 fail-closed conditions: authorization record absent,
+    generation mismatch, user absent/deleted/disabled, malformed captured
+    snapshot, current-role resolution failure, or empty effective role set.
+
+    Args:
+        session: Async database session.
+        run_id: Workflow run UUID.
+        dispatch_generation: The exact dispatch generation to authorize.
+
+    Returns:
+        The non-empty effective role-ID set, or ``None`` if the
+        authorization context must fail closed.
+    """
+    result = await session.execute(
+        select(WorkflowAuthorizationRecord).where(
+            WorkflowAuthorizationRecord.run_id == run_id,
+            WorkflowAuthorizationRecord.dispatch_generation
+            == dispatch_generation,
+        )
+    )
+    record = result.scalar_one_or_none()
+    if record is None:
+        return None
+
+    user_result = await session.execute(
+        select(User).where(User.id == record.user_id)
+    )
+    user = user_result.scalar_one_or_none()
+    if user is None or not user.is_active:
+        return None
+
+    try:
+        captured_role_ids = {
+            UUID(raw) for raw in (record.role_snapshot or [])
+        }
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+    current_result = await session.execute(
+        select(UserRole.role_id).where(UserRole.user_id == record.user_id)
+    )
+    current_role_ids: set[UUID] = {
+        UUID(str(row[0])) for row in current_result.fetchall()
+    }
+
+    effective = captured_role_ids & current_role_ids
+    if not effective:
+        return None
+    return effective
+
+
 async def execute_workflow(
     *,
     session: AsyncSession,
     provider: ChatProvider,
+    embedding_provider: EmbeddingProvider,
     run_id: UUID,
     queued_generation: int,
 ) -> VerticalExecutionResult:
@@ -104,6 +187,8 @@ async def execute_workflow(
         session: Async database session.
         provider: ChatProvider instance (already wrapped in
             RetryingChatProvider if applicable).
+        embedding_provider: EmbeddingProvider instance used for
+            server-derived retrieval query embeddings (WP-REC-05).
         run_id: Workflow run UUID.
         queued_generation: The dispatch generation from the ARQ job
             identity (D5 §4).
@@ -166,30 +251,29 @@ async def execute_workflow(
     # 4. Deterministic risk calculation — persisted independently of
     #    provider success (D1/C1 contract).
     risk_data_json = "[]"
+    risk_items: list[dict[str, Any]] = []
     try:
         risks = await analyze_plan(session, plan_code)
-        risk_data_json = json.dumps(
-            [
-                {
-                    "risk_id": f"RISK-{i + 1:03d}",
-                    "component_code": r.component_code,
-                    "component_name": r.component_name,
-                    "affected_wo_code": r.affected_wo_code,
-                    "required": str(r.required),
-                    "available": str(r.available),
-                    "confirmed_early": str(r.confirmed_early),
-                    "confirmed_late": str(r.confirmed_late),
-                    "shortage": str(r.shortage),
-                    "severity": r.severity,
-                    "has_approved_alternative": r.has_approved_alternative,
-                    "has_proposed_alternative": r.has_proposed_alternative,
-                    "need_date": r.need_date.isoformat(),
-                    "plan_code": r.plan_code,
-                }
-                for i, r in enumerate(risks)
-            ],
-            default=str,
-        )
+        risk_items = [
+            {
+                "risk_id": f"RISK-{i + 1:03d}",
+                "component_code": r.component_code,
+                "component_name": r.component_name,
+                "affected_wo_code": r.affected_wo_code,
+                "required": str(r.required),
+                "available": str(r.available),
+                "confirmed_early": str(r.confirmed_early),
+                "confirmed_late": str(r.confirmed_late),
+                "shortage": str(r.shortage),
+                "severity": r.severity,
+                "has_approved_alternative": r.has_approved_alternative,
+                "has_proposed_alternative": r.has_proposed_alternative,
+                "need_date": r.need_date.isoformat(),
+                "plan_code": r.plan_code,
+            }
+            for i, r in enumerate(risks)
+        ]
+        risk_data_json = json.dumps(risk_items, default=str)
         _logger.info(
             "workflow.vertical.risk_calculated",
             run_id=str(run_id),
@@ -210,6 +294,156 @@ async def execute_workflow(
             WorkflowState.FAILED_INTERNAL.value, False
         )
 
+    # 4.5 Retrieval orchestration (WP-REC-05) — inserted after deterministic
+    #     risk calculation and before prompt construction. Resolves the
+    #     generation-specific authorization context, computes
+    #     effective_role_ids, performs bounded per-risk retrieval, and
+    #     builds the citation allow-list and prompt context.
+    retrieval_start = time.monotonic()
+    effective_role_ids = await _resolve_effective_role_ids(
+        session, run.id, queued_generation
+    )
+
+    retrieval_results: list[RetrievalResult] = []
+    citation_allow_list: frozenset[tuple[str, str, UUID]] = frozenset()
+    retrieval_context_json = "[]"
+
+    if effective_role_ids is None:
+        # Fail-closed authorization failure (M1/DEC-046): record absent,
+        # generation mismatch, user absent/deleted/disabled, malformed
+        # snapshot, or empty effective role set. Retrieval is not executed
+        # and no Recommendation is created.
+        failed_step = WorkflowStep(
+            run_id=run.id,
+            correlation_id=run.correlation_id,
+            seq=await engine._next_step_seq(run.id),
+            step_name="retrieval",
+            status="failed",
+            error_code=_ERROR_CODE_RETRIEVAL,
+            error_detail="AUTHORIZATION_CONTEXT_EMPTY",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(failed_step)
+        await session.flush()
+
+        await engine.transition_to_failed_retrieval(
+            run,
+            error_code=_ERROR_CODE_RETRIEVAL,
+            error_detail="AUTHORIZATION_CONTEXT_EMPTY",
+        )
+        _logger.warning(
+            "workflow.vertical.retrieval_authorization_empty",
+            run_id=str(run_id),
+            plan_code=plan_code,
+            dispatch_generation=queued_generation,
+        )
+        return VerticalExecutionResult(
+            WorkflowState.FAILED_RETRIEVAL.value, False
+        )
+
+    try:
+        retrieval_service = RetrievalService()
+        seen: set[tuple[UUID, UUID, UUID]] = set()
+        for risk_item in risk_items:
+            query_text = build_retrieval_query_text(risk_item)
+            query_embedding = (
+                await embedding_provider.embed_text([query_text])
+            )[0]
+            risk_results = await retrieval_service.retrieve(
+                session=session,
+                query_embedding=query_embedding,
+                allowed_role_ids=effective_role_ids,
+                top_k=WORKFLOW_TOP_K,
+            )
+            for retrieved in risk_results:
+                identity = (
+                    retrieved.document_id,
+                    retrieved.version_id,
+                    retrieved.chunk_id,
+                )
+                if identity not in seen:
+                    seen.add(identity)
+                    retrieval_results.append(retrieved)
+    except Exception:
+        # Retrieval execution failure → FAILED_RETRIEVAL (M2). No
+        # Recommendation is created for the failed attempt.
+        failed_step = WorkflowStep(
+            run_id=run.id,
+            correlation_id=run.correlation_id,
+            seq=await engine._next_step_seq(run.id),
+            step_name="retrieval",
+            status="failed",
+            error_code=_ERROR_CODE_RETRIEVAL,
+            error_detail="RETRIEVAL_FAILED",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(failed_step)
+        await session.flush()
+
+        await engine.transition_to_failed_retrieval(
+            run,
+            error_code=_ERROR_CODE_RETRIEVAL,
+            error_detail="RETRIEVAL_FAILED",
+        )
+        _logger.warning(
+            "workflow.vertical.retrieval_failed",
+            run_id=str(run_id),
+            plan_code=plan_code,
+            dispatch_generation=queued_generation,
+        )
+        return VerticalExecutionResult(
+            WorkflowState.FAILED_RETRIEVAL.value, False
+        )
+
+    retrieval_latency_ms = int((time.monotonic() - retrieval_start) * 1000)
+    citation_allow_list = build_citation_allow_list(retrieval_results)
+    retrieval_context_json = serialize_retrieval_context(retrieval_results)
+
+    # Record the successful retrieval step (§I observability contract).
+    retrieval_step = WorkflowStep(
+        run_id=run.id,
+        correlation_id=run.correlation_id,
+        seq=await engine._next_step_seq(run.id),
+        step_name="retrieval",
+        status="completed",
+        latency_ms=retrieval_latency_ms,
+        started_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        step_metadata={
+            "result_count": len(retrieval_results),
+            "accessible_document_count": len(
+                {r.document_id for r in retrieval_results}
+            ),
+            "citation_count": len(citation_allow_list),
+            "citation_ids": sorted(
+                [
+                    {
+                        "document_id": doc_id,
+                        "version": version,
+                        "chunk_id": str(chunk_id),
+                    }
+                    for doc_id, version, chunk_id in citation_allow_list
+                ],
+                key=lambda c: (c["document_id"], c["version"], c["chunk_id"]),
+            ),
+            "risk_ids_queried": [item["risk_id"] for item in risk_items],
+        },
+    )
+    session.add(retrieval_step)
+    await session.flush()
+
+    _logger.info(
+        "workflow.vertical.retrieval_completed",
+        run_id=str(run_id),
+        plan_code=plan_code,
+        result_count=len(retrieval_results),
+        accessible_document_count=len(
+            {r.document_id for r in retrieval_results}
+        ),
+    )
+
     # 5. Build the prompt and call the provider.
     #    The engine's execute_provider_call transitions PENDING → RUNNING
     #    → AWAITING_VALIDATION (or FAILED_PROVIDER/FAILED_INTERNAL).
@@ -220,6 +454,7 @@ async def execute_workflow(
         plan_id=plan_code,
         run_id=str(run_id),
         risk_data=risk_data_json,
+        retrieval_context=retrieval_context_json,
     )
 
     # Record the provider-call step.
@@ -233,7 +468,6 @@ async def execute_workflow(
     session.add(step)
     await session.flush()
 
-    import time
     start = time.monotonic()
     chat_result: ChatResult | None = None
     provider_error_code: str | None = None
@@ -306,6 +540,44 @@ async def execute_workflow(
             )
             _logger.warning(
                 "workflow.vertical.validation_failed",
+                run_id=str(run_id),
+            )
+            return VerticalExecutionResult(
+                WorkflowState.FAILED_VALIDATION.value, False
+            )
+
+        # 6.5 Citation-integrity validation (WP-REC-05 §G): every persisted
+        #     Source must be in the run's citation allow-list. A fabricated
+        #     or unauthorized citation is a validation failure (never a
+        #     retrieval execution failure, per §M M2). Raw model output and
+        #     the fabricated identity are never logged or returned.
+        try:
+            for rec_risk in recommendation_data.risks:
+                validate_sources_against_allow_list(
+                    rec_risk.sources, citation_allow_list
+                )
+        except FabricatedCitationError:
+            step_record = WorkflowStep(
+                run_id=run.id,
+                correlation_id=run.correlation_id,
+                seq=await engine._next_step_seq(run.id),
+                step_name="validation",
+                status="failed",
+                error_code=_ERROR_CODE_VALIDATION,
+                error_detail="FabricatedCitationError",
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+            session.add(step_record)
+            await session.flush()
+
+            await engine.transition_to_failed_validation(
+                run,
+                error_code=_ERROR_CODE_VALIDATION,
+                error_detail="FabricatedCitationError",
+            )
+            _logger.warning(
+                "workflow.vertical.citation_validation_failed",
                 run_id=str(run_id),
             )
             return VerticalExecutionResult(

@@ -16,15 +16,18 @@ States (DEC-013):
     FAILED_VALIDATION   — output validation failed (03C owns validation).
     FAILED_PROVIDER     — provider call failed (transient or permanent).
     FAILED_INTERNAL     — internal error or invalid transition.
+    FAILED_RETRIEVAL    — retrieval execution failed (WP-REC-05 M2).
 
 Terminal states: COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER,
-FAILED_INTERNAL. No transitions originate from a terminal state.
+FAILED_INTERNAL, FAILED_RETRIEVAL. No transitions originate from a
+terminal state.
 
 Transition table:
     PENDING             → RUNNING
     RUNNING             → AWAITING_VALIDATION
     RUNNING             → FAILED_PROVIDER
     RUNNING             → FAILED_INTERNAL
+    RUNNING             → FAILED_RETRIEVAL
     AWAITING_VALIDATION → COMPLETED
     AWAITING_VALIDATION → FAILED_VALIDATION
     AWAITING_VALIDATION → FAILED_INTERNAL
@@ -33,10 +36,12 @@ WP-REC-03F D1 retry transitions (user-initiated retry only):
     FAILED_PROVIDER     → PENDING
     FAILED_VALIDATION   → PENDING
     FAILED_INTERNAL     → PENDING
+    FAILED_RETRIEVAL    → PENDING
 
 These retry transitions are explicit external actions authorized by the
-D1/D2 contract. The three failed states remain terminal for ordinary
-workflow execution and polling. COMPLETED has no outgoing transition.
+D1/D2 contract (and the WP-REC-05 M2 contract for FAILED_RETRIEVAL).
+The failed states remain terminal for ordinary workflow execution and
+polling. COMPLETED has no outgoing transition.
 
 Self-transitions are not permitted: transitioning to the same state
 raises StateMachineError. This prevents no-op transitions from
@@ -59,6 +64,7 @@ class WorkflowState(StrEnum):
     FAILED_VALIDATION = "FAILED_VALIDATION"
     FAILED_PROVIDER = "FAILED_PROVIDER"
     FAILED_INTERNAL = "FAILED_INTERNAL"
+    FAILED_RETRIEVAL = "FAILED_RETRIEVAL"
 
 
 class StateMachineError(Exception):
@@ -97,6 +103,7 @@ TERMINAL_STATES: frozenset[WorkflowState] = frozenset({
     WorkflowState.FAILED_VALIDATION,
     WorkflowState.FAILED_PROVIDER,
     WorkflowState.FAILED_INTERNAL,
+    WorkflowState.FAILED_RETRIEVAL,
 })
 
 # Immutable transition table.
@@ -112,6 +119,7 @@ _TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
         WorkflowState.AWAITING_VALIDATION,
         WorkflowState.FAILED_PROVIDER,
         WorkflowState.FAILED_INTERNAL,
+        WorkflowState.FAILED_RETRIEVAL,
     }),
     WorkflowState.AWAITING_VALIDATION: frozenset({
         WorkflowState.COMPLETED,
@@ -124,6 +132,7 @@ _TRANSITIONS: dict[WorkflowState, frozenset[WorkflowState]] = {
     WorkflowState.FAILED_VALIDATION: frozenset({WorkflowState.PENDING}),
     WorkflowState.FAILED_PROVIDER: frozenset({WorkflowState.PENDING}),
     WorkflowState.FAILED_INTERNAL: frozenset({WorkflowState.PENDING}),
+    WorkflowState.FAILED_RETRIEVAL: frozenset({WorkflowState.PENDING}),
 }
 
 # Public read-only view of the transition table.

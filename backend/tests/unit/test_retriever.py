@@ -383,6 +383,7 @@ class TestRetrievalResult:
         result = RetrievalResult(
             document_id=doc_id,
             version_id=ver_id,
+            version_number="1.0",
             chunk_id=chunk_id,
             chunk_index=5,
             chunk_text="Test chunk text",
@@ -392,6 +393,7 @@ class TestRetrievalResult:
 
         assert result.document_id == doc_id
         assert result.version_id == ver_id
+        assert result.version_number == "1.0"
         assert result.chunk_id == chunk_id
         assert result.chunk_index == 5
         assert result.chunk_text == "Test chunk text"
@@ -403,6 +405,7 @@ class TestRetrievalResult:
         result = RetrievalResult(
             document_id=uuid.uuid4(),
             version_id=uuid.uuid4(),
+            version_number="1.0",
             chunk_id=uuid.uuid4(),
             chunk_index=0,
             chunk_text="text",
@@ -421,6 +424,7 @@ class TestRetrievalResult:
         result = RetrievalResult(
             document_id=uuid.uuid4(),
             version_id=uuid.uuid4(),
+            version_number="1.0",
             chunk_id=uuid.uuid4(),
             chunk_index=0,
             chunk_text="text",

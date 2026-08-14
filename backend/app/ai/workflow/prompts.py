@@ -99,6 +99,11 @@ RULES:
 - "sources" is required. If no document context is available, use an
   empty list []. Empty sources means the recommendation is not grounded
   in retrieved documents.
+- "sources" may cite ONLY documents present in the retrieved document
+  context below. Each source's "document_id", "version", and "chunk_id"
+  must exactly match a supplied entry. Never invent, reuse, or cite any
+  document, version, or chunk that is not supplied in the retrieved
+  document context.
 - Do not include extra fields. Unknown fields will be rejected.
 - Do not include deterministic quantity fields (shortage, available,
   severity) in the risk items. Those are owned by the risk engine.
@@ -108,6 +113,7 @@ INPUT CONTEXT (provided at runtime):
 - Plan identifier: {plan_id}
 - Workflow run ID: {run_id}
 - Risk engine output: {risk_data}
+- Retrieved document context (cite ONLY these): {retrieval_context}
 """
 
 
@@ -116,15 +122,16 @@ def build_system_prompt(
     plan_id: str,
     run_id: str,
     risk_data: str,
+    retrieval_context: str = "[]",
 ) -> str:
     """Build the system prompt with runtime context injected.
 
-    This function uses ``str.format()`` to inject the three runtime
-    values into the template. Literal JSON braces in the template are
-    escaped as ``{{`` / ``}}`` and survive ``str.format()`` as single
-    braces in the output. The three format fields ``{plan_id}``,
-    ``{run_id}``, and ``{risk_data}`` are replaced with the supplied
-    values.
+    This function uses ``str.format()`` to inject the runtime values into
+    the template. Literal JSON braces in the template are escaped as
+    ``{{`` / ``}}`` and survive ``str.format()`` as single braces in the
+    output. The format fields ``{plan_id}``, ``{run_id}``,
+    ``{risk_data}``, and ``{retrieval_context}`` are replaced with the
+    supplied values.
 
     Args:
         plan_id: External production plan identifier (e.g.
@@ -132,6 +139,9 @@ def build_system_prompt(
         run_id: Workflow run UUID as a string.
         risk_data: JSON string of the deterministic risk engine output
             that the AI should enrich.
+        retrieval_context: JSON string of the bounded retrieval context
+            (accessible chunks with citation identities) that the AI may
+            cite. Defaults to ``"[]"`` (ungrounded).
 
     Returns:
         The assembled system prompt string.
@@ -140,4 +150,5 @@ def build_system_prompt(
         plan_id=plan_id,
         run_id=run_id,
         risk_data=risk_data,
+        retrieval_context=retrieval_context,
     )
