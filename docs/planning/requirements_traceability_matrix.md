@@ -32,8 +32,8 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | AT-003 — Golden Dataset integrity | Phase 2 | ✅ PASS |
 | AT-004 — Deterministic risk calculation | Phase 2 | ✅ PASS |
 | AT-005 — No hidden UI mocks | Phase 2 + Phase 3 | ✅ PASS |
-| AT-006 — RAG retrieval | Phase 4 | IMPLEMENTED — NOT VERIFIED AS PASS |
-| AT-007 — Document access control | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
+| AT-006 — RAG retrieval | Phase 4 | IMPLEMENTED — NOT VERIFIED AS PASS. Implementation-completion owner: WP-REC-05; formal verification owner: WP-REC-05-VFY (implementation precedes verification) |
+| AT-007 — Document access control | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS. Workflow-path completion owner: WP-REC-05; formal verification owner: WP-REC-05-VFY (implementation precedes verification) |
 | AT-008 — Structured output validation | Phase 5 | ✅ PASS — WP-REC-03C (validator) + WP-REC-03E (trace) + WP-REC-03F (worker execution); accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14) |
 | AT-009 — Human approval blocks write | Phase 6 | NOT IMPLEMENTED |
 | AT-010 — Approval executes action | Phase 6 | NOT IMPLEMENTED |
@@ -58,7 +58,9 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | WP-REC-03E (Workflow-Run Detail + Recommendation UI) | COMPLETE | PR #74 merged at `82b4497`; read-only workflow-run detail API, recommendation UI, TanStack Query hook |
 | WP-REC-03F (Backend Workflow Start/Retry API + ARQ Worker) | COMPLETE | PR #78 merged at `aab1323`; backend start/retry API, ARQ worker functions, D6 reconciler cron job, dispatch generation |
 | WP-REC-03G (Frontend Start/Retry UI Interaction) | COMPLETE | PR #80 merged at `1582c39`; frontend start/retry controls, stale-mutation protection, deterministic polling lifecycle |
-| WP-REC-05 (Phase 4 completion) | NOT AUTHORIZED | Positioned after 03C–03G and before Phase 6 (SD-4) |
+| WP-REC-05-DEC (RAG integration planning) | PLANNING — AUTHORIZED | Planning-only package authorized 2026-08-14 (DEC-044); dedicated artifact `docs/planning/wp_rec_05_rag_integration.md`. Does not authorize implementation or verification |
+| WP-REC-05 (RAG integration implementation) | NOT AUTHORIZED | Implementation precedes verification (DEC-044); positioned after 03C–03G and before Phase 6 (SD-4). Implementation-completion owner for the AT-006/AT-007 workflow path |
+| WP-REC-05-VFY (AT-006/AT-007 verification) | NOT AUTHORIZED | Separate bounded verification package (DEC-035); follows WP-REC-05 implementation. Formal verification owner for AT-006/AT-007 |
 
 ---
 
@@ -68,6 +70,7 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 - **15 acceptance tests** mapped to phases.
 - FR-06 now has implementation via WP-REC-03C (COMPLETE). FR-08, FR-09, FR-12 reference capabilities not yet implemented — marked as such; no nonexistent file paths cited.
 - AT-006 and AT-007 are not marked PASS.
+- AT-006/AT-007 implementation completion is owned by WP-REC-05; formal verification is owned by the separate WP-REC-05-VFY package; implementation precedes verification (DEC-044). Phase 4 remains PARTIALLY COMPLETE.
 - AT-001, AT-002, AT-014 require deployment/environment verification.
 - AT-008 and AT-013 are PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14; durable review `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`, durable acceptance declaration `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`).
 - AT-009, AT-010, AT-011, AT-012, AT-015 require capabilities that are not implemented.

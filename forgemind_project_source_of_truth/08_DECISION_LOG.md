@@ -610,6 +610,140 @@ These declarations are Product Owner decisions, not automated inferences from te
 
 ---
 
+## DEC-044 — WP-REC-05 planning authorization and AT-006/AT-007 sequencing
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:** The Release 1 residual-blocker reassessment concluded Release 1 is NOT READY and NOT DEPLOYED; WP-REC-03H is complete and closed; Phase 5 is ACCEPTED; AT-008 and AT-013 are PASS; Phase 4 remains PARTIALLY COMPLETE; AT-006 and AT-007 are not PASS; isolated RAG retrieval, citations, document permissions, and role filtering exist, but the controlled AI workflow does not currently call the retriever; recommendation `sources` may remain empty because RAG workflow integration was deferred; Golden Scenario step 6 is the earliest incomplete critical-path step; Phase 6 depends on RAG citations under DEC-037; and WP-REC-05 lacks a complete decomposed implementation specification. F3–F8 and SP-0B are not Release 1 blockers.
+
+**Decision:** Authorize the planning-only package **WP-REC-05-DEC** (RAG Integration Decomposition and Planning). The authorized outcome is a complete, reviewable implementation specification for WP-REC-05, a separate AT-006/AT-007 verification contract (WP-REC-05-VFY), recorded sequencing, and a Draft documentation PR. The accepted order is: **WP-REC-05 implementation first, separate bounded WP-REC-05-VFY verification second.**
+
+**Reason:** The decomposition must precede implementation; the verification contract must remain separate from implementation (DEC-035). Implementation and verification each require their own explicit authorization.
+
+**Consequences:**
+- WP-REC-05 implementation is NOT AUTHORIZED.
+- WP-REC-05-VFY is NOT AUTHORIZED.
+- AT-006 and AT-007 remain not PASS.
+- Phase 4 remains PARTIALLY COMPLETE.
+- Phase 6 and Phase 7 remain not authorized.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- F3–F8 remain deferred and out of scope.
+
+**Affected documents/tests:** `docs/planning/wp_rec_05_rag_integration.md` (new), `docs/planning/requirements_traceability_matrix.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
+## DEC-045 — WP-REC-05 authorization, retrieval-failure, and citation-identity contracts
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:** PR #87 planning artifact (`docs/planning/wp_rec_05_rag_integration.md`) passed the corrected independent re-review. F1–F7 are resolved; no BLOCKING/HIGH/MEDIUM findings remain. The three planning decisions M1 (authorization-context persistence), M2 (retrieval-failure behavior), and M3 (citation document identity) were ready for Product Owner decisions. Release 1 remains NOT READY and NOT DEPLOYED.
+
+**Decision:** The Product Owner accepts the M1/M2/M3 planning contracts as follows.
+
+M1 — Authorization capture is append-only per dispatch generation:
+- append-only authorization identity keyed by `(run_id, dispatch_generation)`;
+- durable `user_id` and an immutable captured role snapshot;
+- execution uses the intersection of the captured role snapshot and the user's currently active roles;
+- document permissions remain dynamically evaluated at retrieval time;
+- retry creates a new immutable authorization record;
+- null/system/unresolvable identity fails closed.
+
+M2 — Retrieval execution failure is fail-closed:
+- dedicated `FAILED_RETRIEVAL` state;
+- `RUNNING → FAILED_RETRIEVAL`;
+- explicit authorized retry `FAILED_RETRIEVAL → PENDING`;
+- safe run-level error code `RETRIEVAL_FAILED`;
+- one failed retrieval WorkflowStep with safe metadata;
+- no Recommendation is created on retrieval execution failure;
+- dispatch-generation and stale-job protection remain mandatory;
+- risks remain deterministically recomputable through the read-only risk API.
+
+M3 — The repository document UUID string is the canonical `Source.document_id`:
+- `Source.document_id = str(Document.id)`;
+- no artificial external document identifier;
+- Source wire shape and `schema_version = "1.0"` retained;
+- mandatory compatibility preflight before implementation mutation;
+- a dependency on legacy external-ID semantics is a stop condition requiring a separate schema-evolution decision.
+
+**Reason:** The selected contracts provide strong, inspectable authorization, failure handling, traceability, and citation integrity appropriate for a portfolio MVP intended for technical employer review, while remaining bounded and testable.
+
+**Consequences:**
+- M1/M2/M3 are resolved as planning decisions.
+- The WP-REC-05 specification becomes decision-complete.
+- WP-REC-05 implementation still requires separate explicit Product Owner authorization.
+- Implementation must satisfy the M3 compatibility preflight.
+- WP-REC-05-VFY remains separate and NOT AUTHORIZED.
+- AT-006 and AT-007 remain not PASS.
+- Phase 4 remains PARTIALLY COMPLETE.
+- Phase 5 remains ACCEPTED.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- Phase 6/7, deployment, SP-0B, and F3–F8 remediation remain unauthorized.
+
+**Affected documents/tests:** `docs/planning/wp_rec_05_rag_integration.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
+## DEC-046 — WP-REC-05 empty-effective-role authorization boundary
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:**
+- independent review of the M1/M2/M3 decision application found an ambiguity
+  between empty-role fail-closed behavior and legitimate zero-result behavior;
+- DEC-045 established role intersection but did not explicitly define the
+  empty-intersection outcome;
+- the Product Owner has now resolved that boundary.
+
+**Decision:**
+- empty `effective_role_ids` is a fail-closed authorization failure;
+- retrieval is not executed;
+- no Recommendation is created;
+- use the accepted `FAILED_RETRIEVAL` / `RETRIEVAL_FAILED` path with safe
+  bounded reason metadata;
+- non-empty `effective_role_ids` followed by a successful retrieval with no
+  permitted approved document/chunk is a legitimate zero-result;
+- legitimate zero-result continues as explicitly ungrounded with empty sources.
+
+**Reason:**
+- revoked or absent authorization must not silently continue as a valid
+  workflow execution;
+- absence of accessible documents for an otherwise valid authorization context
+  is not a system failure;
+- the distinction is explicit, secure, testable, and suitable for technical
+  review of the portfolio MVP.
+
+**Consequences:**
+- DEC-APP-01 is resolved;
+- M1 and M2 authorization/failure boundaries are unambiguous;
+- DEC-045 remains accepted and is clarified, not replaced;
+- WP-REC-05 implementation remains separately NOT AUTHORIZED;
+- migration implementation remains NOT AUTHORIZED;
+- WP-REC-05-VFY remains NOT AUTHORIZED;
+- AT-006/AT-007 remain not PASS;
+- Phase 4 remains PARTIALLY COMPLETE;
+- Phase 5 remains ACCEPTED;
+- Release 1 remains NOT READY and NOT DEPLOYED;
+- no Phase 6/7, deployment, SP-0B, or F3–F8 work is authorized.
+
+**Affected documents/tests:**
+- docs/planning/wp_rec_05_rag_integration.md
+- forgemind_project_source_of_truth/08_DECISION_LOG.md
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown
