@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import AsyncIterator
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -78,7 +79,7 @@ async def _insert_plan(session: AsyncSession) -> UUID:
         ),
         {"code": f"PLAN-{uuid4().hex[:8]}"},
     )
-    return result.scalar_one()
+    return cast(UUID, result.scalar_one())
 
 
 async def _insert_role(session: AsyncSession, code: str) -> UUID:
@@ -89,7 +90,7 @@ async def _insert_role(session: AsyncSession, code: str) -> UUID:
         ),
         {"code": code, "name": code},
     )
-    return result.scalar_one()
+    return cast(UUID, result.scalar_one())
 
 
 async def _insert_user(
@@ -102,7 +103,7 @@ async def _insert_user(
         ),
         {"u": username, "d": username, "a": is_active},
     )
-    return result.scalar_one()
+    return cast(UUID, result.scalar_one())
 
 
 async def _link_user_role(
@@ -132,7 +133,7 @@ async def _insert_run(
         ),
         {"plan_id": plan_id, "gen": generation},
     )
-    return result.scalar_one()
+    return cast(UUID, result.scalar_one())
 
 
 async def _insert_auth_record(

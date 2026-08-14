@@ -10,7 +10,7 @@ live database or provider.
 from __future__ import annotations
 
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -29,9 +29,9 @@ from app.schemas.recommendation import Source
 
 def _result(
     *,
-    document_id=None,
+    document_id: UUID | None = None,
     version_number: str = "1.0",
-    chunk_id=None,
+    chunk_id: UUID | None = None,
     chunk_text: str = "chunk text",
     chunk_index: int = 0,
     similarity: float = 0.9,
@@ -70,7 +70,7 @@ class TestRetrievalQueryConstruction:
         )
 
     def test_query_falls_back_to_generic(self) -> None:
-        risk: dict = {"component_code": "", "component_name": ""}
+        risk: dict[str, str] = {"component_code": "", "component_name": ""}
         assert build_retrieval_query_text(risk) == "alternative component"
 
 
