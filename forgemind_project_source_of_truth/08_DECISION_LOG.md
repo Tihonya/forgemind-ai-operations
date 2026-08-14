@@ -692,6 +692,58 @@ M3 — The repository document UUID string is the canonical `Source.document_id`
 
 ---
 
+## DEC-046 — WP-REC-05 empty-effective-role authorization boundary
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:**
+- independent review of the M1/M2/M3 decision application found an ambiguity
+  between empty-role fail-closed behavior and legitimate zero-result behavior;
+- DEC-045 established role intersection but did not explicitly define the
+  empty-intersection outcome;
+- the Product Owner has now resolved that boundary.
+
+**Decision:**
+- empty `effective_role_ids` is a fail-closed authorization failure;
+- retrieval is not executed;
+- no Recommendation is created;
+- use the accepted `FAILED_RETRIEVAL` / `RETRIEVAL_FAILED` path with safe
+  bounded reason metadata;
+- non-empty `effective_role_ids` followed by a successful retrieval with no
+  permitted approved document/chunk is a legitimate zero-result;
+- legitimate zero-result continues as explicitly ungrounded with empty sources.
+
+**Reason:**
+- revoked or absent authorization must not silently continue as a valid
+  workflow execution;
+- absence of accessible documents for an otherwise valid authorization context
+  is not a system failure;
+- the distinction is explicit, secure, testable, and suitable for technical
+  review of the portfolio MVP.
+
+**Consequences:**
+- DEC-APP-01 is resolved;
+- M1 and M2 authorization/failure boundaries are unambiguous;
+- DEC-045 remains accepted and is clarified, not replaced;
+- WP-REC-05 implementation remains separately NOT AUTHORIZED;
+- migration implementation remains NOT AUTHORIZED;
+- WP-REC-05-VFY remains NOT AUTHORIZED;
+- AT-006/AT-007 remain not PASS;
+- Phase 4 remains PARTIALLY COMPLETE;
+- Phase 5 remains ACCEPTED;
+- Release 1 remains NOT READY and NOT DEPLOYED;
+- no Phase 6/7, deployment, SP-0B, or F3–F8 work is authorized.
+
+**Affected documents/tests:**
+- docs/planning/wp_rec_05_rag_integration.md
+- forgemind_project_source_of_truth/08_DECISION_LOG.md
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown

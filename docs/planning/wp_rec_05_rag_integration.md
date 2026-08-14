@@ -221,8 +221,12 @@ authorization; the expected areas are:
 - `backend/app/ai/workflow/prompts.py` (extend prompt to carry retrieval context)
 - `backend/app/ai/rag/retriever.py` (read; possibly a bounded query-construction helper)
 - `backend/app/ai/rag/citations.py` (citation allow-list construction)
-- `backend/app/models/workflow.py` (authorization-context persistence)
-- `backend/app/api/workflow.py` (resolve + persist role context at start/retry)
+- `backend/app/models/workflow.py` (append-only workflow authorization record
+  model/table — or equivalent append-only structure — keyed by
+  `(run_id, dispatch_generation)`, associated with `WorkflowRun` by `run_id`,
+  not a mutable authorization snapshot column on `WorkflowRun`)
+- `backend/app/api/workflow.py` (resolve role context at start/retry and create
+  the exact generation-specific authorization record)
 - `backend/app/schemas/recommendation.py` (bounded `Source` documentation update reflecting the accepted M3 contract — `Source.document_id = str(Document.id)`; `schema_version` remains `"1.0"`)
 - a new Alembic migration file
 - new backend tests under `backend/tests/` (implementation phase only)
@@ -342,10 +346,14 @@ implementation begins.
   citation identities) with an explicit "cite only retrieved chunks" rule.
 - `backend/app/ai/rag/citations.py` — build the authoritative citation
   allow-list from `RetrievalResult`s.
-- `backend/app/models/workflow.py` — add authorization-context persistence on
-  `WorkflowRun` (see migration status below).
+- `backend/app/models/workflow.py` — add a dedicated append-only workflow
+  authorization record model/table (or equivalent append-only structure),
+  uniquely keyed by `(run_id, dispatch_generation)`, associated with
+  `WorkflowRun` by `run_id` but not represented as one mutable authorization
+  snapshot column on `WorkflowRun` (see migration status below).
 - `backend/app/api/workflow.py` — resolve the authenticated user's role UUIDs
-  at start/retry and persist them on the run for the worker.
+  at start/retry and create the exact generation-specific authorization record
+  that the worker reads for the exact claimed generation.
 - `backend/app/schemas/recommendation.py` — bounded `Source` documentation
   update reflecting the accepted M3 contract (`Source.document_id =
   str(Document.id)`); `schema_version` remains `"1.0"`.
@@ -356,7 +364,8 @@ implementation begins.
   construction + retrieval orchestration, if kept out of `vertical.py`.
 - `backend/app/ai/rag/citation_validation.py` (or equivalent) — citation
   allow-list validation, if kept out of `vertical.py`/`schema_validator.py`.
-- A new Alembic migration file for the authorization-context column.
+- A new Alembic migration file for the append-only authorization-record
+  structure.
 
 **Files explicitly prohibited (implementation phase):**
 
@@ -428,9 +437,14 @@ user's currently active role UUIDs and computes
 
     effective_role_ids = captured_role_snapshot ∩ currently_active_role_ids
 
-then passes only `effective_role_ids` to `RetrievalService.retrieve`. Document
-permissions and the approved `DocumentVersion` status are evaluated dynamically
-at retrieval execution time. No client-provided role is trusted.
+then passes only `effective_role_ids` to `RetrievalService.retrieve`. An empty
+`effective_role_ids` is a fail-closed authorization failure: `RetrievalService`
+is not called, no Recommendation is created, and the run follows the accepted
+`FAILED_RETRIEVAL` / `RETRIEVAL_FAILED` path (see §M M1). A non-empty
+`effective_role_ids` with no matching currently permitted approved chunks is a
+legitimate zero-result (see §F No-result behavior). Document permissions
+and the approved `DocumentVersion` status are evaluated dynamically at
+retrieval execution time. No client-provided role is trusted.
 
 ### Accessible-document filtering
 
@@ -458,11 +472,12 @@ is preserved and strengthened.
 
 ### No-result behavior
 
-When no accessible document is found (empty role set or no matching approved
-chunks), `sources` is empty and the recommendation is explicitly ungrounded.
-The run still completes; the retrieval step records `result_count = 0` and the
-empty state is surfaced as ungrounded, never as grounded. (This follows the
-existing wire-schema contract: empty `sources` = not grounded.)
+When no matching currently permitted approved chunks exist for a non-empty
+effective role set, `sources` is empty and the recommendation is explicitly
+ungrounded. The run still completes; the retrieval step records
+`result_count = 0` and the empty state is surfaced as ungrounded, never as
+grounded. (This follows the existing wire-schema contract: empty `sources` =
+not grounded.)
 
 ### Retrieval-failure behavior
 
@@ -478,9 +493,11 @@ The deterministic risk result is not persisted in a risk table or workflow
 step; it is deterministically recomputable and remains available through the
 read-only risk API (`GET /api/v1/production-plans/{plan_code}/risks`).
 Retrieval failure must not change the underlying production-plan inputs or
-prevent deterministic recomputation. A legitimate zero-result (no accessible
-documents) is not `FAILED_RETRIEVAL`; it continues as explicitly ungrounded
-with empty `sources`.
+prevent deterministic recomputation. A legitimate zero-result (no matching
+currently permitted approved chunks for a non-empty effective role set) is not
+`FAILED_RETRIEVAL`; it continues as explicitly ungrounded with empty `sources`.
+An empty `effective_role_ids` is not a zero-result; it is a fail-closed
+authorization failure routed through `FAILED_RETRIEVAL` (see §M M1).
 
 ### Retry behavior
 
@@ -598,8 +615,11 @@ state).
 6. **Fail-closed behavior** where the AT-007 contract requires it: if role
    identity is absent or unresolvable, or the effective role set is empty where
    retrieval authorization is required, the run must not execute retrieval with
-   an empty/privileged role assumption; it must fail closed (per the accepted
-   M1 authorization contract, §M M1 / DEC-045).
+   an empty/privileged role assumption; it must fail closed through the
+   accepted `FAILED_RETRIEVAL` / `RETRIEVAL_FAILED` path with safe bounded
+   reason metadata (e.g. `AUTHORIZATION_CONTEXT_EMPTY`), never a silent
+   ungrounded zero-result (per the accepted M1 authorization contract, §M
+   M1 / DEC-045).
 
 ---
 
@@ -645,8 +665,10 @@ created or run in this planning task.**
    inputs or prevent deterministic recomputation of the risk result (no
    regression to AT-013).
 10. No regression to AT-008/AT-013.
-11. Authorization context is server-derived and durable (persisted on the run,
-    used by the worker).
+11. Authorization context is server-derived and durable: the start/retry API
+    creates a generation-specific durable authorization record, the worker
+    reads the authorization record for the exact claimed generation, and
+    previous retry-generation records are preserved (never overwritten).
 
 Existing reusable tests (no new test file creation required to reuse them):
 `backend/tests/unit/test_retriever.py`,
@@ -798,6 +820,24 @@ roles are malformed; current-role resolution fails; the effective role set is
 empty where retrieval authorization is required; or a null/system identity
 reaches the user-triggered workflow path.
 
+**Empty `effective_role_ids` outcome (authorization failure).** When
+`effective_role_ids = captured_role_snapshot ∩ currently_active_role_ids` is
+empty, the workflow fails closed before retrieval: `RetrievalService` is not
+called, no Recommendation is created, the run transitions through the accepted
+`FAILED_RETRIEVAL` pathway with run-level code `RETRIEVAL_FAILED`, and safe
+bounded reason metadata may identify `AUTHORIZATION_CONTEXT_EMPTY`. No
+restricted content, role names, raw exceptions, prompts, or credentials are
+exposed. Explicit authorized retry remains the only transition back to
+`PENDING`, and the generation guard and stale-job protection remain mandatory.
+
+**Non-empty `effective_role_ids` with no permitted approved chunks (legitimate
+zero-result).** When the authorization record is valid, the authenticated user
+is valid and active, `effective_role_ids` is non-empty, retrieval executes
+successfully, and no currently permitted approved document/chunk matches, the
+result is a legitimate successful zero-result: the run may continue, `sources`
+remains empty, and the recommendation is explicitly ungrounded. This is not
+`FAILED_RETRIEVAL` and is not an authorization failure.
+
 **Retry contract.** The same `run_id` is retained under the already accepted
 retry semantics; a new dispatch generation is created; a new immutable
 authorization record is captured from the retrying authenticated user; previous
@@ -847,12 +887,15 @@ selected.
 
 **Three-way distinction (preserved).**
 1. Successful retrieval with results.
-2. Successful retrieval with zero accessible results (legitimate empty
-   `sources`, ungrounded).
+2. Successful retrieval with no matching currently permitted approved chunks
+   for a non-empty effective role set (legitimate empty `sources`,
+   ungrounded).
 3. Retrieval execution failure (`FAILED_RETRIEVAL`).
 
 A legitimate successful zero-result is not `FAILED_RETRIEVAL`; it may continue
-as explicitly ungrounded with empty sources.
+as explicitly ungrounded with empty sources. An empty `effective_role_ids` is
+not a zero-result; it is an authorization failure and must fail closed through
+`FAILED_RETRIEVAL` (see §M M1).
 
 **Failure ownership.**
 - Embedding-provider, retrieval-query/database, and retrieval-orchestration
@@ -899,23 +942,34 @@ not authorize querying or mutating a deployment in this documentation task.
 
 ## N. Lifecycle after planning
 
-**Completed:**
-- Initial independent planning review (read-only).
-- Bounded F1–F7 remediation.
-- Corrected independent re-review.
-- Product Owner acceptance of M1/M2/M3 (2026-08-14, DEC-045).
+**Historical PR #87 lifecycle steps** (in the order they occur as separate
+boundaries):
 
-**Current authorized action:**
-- Documentation-only decision application (this change).
+- planning artifact creation;
+- bounded F1–F7 remediation;
+- corrected independent re-review;
+- Product Owner acceptance of M1/M2/M3 (2026-08-14, DEC-045);
+- bounded decision-documentation correction (DEC-APP-01–03) with the accepted
+  empty-effective-role clarification (DEC-046).
 
-**Next required action after successful decision application:**
-- Separate strictly read-only independent decision-application review.
+The GitHub PR state and separate lifecycle reports are authoritative for
+whether review, Ready-for-Review, merge, or post-merge verification has
+occurred. This planning artifact does not itself authorize any lifecycle
+transition.
 
-**Still separate and not authorized:**
-- Ready-for-Review transition.
-- Merge.
-- Post-merge verification.
-- WP-REC-05 implementation authorization.
-- WP-REC-05 implementation.
-- WP-REC-05-VFY.
+**Independent re-review is required before Ready-for-Review.** A separate,
+strictly read-only independent decision-application re-review is required
+before the PR may be marked Ready-for-Review. This planning artifact does not
+perform, substitute for, or waive that review.
+
+**Separate boundaries — not authorized by this artifact.** Each of the
+following is a separate boundary requiring its own explicit Product Owner
+authorization or action; none is authorized by this planning artifact:
+
+- Ready-for-Review transition;
+- merge;
+- post-merge verification;
+- WP-REC-05 implementation authorization;
+- WP-REC-05 implementation;
+- WP-REC-05-VFY;
 - Phase 4 acceptance.
