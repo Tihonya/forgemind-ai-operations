@@ -637,6 +637,61 @@ These declarations are Product Owner decisions, not automated inferences from te
 
 ---
 
+## DEC-045 — WP-REC-05 authorization, retrieval-failure, and citation-identity contracts
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:** PR #87 planning artifact (`docs/planning/wp_rec_05_rag_integration.md`) passed the corrected independent re-review. F1–F7 are resolved; no BLOCKING/HIGH/MEDIUM findings remain. The three planning decisions M1 (authorization-context persistence), M2 (retrieval-failure behavior), and M3 (citation document identity) were ready for Product Owner decisions. Release 1 remains NOT READY and NOT DEPLOYED.
+
+**Decision:** The Product Owner accepts the M1/M2/M3 planning contracts as follows.
+
+M1 — Authorization capture is append-only per dispatch generation:
+- append-only authorization identity keyed by `(run_id, dispatch_generation)`;
+- durable `user_id` and an immutable captured role snapshot;
+- execution uses the intersection of the captured role snapshot and the user's currently active roles;
+- document permissions remain dynamically evaluated at retrieval time;
+- retry creates a new immutable authorization record;
+- null/system/unresolvable identity fails closed.
+
+M2 — Retrieval execution failure is fail-closed:
+- dedicated `FAILED_RETRIEVAL` state;
+- `RUNNING → FAILED_RETRIEVAL`;
+- explicit authorized retry `FAILED_RETRIEVAL → PENDING`;
+- safe run-level error code `RETRIEVAL_FAILED`;
+- one failed retrieval WorkflowStep with safe metadata;
+- no Recommendation is created on retrieval execution failure;
+- dispatch-generation and stale-job protection remain mandatory;
+- risks remain deterministically recomputable through the read-only risk API.
+
+M3 — The repository document UUID string is the canonical `Source.document_id`:
+- `Source.document_id = str(Document.id)`;
+- no artificial external document identifier;
+- Source wire shape and `schema_version = "1.0"` retained;
+- mandatory compatibility preflight before implementation mutation;
+- a dependency on legacy external-ID semantics is a stop condition requiring a separate schema-evolution decision.
+
+**Reason:** The selected contracts provide strong, inspectable authorization, failure handling, traceability, and citation integrity appropriate for a portfolio MVP intended for technical employer review, while remaining bounded and testable.
+
+**Consequences:**
+- M1/M2/M3 are resolved as planning decisions.
+- The WP-REC-05 specification becomes decision-complete.
+- WP-REC-05 implementation still requires separate explicit Product Owner authorization.
+- Implementation must satisfy the M3 compatibility preflight.
+- WP-REC-05-VFY remains separate and NOT AUTHORIZED.
+- AT-006 and AT-007 remain not PASS.
+- Phase 4 remains PARTIALLY COMPLETE.
+- Phase 5 remains ACCEPTED.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- Phase 6/7, deployment, SP-0B, and F3–F8 remediation remain unauthorized.
+
+**Affected documents/tests:** `docs/planning/wp_rec_05_rag_integration.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown
