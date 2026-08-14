@@ -610,6 +610,33 @@ These declarations are Product Owner decisions, not automated inferences from te
 
 ---
 
+## DEC-044 — WP-REC-05 planning authorization and AT-006/AT-007 sequencing
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:** The Release 1 residual-blocker reassessment concluded Release 1 is NOT READY and NOT DEPLOYED; WP-REC-03H is complete and closed; Phase 5 is ACCEPTED; AT-008 and AT-013 are PASS; Phase 4 remains PARTIALLY COMPLETE; AT-006 and AT-007 are not PASS; isolated RAG retrieval, citations, document permissions, and role filtering exist, but the controlled AI workflow does not currently call the retriever; recommendation `sources` may remain empty because RAG workflow integration was deferred; Golden Scenario step 6 is the earliest incomplete critical-path step; Phase 6 depends on RAG citations under DEC-037; and WP-REC-05 lacks a complete decomposed implementation specification. F3–F8 and SP-0B are not Release 1 blockers.
+
+**Decision:** Authorize the planning-only package **WP-REC-05-DEC** (RAG Integration Decomposition and Planning). The authorized outcome is a complete, reviewable implementation specification for WP-REC-05, a separate AT-006/AT-007 verification contract (WP-REC-05-VFY), recorded sequencing, and a Draft documentation PR. The accepted order is: **WP-REC-05 implementation first, separate bounded WP-REC-05-VFY verification second.**
+
+**Reason:** The decomposition must precede implementation; the verification contract must remain separate from implementation (DEC-035). Implementation and verification each require their own explicit authorization.
+
+**Consequences:**
+- WP-REC-05 implementation is NOT AUTHORIZED.
+- WP-REC-05-VFY is NOT AUTHORIZED.
+- AT-006 and AT-007 remain not PASS.
+- Phase 4 remains PARTIALLY COMPLETE.
+- Phase 6 and Phase 7 remain not authorized.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- F3–F8 remain deferred and out of scope.
+
+**Affected documents/tests:** `docs/planning/wp_rec_05_rag_integration.md` (new), `docs/planning/requirements_traceability_matrix.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown

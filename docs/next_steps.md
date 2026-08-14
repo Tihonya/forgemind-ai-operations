@@ -110,14 +110,21 @@ The accepted planning sequence is:
 1. **WP-STRAT-01** (Product Strategy and Release 1 Alignment) — COMPLETED. This package defined the Release 1 product direction, reclassified Phase 4 as PARTIALLY COMPLETE, corrected AT status, and recorded accepted PO decisions.
 2. **WP-ARCH-01** (Architecture Hygiene and Agent Onboarding) — COMPLETED and CLOSED (planning accepted, no execution required, 2026-08-09, PR #69 merge commit `3a2bc26`). Zero REQUIRED findings. Sole RECOMMENDED item (agent-onboarding document) deferred.
 3. **WP-REC-03A through 03G** (Phase 5 AI Workflow, packages A-G) — COMPLETE. Merged via PRs #63, #65, #72, #73, #74, #78, #80. WP-REC-03G (frontend start/retry UI) merged via PR #80 on 2026-08-12. Phase 5 implementation packages are all delivered.
-4. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
-5. **Phase 6** (Approval and Audit) — NOT STARTED.
-6. **Phase 7** (Public Deployment) — NOT STARTED.
-7. **Phase 8** (Portfolio Release) — NOT STARTED.
+4. **WP-REC-05-DEC** (RAG integration decomposition and planning) — PLANNING AUTHORIZED (2026-08-14, DEC-044). Delivers the dedicated planning artifact `docs/planning/wp_rec_05_rag_integration.md`. Planning only; does not authorize implementation or verification.
+5. **WP-REC-05** (RAG integration into the AI workflow) — NOT AUTHORIZED. Implementation precedes verification. Positioned after WP-REC-03C–03G and before Phase 6 per SD-4.
+6. **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — NOT AUTHORIZED. Separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
+7. **Phase 6** (Approval and Audit) — NOT STARTED.
+8. **Phase 7** (Public Deployment) — NOT STARTED.
+9. **Phase 8** (Portfolio Release) — NOT STARTED.
 
-**Required package with timing not yet established:**
+**Accepted sequencing (DEC-044):**
 
-- **Bounded AT-006/AT-007 verification package** — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). Its execution timing and position relative to WP-REC-05 and Phase 6 remain intentionally undecided. NOT AUTHORIZED. Authorization of any package does not authorize the verification package. Phase 4 cannot become COMPLETE until its unchanged exit criteria, including accepted AT-006/AT-007 PASS evidence, are satisfied.
+```
+WP-REC-05 implementation → separate WP-REC-05-VFY bounded verification
+→ separate Product Owner Phase 4 acceptance/closure
+```
+
+- **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). NOT AUTHORIZED. Authorization of WP-REC-05 does not authorize WP-REC-05-VFY. Phase 4 cannot become COMPLETE until its unchanged exit criteria, including accepted AT-006/AT-007 PASS evidence from WP-REC-05-VFY, are satisfied.
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
@@ -131,7 +138,7 @@ This is a planning sequence, not an execution authorization. Every future packag
 
 Without explicit Product Owner authorization, do not:
 - Implement any MVP phase (Phase 5, 6, or 7)
-- Start WP-REC-05 or the bounded AT-006/AT-007 verification package
+- Start WP-REC-05 or WP-REC-05-VFY (the bounded AT-006/AT-007 verification package)
 - Start SP-0B or create forgemind-agent-runtime
 - Copy or move Runtime files
 - Access or modify the VPS
@@ -247,11 +254,14 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 - **AT-008:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
 - **AT-013:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
 
+**Latest authorized planning package:**
+- WP-REC-05-DEC (RAG integration decomposition and planning) — planning only (DEC-044, 2026-08-14). Deliverable: `docs/planning/wp_rec_05_rag_integration.md`. Does not authorize implementation or verification.
+
 **Not authorized:**
 - WP-REC-05 (RAG integration into the AI workflow)
-- Bounded AT-006/AT-007 verification package
+- WP-REC-05-VFY (bounded AT-006/AT-007 verification)
 - Phase 6 (approval and audit), Phase 7 (public deployment)
 - SP-0B and forgemind-agent-runtime creation
 - Agent automation activation (deferred)
 
-No next implementation package is authorized by Phase D or Phase E.
+The accepted sequence is WP-REC-05 implementation first, separate WP-REC-05-VFY verification second. No implementation package is authorized by Phase D, Phase E, or the WP-REC-05-DEC planning authorization.
