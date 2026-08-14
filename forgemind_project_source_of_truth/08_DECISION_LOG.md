@@ -744,6 +744,43 @@ M3 — The repository document UUID string is the canonical `Source.document_id`
 
 ---
 
+## DEC-047 — WP-REC-05 implementation authorization and incorporation
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:**
+- WP-REC-05-DEC was completed and closed.
+- The Product Owner subsequently gave separate implementation-only authorization for WP-REC-05 against the accepted DEC-045/DEC-046 contracts.
+- The Product Owner also authorized the minimal bounded frontend extension required for FAILED_RETRIEVAL handling.
+- That authorization explicitly excluded WP-REC-05-VFY, AT-006/AT-007 verification, Phase 4 acceptance, Phase 6/7 and deployment.
+- PR #89 implemented WP-REC-05 and was merged through the regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`.
+- Strict post-merge verification passed.
+
+**Decision:**
+- Record the earlier Product Owner implementation authorization as exercised.
+- Record WP-REC-05 implementation as complete and incorporated into main.
+- Preserve WP-REC-05-VFY as a separate, not-authorized package.
+- Do not infer AT-006/AT-007 PASS or Phase 4 acceptance.
+
+**Reason:**
+- The DEC-044/DEC-045/DEC-046 statements that WP-REC-05 implementation and its migration were not authorized were correct at the time those decisions were recorded and remain immutable historical decisions.
+- This decision resolves the current-state discrepancy by recording the subsequent implementation-only authorization as exercised and the completed merge, without rewriting those earlier decisions.
+
+**Consequences:**
+- The next possible lifecycle action is a separate Product Owner decision on whether to authorize WP-REC-05-VFY.
+- This reconciliation does not itself authorize that verification.
+- Phase 4 remains PARTIALLY COMPLETE.
+- Release 1 remains NOT READY and NOT DEPLOYED.
+- Phase 6/7, deployment and deferred findings remain outside scope.
+
+**Affected documents/tests:** `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown
