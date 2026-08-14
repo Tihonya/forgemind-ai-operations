@@ -38,6 +38,7 @@ from app.ai.workflow.vertical import execute_workflow
 from app.core.context import correlation_context
 from app.core.logging import get_logger
 from app.database import async_session_factory
+from app.services.embedding_provider_factory import create_embedding_provider
 
 _logger = get_logger(__name__)
 
@@ -144,11 +145,14 @@ async def _do_execute(
         try:
             # Create the chat provider through the factory (03A + 03D).
             provider = create_chat_provider()
+            # Create the embedding provider through the factory (WP-REC-05).
+            embedding_provider = create_embedding_provider()
 
             # Execute the vertical wiring.
             result = await execute_workflow(
                 session=session,
                 provider=provider,
+                embedding_provider=embedding_provider,
                 run_id=run_uuid,
                 queued_generation=queued_generation,
             )

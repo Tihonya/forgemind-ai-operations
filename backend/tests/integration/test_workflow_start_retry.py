@@ -28,6 +28,12 @@ from app.ai.provider.exceptions import TransientChatProviderError
 from app.ai.workflow.engine import WorkflowEngine
 from app.ai.workflow.state_machine import WorkflowState
 from app.models.workflow import WorkflowRun
+from app.services.embedding_provider import FakeEmbeddingProvider
+from tests.integration._workflow_rag_support import (
+    cleanup_workflow_tables,
+    seed_authorization_context,
+    seed_production_plan,
+)
 
 _INTEGRATION_DB_URL = (
     os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -88,10 +94,7 @@ async def db_session() -> AsyncIterator[AsyncSession]:
     )
     async with session_factory() as session:
         yield session
-        await session.execute(text("DELETE FROM recommendations"))
-        await session.execute(text("DELETE FROM workflow_steps"))
-        await session.execute(text("DELETE FROM workflow_runs"))
-        await session.commit()
+        await cleanup_workflow_tables(session)
     await engine.dispose()
 
 
@@ -101,7 +104,11 @@ async def _get_plan_id(session: AsyncSession) -> Any:
     )
     row = result.fetchone()
     if row is None:
-        pytest.skip("No production plans in database")
+        # Seed a deterministic minimal plan so the test executes rather than
+        # skips (WP-REC-05 F1 remediation: vertical tests must not skip).
+        plan_id = await seed_production_plan(session)
+        await session.commit()
+        return plan_id
     return row[0]
 
 
@@ -118,10 +125,14 @@ class TestWorkflowVerticalExecution:
         engine = WorkflowEngine(provider=_SuccessProvider(), session=db_session)
         run = await engine.create_run(plan_id=plan_id)
         await db_session.commit()
+        await seed_authorization_context(
+            db_session, run_id=run.id, dispatch_generation=0
+        )
 
         result = await execute_workflow(
             session=db_session,
             provider=_SuccessProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )
@@ -147,10 +158,14 @@ class TestWorkflowVerticalExecution:
         engine = WorkflowEngine(provider=_FailingProvider(), session=db_session)
         run = await engine.create_run(plan_id=plan_id)
         await db_session.commit()
+        await seed_authorization_context(
+            db_session, run_id=run.id, dispatch_generation=0
+        )
 
         result = await execute_workflow(
             session=db_session,
             provider=_FailingProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )
@@ -179,10 +194,14 @@ class TestWorkflowVerticalExecution:
         engine = WorkflowEngine(provider=_FailingProvider(), session=db_session)
         run = await engine.create_run(plan_id=plan_id)
         await db_session.commit()
+        await seed_authorization_context(
+            db_session, run_id=run.id, dispatch_generation=0
+        )
 
         result1 = await execute_workflow(
             session=db_session,
             provider=_FailingProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )
@@ -195,11 +214,18 @@ class TestWorkflowVerticalExecution:
         await db_session.commit()
         assert won is True
         assert run.dispatch_generation == 1
+        await seed_authorization_context(
+            db_session,
+            run_id=run.id,
+            dispatch_generation=1,
+            capture_action="retry",
+        )
 
         # Second attempt: successful provider.
         result2 = await execute_workflow(
             session=db_session,
             provider=_SuccessProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=1,
         )
@@ -226,6 +252,7 @@ class TestStaleGenerationWorkerSkip:
         result = await execute_workflow(
             session=db_session,
             provider=_SuccessProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=99,
         )
@@ -273,10 +300,14 @@ class TestAppendOnlyWorkflowSteps:
         engine = WorkflowEngine(provider=_FailingProvider(), session=db_session)
         run = await engine.create_run(plan_id=plan_id)
         await db_session.commit()
+        await seed_authorization_context(
+            db_session, run_id=run.id, dispatch_generation=0
+        )
 
         await execute_workflow(
             session=db_session,
             provider=_FailingProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )
@@ -299,11 +330,18 @@ class TestAppendOnlyWorkflowSteps:
         won = await engine.retry_transition(run)
         await db_session.commit()
         assert won is True
+        await seed_authorization_context(
+            db_session,
+            run_id=run.id,
+            dispatch_generation=1,
+            capture_action="retry",
+        )
 
         # Second attempt with successful provider (new transaction boundary).
         await execute_workflow(
             session=db_session,
             provider=_SuccessProvider(),
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=1,
         )

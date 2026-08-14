@@ -40,6 +40,7 @@ class TestWorkflowStateEnum:
             "FAILED_VALIDATION",
             "FAILED_PROVIDER",
             "FAILED_INTERNAL",
+            "FAILED_RETRIEVAL",
         }
         actual = {s.value for s in WorkflowState}
         assert actual == expected
@@ -62,6 +63,7 @@ class TestAllowedTransitions:
             (WorkflowState.RUNNING, WorkflowState.AWAITING_VALIDATION),
             (WorkflowState.RUNNING, WorkflowState.FAILED_PROVIDER),
             (WorkflowState.RUNNING, WorkflowState.FAILED_INTERNAL),
+            (WorkflowState.RUNNING, WorkflowState.FAILED_RETRIEVAL),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.COMPLETED),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_VALIDATION),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_INTERNAL),
@@ -69,6 +71,8 @@ class TestAllowedTransitions:
             (WorkflowState.FAILED_PROVIDER, WorkflowState.PENDING),
             (WorkflowState.FAILED_VALIDATION, WorkflowState.PENDING),
             (WorkflowState.FAILED_INTERNAL, WorkflowState.PENDING),
+            # WP-REC-05 M2: FAILED_RETRIEVAL retry transition.
+            (WorkflowState.FAILED_RETRIEVAL, WorkflowState.PENDING),
         ],
     )
     def test_valid_transition_accepted(
@@ -85,6 +89,7 @@ class TestAllowedTransitions:
             (WorkflowState.RUNNING, WorkflowState.AWAITING_VALIDATION),
             (WorkflowState.RUNNING, WorkflowState.FAILED_PROVIDER),
             (WorkflowState.RUNNING, WorkflowState.FAILED_INTERNAL),
+            (WorkflowState.RUNNING, WorkflowState.FAILED_RETRIEVAL),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.COMPLETED),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_VALIDATION),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_INTERNAL),
@@ -92,6 +97,8 @@ class TestAllowedTransitions:
             (WorkflowState.FAILED_PROVIDER, WorkflowState.PENDING),
             (WorkflowState.FAILED_VALIDATION, WorkflowState.PENDING),
             (WorkflowState.FAILED_INTERNAL, WorkflowState.PENDING),
+            # WP-REC-05 M2: FAILED_RETRIEVAL retry transition.
+            (WorkflowState.FAILED_RETRIEVAL, WorkflowState.PENDING),
         ],
     )
     def test_can_transition_returns_true(
@@ -123,6 +130,11 @@ class TestInvalidTransitions:
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.RUNNING),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.PENDING),
             (WorkflowState.AWAITING_VALIDATION, WorkflowState.FAILED_PROVIDER),
+            # FAILED_RETRIEVAL is terminal for ordinary execution; only
+            # the explicit retry boundary (FAILED_RETRIEVAL → PENDING)
+            # is authorized (M2).
+            (WorkflowState.FAILED_RETRIEVAL, WorkflowState.RUNNING),
+            (WorkflowState.FAILED_RETRIEVAL, WorkflowState.COMPLETED),
             # COMPLETED cannot be retried (D1: no outgoing transition).
             (WorkflowState.COMPLETED, WorkflowState.PENDING),
         ],
@@ -164,6 +176,7 @@ class TestSelfTransitions:
             WorkflowState.FAILED_VALIDATION,
             WorkflowState.FAILED_PROVIDER,
             WorkflowState.FAILED_INTERNAL,
+            WorkflowState.FAILED_RETRIEVAL,
         ],
     )
     def test_self_transition_raises(self, state: WorkflowState) -> None:
@@ -229,6 +242,7 @@ class TestTerminalStates:
             (WorkflowState.FAILED_VALIDATION, True),
             (WorkflowState.FAILED_PROVIDER, True),
             (WorkflowState.FAILED_INTERNAL, True),
+            (WorkflowState.FAILED_RETRIEVAL, True),
         ],
     )
     def test_is_terminal(
@@ -242,6 +256,7 @@ class TestTerminalStates:
             WorkflowState.FAILED_VALIDATION,
             WorkflowState.FAILED_PROVIDER,
             WorkflowState.FAILED_INTERNAL,
+            WorkflowState.FAILED_RETRIEVAL,
         }) == TERMINAL_STATES
 
 
@@ -266,6 +281,7 @@ class TestTransitionTable:
             WorkflowState.AWAITING_VALIDATION,
             WorkflowState.FAILED_PROVIDER,
             WorkflowState.FAILED_INTERNAL,
+            WorkflowState.FAILED_RETRIEVAL,
         })
 
     def test_allowed_transitions_for_awaiting_validation(self) -> None:
@@ -287,6 +303,11 @@ class TestTransitionTable:
 
     def test_allowed_transitions_for_failed_internal(self) -> None:
         result = get_allowed_transitions(WorkflowState.FAILED_INTERNAL)
+        assert result == frozenset({WorkflowState.PENDING})
+
+    # WP-REC-05 M2: FAILED_RETRIEVAL retry transition.
+    def test_allowed_transitions_for_failed_retrieval(self) -> None:
+        result = get_allowed_transitions(WorkflowState.FAILED_RETRIEVAL)
         assert result == frozenset({WorkflowState.PENDING})
 
     def test_transition_frozensets_are_immutable(self) -> None:

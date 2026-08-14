@@ -118,6 +118,7 @@ export default function SupplyRiskDetail() {
     'FAILED_PROVIDER',
     'FAILED_VALIDATION',
     'FAILED_INTERNAL',
+    'FAILED_RETRIEVAL',
   ]);
 
   // Terminal states (no outgoing transitions except user-initiated retry).
@@ -126,6 +127,7 @@ export default function SupplyRiskDetail() {
     'FAILED_VALIDATION',
     'FAILED_PROVIDER',
     'FAILED_INTERNAL',
+    'FAILED_RETRIEVAL',
   ]);
 
   const workflowState = workflowRun?.state;

@@ -6,7 +6,8 @@
  * - Polls only when successfully returned data has a non-terminal state:
  *   PENDING, RUNNING, AWAITING_VALIDATION
  * - Stops at terminal states:
- *   COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER, FAILED_INTERNAL
+ *   COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER, FAILED_INTERNAL,
+ *   FAILED_RETRIEVAL
  * - Does NOT poll on 404, 500, network error, undefined state,
  *   or absent runId (query disabled)
  */

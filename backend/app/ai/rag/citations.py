@@ -20,6 +20,8 @@ class Citation:
     Contains the minimal tuple that uniquely identifies the source chunk:
     - document_id: UUID of the parent document
     - version_id: UUID of the document version
+    - version_number: the document version's version_number string
+      (e.g. "1.0") — required by the WP-REC-05 M3 citation identity
     - chunk_id: UUID of the knowledge chunk
     - chunk_index: Zero-based index within the version
     - similarity: Cosine similarity score (1 - cosine_distance)
@@ -29,6 +31,7 @@ class Citation:
 
     document_id: UUID
     version_id: UUID
+    version_number: str
     chunk_id: UUID
     chunk_index: int
     similarity: float
@@ -50,6 +53,7 @@ def build_citation(result: RetrievalResult) -> Citation:
     return Citation(
         document_id=result.document_id,
         version_id=result.version_id,
+        version_number=result.version_number,
         chunk_id=result.chunk_id,
         chunk_index=result.chunk_index,
         similarity=result.similarity,

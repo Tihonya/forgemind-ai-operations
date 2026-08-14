@@ -70,7 +70,7 @@ class WorkflowRun(Base):
             steps and into the ChatProvider context (DEC-024, FR-07).
         state: Current workflow state. One of PENDING, RUNNING,
             AWAITING_VALIDATION, COMPLETED, FAILED_VALIDATION,
-            FAILED_PROVIDER, FAILED_INTERNAL.
+            FAILED_PROVIDER, FAILED_INTERNAL, FAILED_RETRIEVAL.
         plan_id: Foreign key to ``production_plans.id`` — the plan
             being analysed by this workflow run.
         triggered_by: Username or system identifier that initiated the
@@ -101,7 +101,7 @@ class WorkflowRun(Base):
         CheckConstraint(
             "state IN ('PENDING', 'RUNNING', 'AWAITING_VALIDATION', "
             "'COMPLETED', 'FAILED_VALIDATION', 'FAILED_PROVIDER', "
-            "'FAILED_INTERNAL')",
+            "'FAILED_INTERNAL', 'FAILED_RETRIEVAL')",
             name="ck_workflow_runs_state",
         ),
         CheckConstraint(
@@ -139,7 +139,8 @@ class WorkflowRun(Base):
         default="PENDING",
         server_default=text("'PENDING'"),
         comment="Workflow state: PENDING, RUNNING, AWAITING_VALIDATION, "
-        "COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER, FAILED_INTERNAL",
+        "COMPLETED, FAILED_VALIDATION, FAILED_PROVIDER, FAILED_INTERNAL, "
+        "FAILED_RETRIEVAL",
     )
 
     plan_id: Mapped[UUID] = mapped_column(
@@ -465,4 +466,113 @@ class Recommendation(Base):
     # Relationships
     workflow_run: Mapped["WorkflowRun"] = relationship(
         back_populates="recommendation",
+    )
+
+
+class WorkflowAuthorizationRecord(Base):
+    """Append-only, generation-specific authorization context (WP-REC-05 M1).
+
+    Captured at the authenticated workflow start/retry boundary. Each
+    record is uniquely keyed by ``(run_id, dispatch_generation)`` and
+    stores the authenticated user identity plus an immutable role-UUID
+    snapshot. It is deliberately NOT a mutable authorization column on
+    ``WorkflowRun``: every authorized retry creates a new
+    generation-specific record, and prior records remain unchanged.
+
+    The worker reads the record for the exact claimed dispatch generation
+    and computes ``effective_role_ids = captured_role_snapshot ∩
+    current_role_ids`` at execution time. Document permissions and the
+    approved ``DocumentVersion`` status remain dynamically evaluated.
+
+    Attributes:
+        id: UUID primary key.
+        run_id: Foreign key to ``workflow_runs.id`` (CASCADE).
+        dispatch_generation: The exact dispatch generation this record
+            authorizes. Non-negative.
+        user_id: Authenticated user UUID (the repository's User
+            primary-key type). The worker resolves the user at execution
+            time and fails closed if absent, deleted, or disabled.
+        role_snapshot: Immutable JSONB list of role-UUID strings captured
+            at the authenticated start/retry boundary. Never mutated.
+        capture_action: The boundary that created the record: ``"start"``
+            or ``"retry"``.
+        captured_at: Timestamp of the authenticated capture.
+        created_at: Row creation timestamp.
+    """
+
+    __tablename__ = "workflow_authorization_records"
+    __table_args__ = (
+        CheckConstraint(
+            "dispatch_generation >= 0",
+            name="ck_workflow_auth_records_generation_nonneg",
+        ),
+        CheckConstraint(
+            "capture_action IN ('start', 'retry')",
+            name="ck_workflow_auth_records_capture_action",
+        ),
+        UniqueConstraint(
+            "run_id",
+            "dispatch_generation",
+            name="uq_workflow_auth_records_run_id_generation",
+        ),
+        Index("idx_workflow_auth_records_run_id", "run_id"),
+        Index("idx_workflow_auth_records_user_id", "user_id"),
+        {
+            "comment": (
+                "Append-only generation-specific authorization context "
+                "(WP-REC-05 M1)"
+            ),
+        },
+    )
+
+    id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("workflow_runs.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+
+    dispatch_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        comment="Exact dispatch generation this record authorizes",
+    )
+
+    user_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        nullable=False,
+        comment="Authenticated user UUID (User primary-key type)",
+    )
+
+    role_snapshot: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="Immutable role-UUID snapshot (JSONB list of UUID strings)",
+    )
+
+    capture_action: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        comment="Capture boundary: start or retry",
+    )
+
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+        comment="Timestamp of the authenticated capture",
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
     )

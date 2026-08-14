@@ -46,15 +46,27 @@ class Source(BaseModel):
     """A document source citation referenced by a risk recommendation.
 
     Attributes:
-        document_id: External document identifier (e.g. ``"DOC-..."``).
-        version: Document version string (e.g. ``"2.1"``).
+        document_id: Canonical document UUID string (``str(Document.id)``)
+            identifying the repository document. This is the document-UUID
+            citation identity (M3, DEC-045), not an external ``DOC-*``
+            identifier.
+        version: Document version number string
+            (``DocumentVersion.version_number``, e.g. ``"2.1"``).
         chunk_id: UUID of the knowledge chunk cited.
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    document_id: str = Field(..., min_length=1, description="External document identifier")
-    version: str = Field(..., min_length=1, description="Document version string")
+    document_id: str = Field(
+        ...,
+        min_length=1,
+        description="Canonical document UUID string (str(Document.id))",
+    )
+    version: str = Field(
+        ...,
+        min_length=1,
+        description="Document version number (DocumentVersion.version_number)",
+    )
     chunk_id: UUID = Field(..., description="Knowledge chunk UUID")
 
 
