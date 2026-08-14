@@ -1,14 +1,14 @@
 # ForgeMind Active Work
 
 **Last Updated:** 2026-08-14
-**Reconciled against:** origin/main @ `686739fd1e56ec4072b52029e01e3a6d8f9963cb` (PR #85 merge commit)
+**Reconciled against:** origin/main @ `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1` (PR #87 merge commit)
 **Status:** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). Phase 5 implementation packages are all merged. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`). WP-REC-03H Phase C (formal acceptance execution) and Phase D (Product Owner evidence review and acceptance declaration) are complete; Phase E (documentation lifecycle reconciliation) is complete through PR #86.
 
 ---
 
 ## Current Governance State
 
-**Active work package:** WP-REC-05-DEC (RAG Integration Decomposition and Planning) — the latest Product Owner-authorized planning package (DEC-044, 2026-08-14). Its deliverable is the dedicated planning artifact `docs/planning/wp_rec_05_rag_integration.md`. Planning only — no implementation work package is active or authorized. WP-REC-03H Phase E documentation lifecycle reconciliation is the latest completed lifecycle package (documentation-only; complete through PR #86).
+**Active work package:** None. No implementation or planning package is currently authorized. WP-REC-05-DEC (RAG Integration Decomposition and Planning) is COMPLETE and CLOSED — its planning artifact `docs/planning/wp_rec_05_rag_integration.md` was delivered through PR #87 (regular merge, merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, 2026-08-14), and strict post-merge verification passed. Decisions DEC-044, DEC-045, and DEC-046 remain Accepted. Closure does not authorize WP-REC-05 or WP-REC-05-VFY. WP-REC-03H Phase E documentation lifecycle reconciliation is the latest completed lifecycle package (documentation-only; complete through PR #86).
 
 **WP-STRAT-01** (Product Strategy and Release 1 Alignment) is COMPLETED and MERGED via PR #67 (regular merge, merge commit `77d359c`, three feature commits preserved). It is no longer the active task.
 
@@ -59,7 +59,7 @@ WP-REC-03F planning contracts D1-D6 were synced and resolved on 2026-08-10. Impl
 
 **WP-REC-03A through WP-REC-03G** (Phase 5 AI Workflow) are COMPLETE — all merged via PRs #63, #65, #72, #73, #74, #78, #80. Phase 5 implementation packages are all delivered. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043). WP-REC-03H Phase C (formal execution, accepted run `wp-rec-03h-phase-c-20260813-02`) and Phase D (Product Owner acceptance declaration) are complete. Phase E (documentation lifecycle reconciliation) is complete through PR #86.
 
-No implementation work package is active. WP-REC-05-DEC (RAG integration planning) is the latest Product Owner-authorized planning package (DEC-044). WP-REC-05 and WP-REC-05-VFY remain NOT AUTHORIZED. The accepted sequence is WP-REC-05 implementation first, separate WP-REC-05-VFY verification second. Phase 6 and Phase 7 remain incomplete and not authorized. Phase 4 remains PARTIALLY COMPLETE. Release 1 remains NOT READY and NOT DEPLOYED.
+No implementation or planning work package is active. WP-REC-05-DEC (RAG integration planning) is COMPLETE and CLOSED (planning artifact delivered through PR #87, merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed). WP-REC-05 and WP-REC-05-VFY remain NOT AUTHORIZED. The accepted sequence is WP-REC-05 implementation first, separate WP-REC-05-VFY verification second. Phase 6 and Phase 7 remain incomplete and not authorized. Phase 4 remains PARTIALLY COMPLETE. Release 1 remains NOT READY and NOT DEPLOYED.
 
 No conclusion is made about the readiness of WP-REC-05 or later phases.
 
@@ -82,7 +82,7 @@ No conclusion is made about the readiness of WP-REC-05 or later phases.
 - WP-REC-03G (Frontend Start/Retry UI Interaction): COMPLETE — MERGED via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` (two-parent merge commit, 2026-08-12). Frontend workflow start and retry controls implemented with stale-mutation protection, role-based authorization, and deterministic polling lifecycle. AT-013 implementation is complete; AT-013 is now PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - WP-REC-03H (Acceptance Harness): Phase A planning COMPLETE (merged); Phase B harness implementation COMPLETE via PR #84 and corrective PR #85; Phase C formal acceptance execution COMPLETE using accepted run `wp-rec-03h-phase-c-20260813-02`; Phase D Product Owner evidence review and acceptance declaration COMPLETE (2026-08-14). AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED. Phase E documentation lifecycle reconciliation COMPLETE through PR #86.
 - WP-REC-05 (Phase 4 completion): NOT AUTHORIZED — positioned after WP-REC-03C–03G and before Phase 6 (SD-4).
-- WP-REC-05-DEC (RAG integration planning): PLANNING AUTHORIZED — planning-only package (DEC-044, 2026-08-14); deliverable `docs/planning/wp_rec_05_rag_integration.md`. Does not authorize implementation or verification.
+- WP-REC-05-DEC (RAG integration planning): COMPLETE and CLOSED — planning-only package originally authorized by DEC-044 (2026-08-14); planning artifact `docs/planning/wp_rec_05_rag_integration.md` delivered through PR #87 (regular merge, merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`); strict post-merge verification passed. DEC-044, DEC-045, and DEC-046 remain Accepted. Closure does not authorize WP-REC-05 or WP-REC-05-VFY.
 - WP-REC-05-VFY (bounded AT-006/AT-007 verification): NOT AUTHORIZED — separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
 - SP-0B (Runtime migration manifest): READY but NOT AUTHORIZED
 - Creation of forgemind-agent-runtime: NOT AUTHORIZED
