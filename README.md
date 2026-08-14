@@ -137,7 +137,7 @@ responses — never fall back. Total provider calls are bounded by
 |---|---|
 | `GROQ_API_KEY` | Groq API key (required when Groq is in use). |
 | `GROQ_API_BASE` | Default `https://api.groq.com/openai/v1`. |
-| `GROQ_CHAT_MODEL` | Pinned free model, default `llama-3.3-70b-versatile`. |
+| `GROQ_CHAT_MODEL` | Pinned free model, default `openai/gpt-oss-120b`. |
 | `OPENROUTER_API_KEY` | OpenRouter API key (required when OpenRouter is in use). |
 | `OPENROUTER_API_BASE` | Default `https://openrouter.ai/api/v1`. |
 | `OPENROUTER_CHAT_MODEL` | **Required explicit pinned paid model — no default is ever guessed.** |

@@ -88,12 +88,13 @@ class Settings(BaseSettings):
         "json_schema", "json_object", "prompt_json"
     ] = "json_schema"
 
-    # Groq (free primary external provider). The pinned free model
-    # ``llama-3.3-70b-versatile`` is documented as available and as a
-    # structured-output (json_schema) capable model on console.groq.com.
+    # Groq (free primary external provider). The pinned free model is
+    # ``openai/gpt-oss-120b`` — a json_schema-capable model (live re-smoke
+    # PASSED, 2026-08-15). The previous pinned model
+    # ``llama-3.3-70b-versatile`` is deprecated for free/developer usage.
     groq_api_key: str = ""
     groq_api_base: str = "https://api.groq.com/openai/v1"
-    groq_chat_model: str = "llama-3.3-70b-versatile"
+    groq_chat_model: str = "openai/gpt-oss-120b"
     groq_structured_output_mode: Literal[
         "json_schema", "json_object", "prompt_json"
     ] = "json_schema"
