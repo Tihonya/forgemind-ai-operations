@@ -46,13 +46,13 @@ PHASE 5 — ACCEPTED
 
 - **Accepted evidence run:** `wp-rec-03h-phase-c-20260813-02` (41 files / 272956 bytes / aggregate `0efe3acb…88dd` / manifest `complete:true` / source commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`). Authoritative accepted evidence.
 - **Failed run:** `wp-rec-03h-phase-c-20260813-01` (71 files / 300481 bytes / aggregate `e04c7f9d…a981` / manifest absent) — permanently failed, non-final, non-acceptable, non-reusable. Remains rejected.
-- **PR #84 merge commit:** `466b70b9dfd96728c0b966c9c59755c982b9ca87` (`fix(acceptance): resolve formal-evidence mode` correction).
+- **PR #84 merge commit:** `466b70b9dfd96728c0b966c9c59755c982b9ca87` (`fix(acceptance): implement missing formal-evidence mode for Phase C` correction).
 - **PR #85 merge commit:** `686739fd1e56ec4072b52029e01e3a6d8f9963cb` (`fix(acceptance): repair WP-REC-03H formal finalization`).
 - **Phase D durable review:** `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`.
 - **Phase D durable acceptance declaration:** `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`.
 - **Findings F3–F8** remain deferred and non-remediated (non-blocking for Phase D acceptance): F3 incorrect risk API probe URL; F4 unauthenticated workflow-run API probe; F5 BrowserResult files lack individual checksum coverage under the current contract; F6 AT-008 identity dispatch generation null while authoritative value 0 exists elsewhere; F7 corrected manifest unique-path arithmetic; F8 manifest lacks an explicit schema-version field.
 
-Phase C (formal acceptance execution) and Phase D (Product Owner evidence review and acceptance declaration) are complete. Phase E (documentation lifecycle reconciliation) is implemented by this documentation package and pending independent review and merge. No later work package is authorized. Release 1 remains not ready.
+Phase C (formal acceptance execution), Phase D (Product Owner evidence review and acceptance declaration), and Phase E (documentation lifecycle reconciliation) are complete through PR #86. No later work package is authorized. Release 1 remains not ready.
 
 ---
 

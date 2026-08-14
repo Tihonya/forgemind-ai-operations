@@ -599,7 +599,7 @@ These declarations are Product Owner decisions, not automated inferences from te
 - Phase C (Formal Acceptance Execution) is complete using accepted run `-02`.
 - Phase D (Product Owner Evidence Review and Acceptance Declaration) is complete.
 - AT-008 is PASS; AT-013 is PASS; Phase 5 is ACCEPTED.
-- Phase 5 implementation packages WP-REC-03A through WP-REC-03G remain COMPLETE (PRs #63, #65, #72, #73, #74, #78, #80). PR #84 (`fix(acceptance): resolve formal-evidence mode` correction) merge commit `466b70b9dfd96728c0b966c9c59755c982b9ca87`; PR #85 (`fix(acceptance): repair WP-REC-03H formal finalization`) merge commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`.
+- Phase 5 implementation packages WP-REC-03A through WP-REC-03G remain COMPLETE (PRs #63, #65, #72, #73, #74, #78, #80). PR #84 (`fix(acceptance): implement missing formal-evidence mode for Phase C` correction) merge commit `466b70b9dfd96728c0b966c9c59755c982b9ca87`; PR #85 (`fix(acceptance): repair WP-REC-03H formal finalization`) merge commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`.
 - Phase E is documentation lifecycle reconciliation only. It does not authorize any implementation, acceptance rerun, evidence change, or later work package.
 - No later work package is authorized by this decision. WP-REC-05, Phase 6, Phase 7, SP-0B, the bounded AT-006/AT-007 verification package, and deployment remain NOT AUTHORIZED unless already governed otherwise.
 - Phase 4 remains PARTIALLY COMPLETE. AT-006 and AT-007 remain not verified as PASS. Phase 6 (approval and audit) and Phase 7 (public deployment) are not completed. Release 1 is NOT declared ready or deployed.
