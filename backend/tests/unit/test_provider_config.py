@@ -40,7 +40,7 @@ def _make_settings(**overrides: object) -> Settings:
         "openai_chat_model": "gpt-4o-mini",
         "groq_api_key": "",
         "groq_api_base": "https://api.groq.com/openai/v1",
-        "groq_chat_model": "llama-3.3-70b-versatile",
+        "groq_chat_model": "openai/gpt-oss-120b",
         "openrouter_api_key": "",
         "openrouter_api_base": "https://openrouter.ai/api/v1",
         "openrouter_chat_model": "",
@@ -235,3 +235,98 @@ class TestSecretsAbsentFromOutput:
         with pytest.raises(ChatProviderConfigurationError) as exc_info:
             create_chat_provider(config=config)
         assert secret not in str(exc_info.value)
+
+
+class TestGroqDefaultConfiguration:
+    """Bounded WP-REC-05 remediation — Groq default model/mode/base URL.
+
+    Pins the production defaults so the deprecated Groq model
+    (``llama-3.3-70b-versatile``) cannot silently regress. All offline:
+    no API key, no network, no ``.env`` file.
+    """
+
+    def test_default_groq_chat_model_is_gpt_oss_120b(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GROQ_CHAT_MODEL", raising=False)
+        assert Settings().groq_chat_model == "openai/gpt-oss-120b"
+
+    def test_default_groq_structured_output_mode_is_json_schema(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GROQ_STRUCTURED_OUTPUT_MODE", raising=False)
+        assert Settings().groq_structured_output_mode == "json_schema"
+
+    def test_default_groq_base_url_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("GROQ_API_BASE", raising=False)
+        assert (
+            Settings().groq_api_base == "https://api.groq.com/openai/v1"
+        )
+
+    def test_groq_chat_model_env_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GROQ_CHAT_MODEL", "custom-groq-model")
+        assert Settings().groq_chat_model == "custom-groq-model"
+
+    def test_groq_base_url_env_override(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("GROQ_API_BASE", "https://custom.groq/v1")
+        assert Settings().groq_api_base == "https://custom.groq/v1"
+
+
+class TestOpenRouterConfigurationUnchanged:
+    """OpenRouter configuration and chain order remain unchanged."""
+
+    def test_openrouter_chat_model_has_no_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OPENROUTER_CHAT_MODEL", raising=False)
+        assert Settings().openrouter_chat_model == ""
+
+    def test_openrouter_structured_output_mode_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OPENROUTER_STRUCTURED_OUTPUT_MODE", raising=False)
+        assert (
+            Settings().openrouter_structured_output_mode
+            == "json_object"
+        )
+
+    def test_openrouter_base_url_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OPENROUTER_API_BASE", raising=False)
+        assert (
+            Settings().openrouter_api_base
+            == "https://openrouter.ai/api/v1"
+        )
+
+    def test_default_chain_order_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("CHAT_PROVIDER_CHAIN", raising=False)
+        config = Settings()
+        assert config.chat_provider_chain == "groq,openrouter"
+        assert _parse_chain_order(config.chat_provider_chain) == [
+            "groq",
+            "openrouter",
+        ]
+
+
+class TestNoApiKeyNeededForConfiguration:
+    """Configuration import/instantiation requires no API key (offline)."""
+
+    def test_settings_instantiation_without_any_api_key(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
+        monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+        config = Settings()
+        assert config.groq_api_key == ""
+        assert config.openrouter_api_key == ""
+        assert config.openai_api_key == ""
