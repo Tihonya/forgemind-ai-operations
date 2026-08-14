@@ -575,6 +575,41 @@ The sole `RECOMMENDED` item is Finding 4.5.1, the optional agent-onboarding docu
 
 ---
 
+## DEC-043 — WP-REC-03H Phase D acceptance and Phase 5 closure
+
+**Date:** 2026-08-14
+
+**Status:** Accepted
+
+**Context:** WP-REC-03H Phase C (Formal Acceptance Execution) produced two formal runs. The first run `wp-rec-03h-phase-c-20260813-01` failed and is permanently preserved as non-final, non-acceptable, and non-reusable (71 files / 300481 bytes / aggregate `e04c7f9d…a981` / no manifest). The second run `wp-rec-03h-phase-c-20260813-02` executed once, finalized, and exited cleanly (41 files / 272956 bytes / aggregate `0efe3acb…88dd` / manifest `complete:true` / source commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`). A corrected independent read-only evidence review (`docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`) concluded the `-02` run is acceptable for a separate Product Owner Phase D acceptance declaration. The Product Owner reviewed the unchanged evidence and issued the explicit acceptance declaration recorded in `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`.
+
+**Decision:** The Product Owner explicitly declares, based on unchanged authoritative evidence from formal run `wp-rec-03h-phase-c-20260813-02`:
+
+```text
+AT-008 — PASS
+AT-013 — PASS
+PHASE 5 — ACCEPTED
+```
+
+These declarations are Product Owner decisions, not automated inferences from test results. Phase 5 (Controlled AI workflow) is ACCEPTED. Findings F3–F8 (incorrect risk API probe URL; unauthenticated workflow-run API probe; BrowserResult files lacking individual checksum coverage under the current contract; AT-008 identity dispatch generation null while authoritative value 0 exists elsewhere; corrected manifest unique-path arithmetic; manifest lacking an explicit schema-version field) remain open/deferred technical debt and are non-blocking for this Phase D acceptance. They are not fixed, not closed, not remediated, and are deferred to a separately authorized harness-maintenance task.
+
+**Reason:** The independent evidence review verified that run `-02` is complete, internally consistent, traceable to source commit `686739fd…`, and semantically sufficient for AT-008 and AT-013. Every AT-008 and AT-013 criterion was classified EVIDENCED; no criterion was contradicted or un-evidenced. None of F3–F8 compromises completeness, integrity, provenance, semantic sufficiency, or contract compliance. The failed run `-01` remains rejected and permanently non-reusable.
+
+**Consequences:**
+- Phase C (Formal Acceptance Execution) is complete using accepted run `-02`.
+- Phase D (Product Owner Evidence Review and Acceptance Declaration) is complete.
+- AT-008 is PASS; AT-013 is PASS; Phase 5 is ACCEPTED.
+- Phase 5 implementation packages WP-REC-03A through WP-REC-03G remain COMPLETE (PRs #63, #65, #72, #73, #74, #78, #80). PR #84 (`fix(acceptance): implement missing formal-evidence mode for Phase C` correction) merge commit `466b70b9dfd96728c0b966c9c59755c982b9ca87`; PR #85 (`fix(acceptance): repair WP-REC-03H formal finalization`) merge commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`.
+- Phase E is documentation lifecycle reconciliation only. It does not authorize any implementation, acceptance rerun, evidence change, or later work package.
+- No later work package is authorized by this decision. WP-REC-05, Phase 6, Phase 7, SP-0B, the bounded AT-006/AT-007 verification package, and deployment remain NOT AUTHORIZED unless already governed otherwise.
+- Phase 4 remains PARTIALLY COMPLETE. AT-006 and AT-007 remain not verified as PASS. Phase 6 (approval and audit) and Phase 7 (public deployment) are not completed. Release 1 is NOT declared ready or deployed.
+
+**Affected documents:** `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`, `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`, `README.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/wp_rec_03_decomposition.md`, `docs/planning/wp_rec_03h_acceptance_harness.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/04_ACCEPTANCE_TESTS.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`
+
+**Approved by:** Product Owner (2026-08-14)
+
+---
+
 ## Template for new decisions
 
 ```markdown

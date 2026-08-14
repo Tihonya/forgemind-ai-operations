@@ -1,8 +1,8 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-12
+**Last Updated:** 2026-08-14
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciled against:** origin/main @ `1582c394c1a82775b77259983a0dce364d42023a` (PR #80 merge commit)
+**Reconciled against:** origin/main @ `686739fd1e56ec4072b52029e01e3a6d8f9963cb` (PR #85 merge commit)
 
 ---
 
@@ -52,7 +52,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 **Phase 4 is PARTIALLY COMPLETE.** Substantial RAG and role-filtering implementation exists (retriever, citations, DocumentPermission model, role-filtered SQL query, server-side role derivation, unauthorized-role test). The remaining gap is formal AT-006/AT-007 PASS evidence and RAG integration into the AI workflow — not the absence of document access control implementation. This is a documentation/status and acceptance-evidence contradiction, not a false technical foundation. Phase 5 builds on real, implemented infrastructure.
 
-**WP-REC-03B is a foundation package.** It delivers the workflow state machine, engine, models, and migration — but does NOT deliver end-to-end AI workflow execution. WP-REC-03C (structured-output validation), 03D (automatic provider retry/outage), 03E (workflow-run detail API + recommendation UI), 03F (backend start/retry API + ARQ worker), and 03G (frontend start/retry UI interaction) are now COMPLETE (merged via PRs #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence. No acceptance test newly passes as a result of 03B alone.
+**WP-REC-03B is a foundation package.** It delivers the workflow state machine, engine, models, and migration — but does NOT deliver end-to-end AI workflow execution. WP-REC-03C (structured-output validation), 03D (automatic provider retry/outage), 03E (workflow-run detail API + recommendation UI), 03F (backend start/retry API + ARQ worker), and 03G (frontend start/retry UI interaction) are now COMPLETE (merged via PRs #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. AT-008 and AT-013 are now PASS and Phase 5 is ACCEPTED (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`). No acceptance test newly passed as a result of 03B alone.
 
 ### ❌ NOT IMPLEMENTED (Release 1 blockers)
 
@@ -73,7 +73,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 ### Current MVP completion
 
-Two of five condensed MVP milestones have implementation evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but formal AT-006/AT-007 PASS evidence is incomplete). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 3–5 of the condensed milestones (AI recommendation → approval → procurement → audit → deployment) are not implemented. WP-REC-03B provides the foundational state machine and engine for step 3 but does not complete the end-to-end AI workflow execution path.
+Three of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but formal AT-006/AT-007 PASS evidence is incomplete; step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 4–5 of the condensed milestones (approval → procurement → audit → deployment) are not implemented. Phase 5 delivers the structured AI recommendation workflow and workflow retry; human approval and controlled procurement writes remain Phase 6 work.
 
 ---
 
@@ -121,7 +121,7 @@ The accepted planning sequence is:
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
-**WP-REC-03 lifecycle (2026-08-12 reconciliation):** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. AT-008 and AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence.
+**WP-REC-03 lifecycle (2026-08-14 reconciliation):** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`; durable review `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`, durable acceptance declaration `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`). WP-REC-03H Phase C and Phase D are complete; Phase E documentation lifecycle reconciliation is complete through PR #86.
 
 **SP-0B (Runtime migration manifest):** READY but NOT AUTHORIZED. Creation of `forgemind-agent-runtime` is NOT AUTHORIZED. Activation of agent automation is deferred until available on general terms; neither the second repository nor agent automation is a runtime dependency or blocker for Release 1.
 
@@ -153,20 +153,20 @@ Without explicit Product Owner authorization, do not:
 | AT-005 | No hidden UI mocks | ✅ PASS |
 | AT-006 | RAG retrieval | IMPLEMENTED — NOT VERIFIED AS PASS |
 | AT-007 | Document access control | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS |
-| AT-008 | Structured output validation | IMPLEMENTATION COMPLETE (unit-level via WP-REC-03C, PR #72; trace rendering via WP-REC-03E, PR #74; backend execution wiring via WP-REC-03F, PR #78) — formal AT-008 PASS requires formal end-to-end acceptance execution and accepted evidence |
+| AT-008 | Structured output validation | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03C + 03E + 03F) |
 | AT-009 | Human approval blocks write | NOT IMPLEMENTED |
 | AT-010 | Approval executes action | NOT IMPLEMENTED |
 | AT-011 | Reject path | NOT IMPLEMENTED |
 | AT-012 | Audit trace completeness | NOT IMPLEMENTED |
-| AT-013 | Model outage | IMPLEMENTATION COMPLETE (backend automatic retry via WP-REC-03D, PR #73; backend start/retry/worker/reconciler via WP-REC-03F, PR #78; read-only trace visibility via WP-REC-03E, PR #74; frontend start/retry UI with stale-mutation protection via WP-REC-03G, PR #80) — formal AT-013 PASS requires formal end-to-end acceptance execution and accepted evidence |
+| AT-013 | Model outage | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03D + 03E + 03F + 03G) |
 | AT-014 | Public HTTPS smoke | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 | Demo reset | NOT IMPLEMENTED |
 
 **Summary:**
-- 3 ATs are PASS: AT-003, AT-004, AT-005.
+- 5 ATs are PASS: AT-003, AT-004, AT-005, AT-008, AT-013.
 - 2 ATs have relevant implementation but lack accepted PASS evidence: AT-006, AT-007.
-- 1 AT has complete implementation but has not been formally executed as PASS: AT-008 (unit-level validator via 03C, backend execution wiring via 03F, and trace rendering via 03E). Formal AT-008 PASS requires formal end-to-end acceptance execution and accepted evidence.
-- 1 AT has complete implementation but has not been formally executed as PASS: AT-013 (backend automatic retry via 03D, backend start/retry/worker via 03F, read-only trace visibility via 03E, and frontend start/retry UI via 03G). Formal AT-013 PASS requires formal end-to-end acceptance execution with accepted evidence.
+- AT-008 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
+- AT-013 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - 3 ATs require deployment/environment verification: AT-001, AT-002, AT-014.
 - 5 ATs require capabilities that are not implemented: AT-009, AT-010, AT-011, AT-012, AT-015.
 
@@ -234,21 +234,24 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 ## Next Milestone
 
-**Last Updated:** 2026-08-12
-**Reconciled against:** origin/main @ `1582c394c1a82775b77259983a0dce364d42023a` (PR #80 merge commit)
+**Last Updated:** 2026-08-14
+**Reconciled against:** origin/main @ `686739fd1e56ec4072b52029e01e3a6d8f9963cb` (PR #85 merge commit)
 
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
 2. WP-ARCH-01 is completed and closed — planning artifact accepted via PO decision 2026-08-09 (DEC-041, PR #69 merge commit `3a2bc26`). No execution required. The optional agent-onboarding document is deferred.
-3. WP-REC-03A through WP-REC-03G are COMPLETE and MERGED via PRs #63, #65, #72, #73, #74, #78, #80 (2026-08-09 through 2026-08-12). Phase 5 implementation packages are all delivered. AT-008 and AT-013 implementation is complete; formal PASS requires accepted end-to-end evidence.
+3. WP-REC-03A through WP-REC-03G are COMPLETE and MERGED via PRs #63, #65, #72, #73, #74, #78, #80 (2026-08-09 through 2026-08-12). Phase 5 implementation packages are all delivered. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`).
 
 **Current implementation status:**
-- **Phase 5 (WP-REC-03A–03G):** COMPLETE — all implementation packages merged
-- **AT-008:** IMPLEMENTATION COMPLETE — formal PASS requires accepted end-to-end evidence
-- **AT-013:** IMPLEMENTATION COMPLETE — formal PASS requires accepted end-to-end evidence
+- **Phase 5 (WP-REC-03A–03G):** COMPLETE / ACCEPTED — all implementation packages merged; AT-008 and AT-013 formally accepted (Product Owner acceptance 2026-08-14)
+- **AT-008:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
+- **AT-013:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
 
 **Not authorized:**
 - WP-REC-05 (RAG integration into the AI workflow)
 - Bounded AT-006/AT-007 verification package
+- Phase 6 (approval and audit), Phase 7 (public deployment)
 - SP-0B and forgemind-agent-runtime creation
 - Agent automation activation (deferred)
+
+No next implementation package is authorized by Phase D or Phase E.

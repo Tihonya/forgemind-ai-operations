@@ -50,6 +50,11 @@
 **Given:** модель повернула невалідну структуру  
 **Then:** run отримує status `FAILED_VALIDATION`, write actions не створюються, помилка видима в trace.
 
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-03h-phase-c-20260813-02`
+**Product Owner acceptance date:** 2026-08-14
+**Evidence:** `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md` (independent review) and `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md` (Product Owner acceptance declaration).
+
 ## AT-009 — Human approval blocks write
 
 **Given:** agent запропонував procurement task  
@@ -84,6 +89,11 @@
 
 **Given:** AI endpoint недоступний  
 **Then:** risk engine result залишається доступним, workflow показує failed AI step, UI не зависає, користувач може retry.
+
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-03h-phase-c-20260813-02`
+**Product Owner acceptance date:** 2026-08-14
+**Evidence:** `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md` (independent review) and `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md` (Product Owner acceptance declaration).
 
 ## AT-014 — Public HTTPS smoke test
 

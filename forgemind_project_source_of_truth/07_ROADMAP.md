@@ -81,6 +81,8 @@ Roadmap побудовано вертикально: кожна фаза зав�
 
 ## Phase 5 — Controlled AI workflow
 
+**Status:** COMPLETE / ACCEPTED — Phase 5 implementation packages WP-REC-03A through WP-REC-03G are all merged (PRs #63, #65, #72, #73, #74, #78, #80); formal Phase 5 acceptance declared by the Product Owner on 2026-08-14 (DEC-043). AT-008 and AT-013 are PASS, evidenced by accepted formal run `wp-rec-03h-phase-c-20260813-02` (see `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`).
+
 ### Deliverables
 - provider adapter;
 - versioned prompt;
@@ -90,7 +92,7 @@ Roadmap побудовано вертикально: кожна фаза зав�
 - model outage behavior.
 
 ### Exit criteria
-- AT-008, AT-013 pass;
+- AT-008, AT-013 pass ✅ — AT-008 PASS, AT-013 PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance date 2026-08-14);
 - model response validated;
 - deterministic numbers preserved.
 

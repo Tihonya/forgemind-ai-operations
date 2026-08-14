@@ -34,11 +34,13 @@ ForgeMind is a web platform for AI-assisted supply chain risk assessment in engi
 - **RAG-powered document intelligence** for evidence retrieval (implementation complete; AT-006 requires formal verification against a live database)
 - **AI provider adapter** — OpenAI-compatible ChatProvider (WP-REC-03A, merged)
 - **Workflow state machine + engine** — explicit state machine with 7 states and immutable transitions (WP-REC-03B, merged)
+- **Controlled AI workflow** (Phase 5) — structured recommendation generation with validation, workflow trace, and user-initiated retry, implemented and formally accepted (AT-008 PASS, AT-013 PASS; accepted evidence run `wp-rec-03h-phase-c-20260813-02`)
 
 **Release 1 targets (not yet implemented):**
-- **Structured AI recommendations** with human-in-the-loop approval
-- **Complete audit traceability** for every workflow step
-- **Public HTTPS deployment** with demo reset
+- **Human-in-the-loop approval** for AI recommendations (Phase 6)
+- **Controlled procurement writes** with approval (Phase 6)
+- **Complete audit traceability** for every workflow step (Phase 6)
+- **Public HTTPS deployment** with demo reset (Phase 7)
 
 Release 1 is a **public portfolio MVP** demonstrating one complete vertical scenario: **Production Plan Supply Risk Review**.
 
@@ -54,10 +56,11 @@ A Production Manager logs in, views an active production plan, runs supply risk 
 - Supply risk list and detail views
 - Deterministic risk calculation (AT-003, AT-004, AT-005 verified)
 - RAG document retrieval infrastructure (AT-006 test exists but requires formal verification)
+- Structured AI recommendation workflow with validation and user-initiated retry (Phase 5, formally accepted — AT-008 PASS, AT-013 PASS)
 
 **Not yet working (Release 1 targets):**
-- Structured AI recommendations (Phase 5: WP-REC-03C through 03G)
 - Human approval workflow (Phase 6)
+- Controlled procurement writes (Phase 6)
 - Audit trace (Phase 6)
 - Public HTTPS deployment (Phase 7)
 
@@ -138,11 +141,11 @@ Release 1 implements one complete vertical scenario:
 
 1. Synthetic production plan → deterministic risk calculation ✅ IMPLEMENTED (AT-003, AT-004, AT-005 verified)
 2. RAG over synthetic engineering documents → cited retrieval ⚠️ IMPLEMENTATION COMPLETE (AT-006 test exists; requires formal verification)
-3. Structured AI recommendation → human approval ❌ NOT IMPLEMENTED (Phase 5: WP-REC-03C through 03G)
+3. Structured AI recommendation ✅ IMPLEMENTED & ACCEPTED (Phase 5: WP-REC-03A–03G; AT-008 PASS, AT-013 PASS) → human approval ❌ NOT IMPLEMENTED (Phase 6)
 4. Controlled procurement task creation → complete audit trace ❌ NOT IMPLEMENTED (Phase 6)
 5. Public HTTPS deployment → demo reset ❌ NOT IMPLEMENTED (Phase 7)
 
-**Current implementation status:** Step 1 is verified by passing integration tests and the Playwright E2E test. Step 2 has implementation code and an integration test file; formal AT-006/AT-007 PASS evidence requires a bounded verification package. Steps 3–5 (AI recommendation, approval, procurement, audit, public deployment) are not implemented.
+**Current implementation status:** steps 1 and 2 are implemented; step 3's structured AI recommendation is implemented and accepted, while its transition to human approval is not implemented; step 4 (controlled procurement task creation and complete audit trace) and step 5 (public HTTPS deployment and demo reset) are not implemented.
 
 **Canonical Golden Scenario:** The full 13-step Golden Scenario is defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2. The 5 condensed milestones above map to subsets of the canonical steps.
 
