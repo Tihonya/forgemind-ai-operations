@@ -62,6 +62,19 @@ _PERMANENT_TYPES: tuple[str, ...] = (
     "ConflictError",
 )
 
+# Structured-output capability modes supported by the adapter. Selection is
+# configuration-driven and observable; an unsupported mode fails safely at
+# construction (never downgraded silently after a provider error).
+_STRUCTURED_OUTPUT_MODE_JSON_SCHEMA = "json_schema"
+_STRUCTURED_OUTPUT_MODE_JSON_OBJECT = "json_object"
+_STRUCTURED_OUTPUT_MODE_PROMPT_JSON = "prompt_json"
+
+_VALID_STRUCTURED_OUTPUT_MODES: frozenset[str] = frozenset({
+    _STRUCTURED_OUTPUT_MODE_JSON_SCHEMA,
+    _STRUCTURED_OUTPUT_MODE_JSON_OBJECT,
+    _STRUCTURED_OUTPUT_MODE_PROMPT_JSON,
+})
+
 
 class _SlidingWindowRateLimiter:
     """Per-instance sliding-window rate limiter.
@@ -142,6 +155,8 @@ class OpenAIChatProvider(ChatProvider):
         client: AsyncOpenAI | None = None,
         rate_limiter: _SlidingWindowRateLimiter | None = None,
         clock: Any = None,
+        provider_name: str = "openai",
+        structured_output_mode: str = _STRUCTURED_OUTPUT_MODE_JSON_SCHEMA,
     ) -> None:
         if not api_key:
             raise ChatProviderConfigurationError("api_key must not be empty")
@@ -155,10 +170,24 @@ class OpenAIChatProvider(ChatProvider):
             raise ChatProviderConfigurationError(
                 f"rate_limit_per_minute must be positive, got {rate_limit_per_minute}"
             )
+        if not provider_name:
+            raise ChatProviderConfigurationError(
+                "provider_name must not be empty"
+            )
+        if structured_output_mode not in _VALID_STRUCTURED_OUTPUT_MODES:
+            raise ChatProviderConfigurationError(
+                f"Unsupported structured output mode: {structured_output_mode!r}. "
+                f"Supported modes: {sorted(_VALID_STRUCTURED_OUTPUT_MODES)}"
+            )
 
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._rate_limit_per_minute = rate_limit_per_minute
+        # Explicit safe provider identity (e.g. "openai", "groq",
+        # "openrouter"). Never inferred from the base URL after
+        # construction.
+        self._provider_name = provider_name
+        self._structured_output_mode = structured_output_mode
 
         if rate_limiter is not None:
             self._rate_limiter = rate_limiter
@@ -236,16 +265,31 @@ class OpenAIChatProvider(ChatProvider):
     # Private helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
     def _build_response_format(
+        self,
         schema: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        """Build the response_format argument for structured output.
+        """Build the response_format argument from the configured mode.
 
-        Returns a json_schema response_format dict when a schema is provided,
-        or None when no schema is given. The provider does not validate the
-        response against the schema — that is WP-REC-03C's responsibility.
+        Mode behaviour (configuration-driven, observable):
+
+        - ``prompt_json``: no ``response_format`` — prompt-only JSON. The
+          schema is still carried through the contract but not sent to the
+          provider (explicit compatibility mode).
+        - ``json_object``: request provider JSON-object mode.
+        - ``json_schema``: strict JSON Schema response formatting (requires a
+          schema; without a schema the provider falls back to no
+          ``response_format``).
+
+        The mode is never downgraded silently after a provider error.
+        The provider does not validate the response against the schema —
+        that is WP-REC-03C's responsibility.
         """
+        if self._structured_output_mode == _STRUCTURED_OUTPUT_MODE_PROMPT_JSON:
+            return None
+        if self._structured_output_mode == _STRUCTURED_OUTPUT_MODE_JSON_OBJECT:
+            return {"type": "json_object"}
+        # json_schema mode.
         if schema is None:
             return None
         return {
@@ -334,6 +378,8 @@ class OpenAIChatProvider(ChatProvider):
         safe_metadata: dict[str, Any] = {
             "latency_ms": round(latency_ms, 3),
             "response_id": getattr(response, "id", ""),
+            "provider": self._provider_name,
+            "structured_output_mode": self._structured_output_mode,
         }
         if correlation_id:
             safe_metadata["correlation_id"] = correlation_id
@@ -373,6 +419,8 @@ class OpenAIChatProvider(ChatProvider):
             "model": model,
             "latency_ms": round(latency_ms, 3),
             "status": "success",
+            "provider": self._provider_name,
+            "structured_output_mode": self._structured_output_mode,
         }
         if usage:
             log_kwargs["usage"] = usage
@@ -399,6 +447,8 @@ class OpenAIChatProvider(ChatProvider):
             "latency_ms": round(latency_ms, 3),
             "status": "error",
             "error_type": type(exc).__name__,
+            "provider": self._provider_name,
+            "structured_output_mode": self._structured_output_mode,
         }
         if correlation_id:
             log_kwargs["correlation_id"] = correlation_id

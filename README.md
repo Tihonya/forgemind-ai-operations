@@ -112,6 +112,52 @@ make seed
 make reset
 ```
 
+## Configuration
+
+Chat-provider selection is independent of embedding-provider selection. The
+chat provider is configured via `CHAT_PROVIDER_MODE`:
+
+| `CHAT_PROVIDER_MODE` | Behaviour |
+|---|---|
+| `fake` | Deterministic offline provider. Default for development/CI. Requires no key. Rejected outside development. |
+| `openai` | OpenAI (requires `OPENAI_API_KEY`). |
+| `chain` | Ordered external fallback chain, server-configured via `CHAT_PROVIDER_CHAIN` (default `groq,openrouter`). |
+
+### External fallback chain
+
+The chain advances from Groq (free primary) to OpenRouter (paid fallback)
+only after the current provider's bounded retry budget is exhausted with a
+**transient** failure (connection failure, timeout, HTTP 429, retryable 5xx).
+Permanent errors — including OpenRouter HTTP 402 (external budget/credit
+exhaustion), authentication failures, schema-invalid and citation-invalid
+responses — never fall back. Total provider calls are bounded by
+`provider_count × attempts_per_provider`.
+
+| Variable | Meaning |
+|---|---|
+| `GROQ_API_KEY` | Groq API key (required when Groq is in use). |
+| `GROQ_API_BASE` | Default `https://api.groq.com/openai/v1`. |
+| `GROQ_CHAT_MODEL` | Pinned free model, default `llama-3.3-70b-versatile`. |
+| `OPENROUTER_API_KEY` | OpenRouter API key (required when OpenRouter is in use). |
+| `OPENROUTER_API_BASE` | Default `https://openrouter.ai/api/v1`. |
+| `OPENROUTER_CHAT_MODEL` | **Required explicit pinned paid model — no default is ever guessed.** |
+
+The ~USD 5 OpenRouter budget is an **external** OpenRouter account/key
+control configured separately by the Product Owner. The application does not
+enforce it; on exhaustion OpenRouter returns HTTP 402, which the application
+treats as a permanent failure (no retry, no fallback).
+
+### Structured output modes
+
+Each provider carries an explicit structured-output capability mode
+(`*_STRUCTURED_OUTPUT_MODE`): `json_schema` (strict JSON Schema response
+format), `json_object` (provider JSON-object mode), or `prompt_json`
+(explicit prompt-only compatibility mode). Server-side Pydantic validation
+remains authoritative in every mode. An unsupported mode fails safely at
+startup; it is never silently downgraded after a provider error.
+
+API keys are never logged, printed, serialized, or committed.
+
 ## Architecture
 
 ```
@@ -163,7 +209,7 @@ See [docs/next_steps.md](docs/next_steps.md) for the full status and blockers.
 | Layer | Choice |
 |-------|--------|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
-| AI/ML | ARQ + Redis, OpenAI-compatible ChatProvider adapter (WP-REC-03A, merged) |
+| AI/ML | ARQ + Redis, OpenAI-compatible ChatProvider adapter with server-configured Groq → OpenRouter fallback chain (offline-verified; no live provider call) |
 | Frontend | React 18, TypeScript, Vite, Tailwind, shadcn/ui |
 | Database | PostgreSQL + pgvector |
 | Infra | Docker Compose, Caddy, GitHub Actions |

@@ -41,7 +41,7 @@ def _make_settings(**overrides: object) -> Settings:
     """Build a Settings instance from keyword overrides."""
     defaults: dict[str, object] = {
         "environment": "development",
-        "embedding_provider": "openai",
+        "chat_provider_mode": "openai",
         "openai_api_key": "sk-test-1234",
         "openai_api_base": "https://api.openai.com/v1",
         "openai_chat_model": "gpt-4o-mini",
@@ -60,7 +60,7 @@ def _make_settings(**overrides: object) -> Settings:
 
 class TestProviderSelection:
     def test_openai_provider_returns_openai(self) -> None:
-        config = _make_settings(embedding_provider="openai")
+        config = _make_settings(chat_provider_mode="openai")
         with patch(
             "app.ai.provider.openai_chat_provider.AsyncOpenAI",
             return_value=AsyncMock(),
@@ -70,13 +70,13 @@ class TestProviderSelection:
         assert isinstance(provider._delegate, OpenAIChatProvider)
 
     def test_fake_provider_returns_fake_in_development(self) -> None:
-        config = _make_settings(embedding_provider="fake", environment="development")
+        config = _make_settings(chat_provider_mode="fake", environment="development")
         provider = create_chat_provider(config=config)
         assert isinstance(provider, RetryingChatProvider)
         assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_explicit_provider_name_overrides_config(self) -> None:
-        config = _make_settings(embedding_provider="openai")
+        config = _make_settings(chat_provider_mode="openai")
         provider = create_chat_provider(
             config=config, provider_name="fake"
         )
@@ -84,7 +84,7 @@ class TestProviderSelection:
         assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_explicit_openai_overrides_config(self) -> None:
-        config = _make_settings(embedding_provider="fake")
+        config = _make_settings(chat_provider_mode="fake")
         with patch(
             "app.ai.provider.openai_chat_provider.AsyncOpenAI",
             return_value=AsyncMock(),
@@ -103,18 +103,18 @@ class TestProviderSelection:
 
 class TestFakeProviderEnvironmentValidation:
     def test_fake_allowed_in_development(self) -> None:
-        config = _make_settings(embedding_provider="fake", environment="development")
+        config = _make_settings(chat_provider_mode="fake", environment="development")
         provider = create_chat_provider(config=config)
         assert isinstance(provider, RetryingChatProvider)
         assert isinstance(provider._delegate, FakeChatProvider)
 
     def test_fake_rejected_in_staging(self) -> None:
-        config = _make_settings(embedding_provider="fake", environment="staging")
+        config = _make_settings(chat_provider_mode="fake", environment="staging")
         with pytest.raises(ChatProviderConfigurationError, match="not allowed"):
             create_chat_provider(config=config)
 
     def test_fake_rejected_in_production(self) -> None:
-        config = _make_settings(embedding_provider="fake", environment="production")
+        config = _make_settings(chat_provider_mode="fake", environment="production")
         with pytest.raises(ChatProviderConfigurationError, match="not allowed"):
             create_chat_provider(config=config)
 
@@ -129,7 +129,7 @@ class TestUnknownProvider:
         invalid_config = cast(
             Settings,
             SimpleNamespace(
-                embedding_provider="unknown",
+                chat_provider_mode="unknown",
                 environment="development",
                 openai_api_key="",
                 openai_api_base="https://api.openai.com/v1",
@@ -153,7 +153,7 @@ class TestUnknownProvider:
 class TestOfficialEndpointApiKey:
     def test_official_endpoint_without_key_raises(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base="https://api.openai.com/v1",
         )
@@ -165,7 +165,7 @@ class TestOfficialEndpointApiKey:
 
     def test_official_endpoint_with_key_succeeds(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-real-key",
             openai_api_base="https://api.openai.com/v1",
         )
@@ -186,7 +186,7 @@ class TestOfficialEndpointApiKey:
 class TestCustomEndpoint:
     def test_custom_endpoint_without_key_succeeds(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base="http://localhost:8080/v1",
         )
@@ -200,7 +200,7 @@ class TestCustomEndpoint:
 
     def test_sentinel_key_passed_for_custom_endpoint(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base="http://localhost:8080/v1",
         )
@@ -214,7 +214,7 @@ class TestCustomEndpoint:
 
     def test_sentinel_not_used_for_official_endpoint(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base="https://api.openai.com/v1",
         )
@@ -339,7 +339,7 @@ class TestRetryConfiguration:
 class TestErrorMessageSafety:
     def test_no_api_key_in_official_error(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base="https://api.openai.com/v1",
         )
@@ -352,7 +352,7 @@ class TestErrorMessageSafety:
         invalid_config = cast(
             Settings,
             SimpleNamespace(
-                embedding_provider="mystery",
+                chat_provider_mode="mystery",
                 environment="development",
                 openai_api_key="super-secret-key-value",
                 openai_api_base="https://api.openai.com/v1",
@@ -375,15 +375,15 @@ class TestErrorMessageSafety:
 class TestSettingsMutationSafety:
     def test_passed_settings_not_mutated(self) -> None:
         original_config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
-        original_provider = original_config.embedding_provider
+        original_provider = original_config.chat_provider_mode
         original_key = original_config.openai_api_key
 
         create_chat_provider(config=original_config)
 
-        assert original_config.embedding_provider == original_provider
+        assert original_config.chat_provider_mode == original_provider
         assert original_config.openai_api_key == original_key
 
 
@@ -395,7 +395,7 @@ class TestSettingsMutationSafety:
 class TestConfigNoneFallback:
     def test_config_none_uses_application_settings(self) -> None:
         fallback_config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
         with patch(
@@ -416,7 +416,7 @@ class TestNoNetworkRequests:
     @pytest.mark.asyncio
     async def test_fake_provider_no_network(self) -> None:
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
         with patch("httpx.Client") as mock_client:
@@ -428,7 +428,7 @@ class TestNoNetworkRequests:
     def test_factory_creation_no_network(self) -> None:
         """Factory creating an OpenAI provider with injected mock makes no real HTTP."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
         )
         with patch(
@@ -460,7 +460,7 @@ class TestOfficialBaseUrlNormalization:
     def test_trailing_slash_treated_as_official(self, base_url: str) -> None:
         """Trailing slashes must not bypass the official-endpoint key check."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base=base_url,
         )
@@ -480,7 +480,7 @@ class TestOfficialBaseUrlNormalization:
     def test_official_with_key_succeeds_normalized(self, base_url: str) -> None:
         """Official endpoint with a real key succeeds regardless of trailing slash."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-real-key",
             openai_api_base=base_url,
         )
@@ -495,7 +495,7 @@ class TestOfficialBaseUrlNormalization:
     def test_trailing_slash_official_base_url_omitted(self) -> None:
         """Official endpoint with trailing slash still gets None base_url (SDK default)."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
             openai_api_base="https://api.openai.com/v1/",
         )
@@ -510,7 +510,7 @@ class TestOfficialBaseUrlNormalization:
     def test_custom_endpoint_with_trailing_slash_preserved(self) -> None:
         """Custom endpoint trailing slash is preserved (not normalized away)."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
             openai_api_base="http://localhost:8080/v1/",
         )
@@ -547,7 +547,7 @@ class TestRobustOfficialEndpointClassification:
     def test_equivalent_official_without_key_fails_fast(self, base_url: str) -> None:
         """Every equivalent official form without an API key raises."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base=base_url,
         )
@@ -570,7 +570,7 @@ class TestRobustOfficialEndpointClassification:
     def test_equivalent_official_with_key_succeeds(self, base_url: str) -> None:
         """Every equivalent official form with a key creates a provider."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-real-key",
             openai_api_base=base_url,
         )
@@ -595,7 +595,7 @@ class TestRobustOfficialEndpointClassification:
     def test_equivalent_official_base_url_omitted(self, base_url: str) -> None:
         """Equivalent official forms get None base_url (SDK default)."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
             openai_api_base=base_url,
         )
@@ -636,7 +636,7 @@ class TestRobustOfficialEndpointClassification:
     def test_non_official_not_classified_as_official(self, base_url: str) -> None:
         """Non-official URLs must NOT be classified as official (no fail-fast)."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base=base_url,
         )
@@ -661,7 +661,7 @@ class TestRobustOfficialEndpointClassification:
     def test_official_makes_no_network_call(self, base_url: str) -> None:
         """Equivalent official form without key fails fast — no network call."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="",
             openai_api_base=base_url,
         )
@@ -674,7 +674,7 @@ class TestRobustOfficialEndpointClassification:
         """The original configured base URL is passed unchanged to the SDK."""
         original_url = "https://API.OPENAI.COM:443/v1/"
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
             openai_api_base=original_url,
         )
@@ -698,7 +698,7 @@ class TestFactoryWrapping:
 
     def test_fake_provider_is_wrapped(self) -> None:
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
         provider = create_chat_provider(config=config)
@@ -707,7 +707,7 @@ class TestFactoryWrapping:
 
     def test_openai_provider_is_wrapped(self) -> None:
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
         )
         with patch(
@@ -721,7 +721,7 @@ class TestFactoryWrapping:
     def test_llm_max_retries_reaches_wrapper(self) -> None:
         """The configured llm_max_retries reaches the wrapper's RetryPolicy."""
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
             llm_max_retries=5,
         )
@@ -732,7 +732,7 @@ class TestFactoryWrapping:
 
     def test_llm_max_retries_zero_reaches_wrapper(self) -> None:
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
             llm_max_retries=0,
         )
@@ -744,7 +744,7 @@ class TestFactoryWrapping:
     def test_sdk_retries_remain_disabled(self) -> None:
         """The OpenAI SDK max_retries=0 is preserved under the wrapper."""
         config = _make_settings(
-            embedding_provider="openai",
+            chat_provider_mode="openai",
             openai_api_key="sk-test",
             llm_max_retries=5,
         )
@@ -759,7 +759,7 @@ class TestFactoryWrapping:
     def test_no_double_wrapping(self) -> None:
         """The factory wraps exactly once — the delegate is not itself a wrapper."""
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
         provider = create_chat_provider(config=config)
@@ -772,7 +772,7 @@ class TestFactoryWrapping:
         from app.ai.provider.chat_provider import ChatProvider
 
         config = _make_settings(
-            embedding_provider="fake",
+            chat_provider_mode="fake",
             environment="development",
         )
         provider = create_chat_provider(config=config)

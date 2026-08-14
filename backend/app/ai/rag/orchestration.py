@@ -47,6 +47,15 @@ class FabricatedCitationError(Exception):
     """
 
 
+class DuplicateCitationError(FabricatedCitationError):
+    """Raised when a single risk item cites the same source tuple more than once.
+
+    Per §7, duplicate sources are rejected deterministically (not silently
+    normalized). Like :class:`FabricatedCitationError`, this is a
+    citation-integrity failure and maps to ``FAILED_VALIDATION``.
+    """
+
+
 @dataclass(frozen=True)
 class RetrievalContext:
     """Bounded retrieval results and the citation allow-list for a run.
@@ -167,4 +176,72 @@ def validate_sources_against_allow_list(
         if identity not in allow_list:
             raise FabricatedCitationError(
                 "Persisted source is not in the citation allow-list"
+            )
+
+
+def build_per_risk_citation_allow_lists(
+    results_by_risk: dict[str, list[RetrievalResult]],
+) -> dict[str, frozenset[tuple[str, str, UUID]]]:
+    """Build per-risk citation allow-lists from per-risk retrieval results.
+
+    Each risk keeps its own authoritative allow-list so that a citation
+    retrieved for one risk cannot be attached to a different risk (§7).
+    The allow-list identity remains the wire ``Source`` tuple
+    ``(str(document_id), version_number, chunk_id)`` per M3.
+
+    Args:
+        results_by_risk: Mapping of ``risk_id`` to that risk's retrieval
+            results.
+
+    Returns:
+        Mapping of ``risk_id`` to its immutable per-risk allow-list.
+    """
+    return {
+        risk_id: build_citation_allow_list(results)
+        for risk_id, results in results_by_risk.items()
+    }
+
+
+def validate_per_risk_sources(
+    sources: list[Source],
+    *,
+    risk_id: str,
+    allow_lists_by_risk: dict[str, frozenset[tuple[str, str, UUID]]],
+) -> None:
+    """Validate one risk item's ``sources`` against its own allow-list.
+
+    Implements the per-risk citation-integrity contract (§7):
+
+    - membership is checked only against the allow-list for ``risk_id``;
+    - a tuple retrieved for another risk is invalid (cross-risk);
+    - duplicate source tuples within one risk item are rejected;
+    - a zero-result risk has an empty allow-list, so ``sources == []``
+      is required.
+
+    Args:
+        sources: The risk item's wire ``Source`` objects.
+        risk_id: The risk item's ``risk_id``.
+        allow_lists_by_risk: Mapping of ``risk_id`` → per-risk allow-list.
+
+    Raises:
+        DuplicateCitationError: If a source tuple repeats within ``sources``.
+        FabricatedCitationError: If a source is not in ``risk_id``'s
+            allow-list (fabricated or cross-risk).
+    """
+    allow_list = allow_lists_by_risk.get(risk_id, frozenset())
+    seen: set[tuple[str, str, UUID]] = set()
+    for source in sources:
+        identity = (
+            source.document_id,
+            source.version,
+            source.chunk_id,
+        )
+        if identity in seen:
+            raise DuplicateCitationError(
+                "Duplicate source citation within a risk item"
+            )
+        seen.add(identity)
+        if identity not in allow_list:
+            raise FabricatedCitationError(
+                "Persisted source is not in the risk's citation allow-list"
             )

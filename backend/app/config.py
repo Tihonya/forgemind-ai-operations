@@ -75,6 +75,39 @@ class Settings(BaseSettings):
     embedding_provider: Literal["openai", "fake"] = "openai"
     embedding_timeout_seconds: int = Field(default=30, ge=5, le=120)
 
+    # Chat provider — independent of embedding provider (WP-REC-05 external
+    # provider chain). Previously chat-provider selection reused the
+    # ``embedding_provider`` field as a stopgap; this decouples the two.
+    #
+    # ``fake`` is the offline/CI default. ``chain`` selects the ordered
+    # external fallback chain. Production/staging never silently select
+    # fake: the factory rejects fake outside development.
+    chat_provider_mode: Literal["fake", "openai", "chain"] = "fake"
+    chat_provider_chain: str = "groq,openrouter"
+    openai_structured_output_mode: Literal[
+        "json_schema", "json_object", "prompt_json"
+    ] = "json_schema"
+
+    # Groq (free primary external provider). The pinned free model
+    # ``llama-3.3-70b-versatile`` is documented as available and as a
+    # structured-output (json_schema) capable model on console.groq.com.
+    groq_api_key: str = ""
+    groq_api_base: str = "https://api.groq.com/openai/v1"
+    groq_chat_model: str = "llama-3.3-70b-versatile"
+    groq_structured_output_mode: Literal[
+        "json_schema", "json_object", "prompt_json"
+    ] = "json_schema"
+
+    # OpenRouter (paid commercial fallback, ~USD 5 external budget).
+    # ``openrouter_chat_model`` has NO default — the operator must pin an
+    # explicit paid model. The application never guesses it.
+    openrouter_api_key: str = ""
+    openrouter_api_base: str = "https://openrouter.ai/api/v1"
+    openrouter_chat_model: str = ""
+    openrouter_structured_output_mode: Literal[
+        "json_schema", "json_object", "prompt_json"
+    ] = "json_object"
+
     # Rate Limiting
     rate_limit_per_minute: int = Field(default=60, ge=1)
     ai_rate_limit_per_minute: int = Field(default=10, ge=1)
