@@ -1,6 +1,6 @@
 # WP-REC-03-DEC — MVP Phase 5 Controlled Decomposition
 
-**Status:** PLANNING PACKAGE — lifecycle/status corrections applied 2026-08-09; post-WP-ARCH-01 reconciliation applied 2026-08-09
+**Status:** PLANNING PACKAGE — lifecycle/status corrections applied 2026-08-09; post-WP-ARCH-01 reconciliation applied 2026-08-09; Phase D acceptance reconciliation applied 2026-08-14
 **Date:** 2026-08-08 (corrected 2026-08-08; status-synced 2026-08-09; reconciled 2026-08-09)
 **Baseline:** `origin/main` @ `fc48aed557d20f516cf46fe94175ce2d22c61dba` (lifecycle-correction baseline — repository state at which the 2026-08-09 status sync after WP-REC-03B was applied)
 **Post-WP-ARCH-01 reconciliation baseline:** `origin/main` @ `0e0afd151098d85fdd9eaf12ba98147ed41b6336` (PR #70 merge commit), 2026-08-09.
@@ -31,6 +31,28 @@ WP-REC-03G (Frontend Start/Retry UI Interaction) was delivered via PR #80:
 - Post-merge `Frontend CI` and `End-to-End Tests` both completed successfully on the exact merge commit `1582c39…`.
 - AT-013 implementation is complete as a result; formal AT-013 PASS still requires accepted end-to-end model-outage evidence.
 - Phase 5 implementation packages (WP-REC-03A through WP-REC-03G) are all delivered; formal Phase 5 acceptance is pending because accepted AT-008 and AT-013 evidence is not yet recorded.
+
+---
+
+## Final Lifecycle Record — WP-REC-03H Phase D Acceptance and Phase 5 Closure (2026-08-14)
+
+**Product Owner declarations (DEC-043, 2026-08-14):**
+
+```text
+AT-008 — PASS
+AT-013 — PASS
+PHASE 5 — ACCEPTED
+```
+
+- **Accepted evidence run:** `wp-rec-03h-phase-c-20260813-02` (41 files / 272956 bytes / aggregate `0efe3acb…88dd` / manifest `complete:true` / source commit `686739fd1e56ec4072b52029e01e3a6d8f9963cb`). Authoritative accepted evidence.
+- **Failed run:** `wp-rec-03h-phase-c-20260813-01` (71 files / 300481 bytes / aggregate `e04c7f9d…a981` / manifest absent) — permanently failed, non-final, non-acceptable, non-reusable. Remains rejected.
+- **PR #84 merge commit:** `466b70b9dfd96728c0b966c9c59755c982b9ca87` (`fix(acceptance): resolve formal-evidence mode` correction).
+- **PR #85 merge commit:** `686739fd1e56ec4072b52029e01e3a6d8f9963cb` (`fix(acceptance): repair WP-REC-03H formal finalization`).
+- **Phase D durable review:** `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`.
+- **Phase D durable acceptance declaration:** `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`.
+- **Findings F3–F8** remain deferred and non-remediated (non-blocking for Phase D acceptance): F3 incorrect risk API probe URL; F4 unauthenticated workflow-run API probe; F5 BrowserResult files lack individual checksum coverage under the current contract; F6 AT-008 identity dispatch generation null while authoritative value 0 exists elsewhere; F7 corrected manifest unique-path arithmetic; F8 manifest lacks an explicit schema-version field.
+
+Phase C (formal acceptance execution) and Phase D (Product Owner evidence review and acceptance declaration) are complete. Phase E (documentation lifecycle reconciliation) is implemented by this documentation package and pending independent review and merge. No later work package is authorized. Release 1 remains not ready.
 
 ---
 
@@ -120,11 +142,11 @@ The provisional decomposition in the SP-1 assessment (§18, line 1074) proposed:
 | 6 | WP-REC-03F | Backend workflow start/retry API + ARQ worker | M | 03A + 03B + 03C + 03D + 03E | AT-008 implementation complete (with 03E; formal PASS requires evidence); AT-013 backend implementation complete (03G adds UI clauses; formal PASS requires evidence) | Complete user-visible increment (backend half) |
 | 7 | WP-REC-03G | Frontend start/retry UI interaction | S | 03A + 03B + 03C + 03D + 03E + 03F | AT-013 UI clauses (non-freeze, user retry action); formal PASS requires accepted evidence | Complete user-visible increment (frontend half) |
 
-**Phase 5 exit criteria:** AT-008 implementation complete (03F wires worker execution + 03E renders trace; 03C owns only the validator; formal PASS requires accepted end-to-end evidence), AT-013 implementation complete after 03F + 03G (formal PASS requires accepted evidence), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5). Phase 5 implementation is complete; exit criteria require formal verification with accepted evidence.
+**Phase 5 exit criteria:** AT-008 implementation complete (03F wires worker execution + 03E renders trace; 03C owns only the validator; formal PASS requires accepted end-to-end evidence), AT-013 implementation complete after 03F + 03G (formal PASS requires accepted evidence), model response validated, deterministic numbers preserved, user-visible recommendation and retry available (`07_ROADMAP.md` Phase 5). Phase 5 implementation is complete and formally ACCEPTED (AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED; Product Owner acceptance 2026-08-14, DEC-043).
 
-**AT-008 implementation requirements (full):** provider adapter (03A) + workflow state-machine (03B) + structured-output validator (03C, defines `FAILED_VALIDATION` on invalid output) + worker execution wiring that invokes the validator (03F) + trace retrieval that exposes the error in the workflow run (03E). AT-008 implementation is complete after 03F+03E (03A+03B+03C+03E+03F all COMPLETE). However, AT-008 is NOT formally recorded as PASS without accepted end-to-end acceptance evidence. 03C alone only owns the validator and its unit-level verification; the end-to-end implementation flow (provider → validation → state transition → recommendation persistence → trace display) is complete only after 03F wires the worker and 03E exposes the trace via the API/UI.
+**AT-008 implementation requirements (full):** provider adapter (03A) + workflow state-machine (03B) + structured-output validator (03C, defines `FAILED_VALIDATION` on invalid output) + worker execution wiring that invokes the validator (03F) + trace retrieval that exposes the error in the workflow run (03E). AT-008 implementation is complete after 03F+03E (03A+03B+03C+03E+03F all COMPLETE). AT-008 is now formally PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14). 03C alone only owns the validator and its unit-level verification; the end-to-end implementation flow (provider → validation → state transition → recommendation persistence → trace display) is complete only after 03F wires the worker and 03E exposes the trace via the API/UI.
 
-**AT-013 implementation requirements:** backend automatic retry (03D), workflow start/retry ARQ worker (03F — enqueues jobs, owns long-running execution), failed-step visibility in UI (03E), start/retry UI action (03G), non-freezing UI behavior during long-running workflows (03E+03G), and user retry action (03G). AT-013 implementation is complete through 03D+03F+03G (with trace visibility through 03E). However, AT-013 is NOT PASS — formal AT-013 PASS requires accepted end-to-end acceptance evidence.
+**AT-013 implementation requirements:** backend automatic retry (03D), workflow start/retry ARQ worker (03F — enqueues jobs, owns long-running execution), failed-step visibility in UI (03E), start/retry UI action (03G), non-freezing UI behavior during long-running workflows (03E+03G), and user retry action (03G). AT-013 implementation is complete through 03D+03F+03G (with trace visibility through 03E). AT-013 is now formally PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 
 ---
 
@@ -1282,8 +1304,8 @@ D6 does not reopen or modify D1 retry transitions, D2 authorization, D3 plan-ide
 | AT | Description | Phase 5 Package(s) | PASS Point | Status After Phase 5 |
 |----|-------------|---------------------|------------|------------------------|
 | AT-007 | Document access control | WP-REC-05 only (NOT Phase 5) | After WP-REC-05 | NOT covered by Phase 5 |
-| AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E + 03F | Implementation complete after 03F+03E (validator after 03C, trace after 03E, worker after 03F) | Implementation COMPLETE; formal PASS NOT RECORDED (requires accepted end-to-end evidence) |
-| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | Backend after 03F (03D+03F); trace visibility after 03E; UI after 03G (merged via PR #80) | Implementation COMPLETE (03D+03F+03E+03G); formal PASS NOT RECORDED (requires accepted end-to-end evidence) |
+| AT-008 | Structured output validation | WP-REC-03A + 03B + 03C + 03E + 03F | Implementation complete after 03F+03E (validator after 03C, trace after 03E, worker after 03F) | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14) |
+| AT-013 | Model outage | WP-REC-03A + 03D + 03E + 03F + 03G | Backend after 03F (03D+03F); trace visibility after 03E; UI after 03G (merged via PR #80) | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14) |
 
 AT-009, AT-010, AT-011, AT-012 are Phase 6 (WP-REC-04) and are NOT covered by Phase 5. 03E provides a partial foundation for AT-012 (workflow trace visibility) but AT-012 is NOT PASS during Phase 5.
 
@@ -1387,7 +1409,7 @@ No Phase 5 package depends on, creates, or activates agent automation or the sec
 | WP-REC-03E (workflow-run detail + recommendation UI) | COMPLETE — merged via PR #74 |
 | WP-REC-03F (backend workflow start/retry API + ARQ worker) | COMPLETE — merged via PR #78 at aab132325b65123a8abee8787c013f70f0ab9b74 on 2026-08-11 |
 | WP-REC-03G (frontend start/retry UI interaction) | COMPLETE — merged via PR #80 at `1582c394c1a82775b77259983a0dce364d42023a` on 2026-08-12 |
-| WP-REC-03 implementation (as a whole) | COMPLETE — WP-REC-03A through WP-REC-03G are all merged via PRs #63, #65, #72, #73, #74, #78, #80; formal Phase 5 acceptance pending accepted AT-008 and AT-013 evidence |
+| WP-REC-03 implementation (as a whole) | COMPLETE — WP-REC-03A through WP-REC-03G are all merged via PRs #63, #65, #72, #73, #74, #78, #80; **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`) |
 | SP-0B (Runtime migration manifest) | READY but NOT AUTHORIZED |
 | Creation of forgemind-agent-runtime | NOT AUTHORIZED |
 | Activation of agent automation | NOT AUTHORIZED (deferred until available on general terms) |
