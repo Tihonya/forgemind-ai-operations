@@ -30,6 +30,8 @@ from app.ai.workflow.engine import WorkflowEngine
 from app.ai.workflow.state_machine import WorkflowState
 from app.ai.workflow.vertical import execute_workflow
 from app.models.workflow import Recommendation, WorkflowRun, WorkflowStep
+from app.services.embedding_provider import FakeEmbeddingProvider
+from tests.integration._workflow_rag_support import seed_authorization_context
 
 pytestmark = pytest.mark.acceptance
 
@@ -62,11 +64,15 @@ class TestAT013AcceptanceOutageRetry:
         engine = WorkflowEngine(provider=provider, session=session)
         run = await engine.create_run(plan_id=plan_id)
         await session.commit()
+        await seed_authorization_context(
+            session, run_id=run.id, dispatch_generation=0
+        )
 
         # --- Generation 0: provider outage ---
         result0 = await execute_workflow(
             session=session,
             provider=provider,
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )
@@ -106,6 +112,12 @@ class TestAT013AcceptanceOutageRetry:
         await session.commit()
         assert won is True
         assert run_row.dispatch_generation == 1
+        await seed_authorization_context(
+            session,
+            run_id=run.id,
+            dispatch_generation=1,
+            capture_action="retry",
+        )
 
         # --- Generation 1: post-retry success ---
         # Create a fresh provider instance (as the real worker does).
@@ -113,6 +125,7 @@ class TestAT013AcceptanceOutageRetry:
         result1 = await execute_workflow(
             session=session,
             provider=retry_provider,
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=1,
         )
@@ -181,10 +194,14 @@ class TestAT013AcceptanceOutageRetry:
         engine = WorkflowEngine(provider=provider, session=session)
         run = await engine.create_run(plan_id=plan_id)
         await session.commit()
+        await seed_authorization_context(
+            session, run_id=run.id, dispatch_generation=0
+        )
 
         await execute_workflow(
             session=session,
             provider=provider,
+            embedding_provider=FakeEmbeddingProvider(),
             run_id=run.id,
             queued_generation=0,
         )

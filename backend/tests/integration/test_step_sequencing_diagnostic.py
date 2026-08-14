@@ -31,6 +31,12 @@ from app.ai.provider.exceptions import TransientChatProviderError
 from app.ai.workflow.engine import WorkflowEngine
 from app.ai.workflow.vertical import execute_workflow
 from app.models.workflow import WorkflowRun
+from app.services.embedding_provider import FakeEmbeddingProvider
+from tests.integration._workflow_rag_support import (
+    cleanup_workflow_tables,
+    seed_authorization_context,
+    seed_production_plan,
+)
 
 _INTEGRATION_DB_URL = (
     os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -84,10 +90,7 @@ async def db_engine() -> AsyncIterator[Any]:
     engine = create_async_engine(_INTEGRATION_DB_URL, echo=False)
     yield engine
     async with async_sessionmaker(bind=engine, expire_on_commit=False)() as session:
-        await session.execute(text("DELETE FROM recommendations"))
-        await session.execute(text("DELETE FROM workflow_steps"))
-        await session.execute(text("DELETE FROM workflow_runs"))
-        await session.commit()
+        await cleanup_workflow_tables(session)
     await engine.dispose()
 
 
@@ -95,7 +98,11 @@ async def _get_plan_id(session: AsyncSession) -> Any:
     result = await session.execute(text("SELECT id FROM production_plans LIMIT 1"))
     row = result.fetchone()
     if row is None:
-        pytest.skip("No production plans in database")
+        # Seed a deterministic minimal plan so the test executes rather than
+        # skips (WP-REC-05 F1 remediation: vertical tests must not skip).
+        plan_id = await seed_production_plan(session)
+        await session.commit()
+        return plan_id
     return row[0]
 
 
@@ -124,10 +131,14 @@ class TestCrossSessionStepSequencing:
             run = await engine.create_run(plan_id=plan_id)
             await session1.commit()
             run_id = str(run.id)
+            await seed_authorization_context(
+                session1, run_id=run.id, dispatch_generation=0
+            )
 
             await execute_workflow(
                 session=session1,
                 provider=_FailingProvider(),
+                embedding_provider=FakeEmbeddingProvider(),
                 run_id=run.id,
                 queued_generation=0,
             )
@@ -156,6 +167,12 @@ class TestCrossSessionStepSequencing:
                 provider=_FailingProvider(), session=session2
             )
             won = await engine2.retry_transition(run_obj)
+            await seed_authorization_context(
+                session2,
+                run_id=run_obj.id,
+                dispatch_generation=run_obj.dispatch_generation,
+                capture_action="retry",
+            )
             await session2.commit()
             assert won is True
 
@@ -168,6 +185,7 @@ class TestCrossSessionStepSequencing:
             await execute_workflow(
                 session=session3,
                 provider=_SuccessProvider(),
+                embedding_provider=FakeEmbeddingProvider(),
                 run_id=run_obj.id,
                 queued_generation=1,
             )
