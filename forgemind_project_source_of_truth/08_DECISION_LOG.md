@@ -926,6 +926,49 @@ Product Owner (2026-08-15).
 
 ---
 
+## DEC-052 — Phase 6 approval/audit/procurement contract and WP-REC-04-DEC decomposition
+
+**Date:** 2026-08-15
+
+**Status:** Accepted
+
+**Context:**
+
+- Phase 6 reconnaissance (`/tmp/phase6-reconnaissance-and-planning-report.md`) returned the verdict `PHASE 6 RECONNAISSANCE INCOMPLETE — CONTRACT OR ARCHITECTURE DECISIONS REQUIRED`.
+- The reconnaissance is otherwise complete; the plan is blocked solely by the genuinely unresolved decisions G1 (approver identity and requester/approver separation), G2 (procurement-task data boundary), and G3 (approval lifecycle), plus the frontend role-alignment finding M1.
+- The Product Owner accepted decisions G1, G2, G3, and M1 on 2026-08-15.
+
+**Decision:**
+
+Authorize the bounded documentation-only WP-REC-04-DEC package, which records the following accepted Phase 6 contract and converts the reconnaissance into an implementation-ready decomposition:
+
+1. **Approval authority and separation of duties (G1).** `PRODUCTION_MANAGER` may select a persisted recommendation and create an approval request. Only `PROCUREMENT_SPECIALIST` may approve or reject the approval request. The deciding user must differ from the requester; self-approval is forbidden. `ENGINEER`, `AI_ADMINISTRATOR`, and `AUDITOR` may not approve or reject procurement actions; `AUDITOR` remains read-only. Any absent role, wrong role, requester/approver identity match, missing approval, non-pending decision, or parameter mismatch must fail closed.
+2. **Synthetic procurement boundary (G2).** The Release 1 procurement task is a synthetic local application entity containing only the business data required by the acceptance contract: component/item identity, quantity, originating risk, originating workflow run, approval request, requester and approver identities, timestamps, and correlation/audit references. It introduces no vendor or supplier, no price or monetary amount, no currency, no payment, no purchase-order transmission, no external procurement API, and no external financial action. The controlled action is creation of exactly one local `procurement_tasks` row.
+3. **Approval lifecycle (G3).** Single-shot linear lifecycle `PENDING → APPROVED | REJECTED`. A decision is final and auditable. No expiry, revocation, reopening, or multi-approver workflow exists in Release 1. An approved action may create exactly one procurement task; a rejected action can never create a procurement task; duplicate requests or retries must not duplicate the controlled action.
+4. **Canonical roles (M1).** Frontend authorization uses the five canonical backend roles `PRODUCTION_MANAGER`, `PROCUREMENT_SPECIALIST`, `ENGINEER`, `AI_ADMINISTRATOR`, `AUDITOR`. The unsupported `platform_admin` role is removed from the Phase 6 authorization model.
+5. **Deterministic, LLM-free execution.** Phase 6 approval/audit/procurement execution is fully deterministic and performs zero LLM, provider, vendor, payment, or external procurement calls.
+6. **Creative MVP presentation.** Creative implementation is permitted for UI presentation, naming, trace visualization, and internal organization, provided it preserves the fixed acceptance and safety contracts (deterministic behavior, human approval, separation of duties, exact binding between approval and action parameters, fail-closed authorization, exactly-once procurement-task creation, immutable-style audit history, no real financial or external procurement action, AT-009 through AT-012).
+7. **No implementation authorization.** This decision authorizes documentation only. It does not begin Phase 6 implementation, Phase 7, or deployment.
+
+**Reason:**
+
+The Phase 6 acceptance tests AT-009 through AT-012 require a defined approval authorization boundary, a bounded synthetic procurement action, and a defined single-shot approval lifecycle. These were genuinely unresolved and could not be derived from the Source of Truth or the existing Decision Log (DEC-005 requires approval before write but does not assign the approver role or mandate separation of duties). Resolving them is the prerequisite for an implementation-ready Phase 6 decomposition.
+
+**Consequences:**
+
+- Phase 6 reconnaissance is COMPLETE.
+- WP-REC-04-DEC is the accepted decision and planning package; its decomposition is accepted as documentation after merge.
+- Phase 6 implementation remains NOT STARTED until the WP-REC-04-DEC package is merged and its post-merge verification passes.
+- AT-009, AT-010, AT-011, and AT-012 remain NOT PASS.
+- Phase 7 and deployment remain NOT STARTED; Release 1 remains NOT READY / NOT DEPLOYED.
+- The next planned implementation package after WP-REC-04-DEC closure is WP-REC-04B (audit-event backend foundation).
+
+**Affected documents/tests:** `docs/planning/wp_rec_04_decomposition.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-15)
+
+---
+
 ## Template for new decisions
 
 ```markdown

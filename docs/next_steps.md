@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-15
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciliation base snapshot:** main @ `d9dd1e5d6293db8ba5482b6e043cf53965feb8a3` (PR #95 merge commit; snapshot semantics per DEC-051)
+**Reconciliation base snapshot:** main @ `5b7323dec414aba321fc6ca2284ca1de4aa17dd7` (PR #96 merge commit; snapshot semantics per DEC-051)
 
 The `Reconciliation base snapshot` field records the immutable base snapshot used to prepare this document's lifecycle state — it is not a current-`main` assertion; current `main` is determined from Git/GitHub (see DEC-051).
 
@@ -116,9 +116,10 @@ The accepted planning sequence is:
 5. **WP-REC-05** (RAG integration into the AI workflow) — COMPLETE — merged via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed.
 6. **WP-REC-05-PROVIDER-IMP** (external chat-provider chain and grounded-output hardening) — COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed. External live interoperability was subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no Groq/OpenRouter key or ~USD 5 OpenRouter budget configured for general use.
 7. **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — ACCEPTED — composite of sealed packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` accepted by the Product Owner 2026-08-15 (DEC-049); AT-006 PASS; AT-007 PASS. Separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
-8. **Phase 6** (Approval and Audit) — NOT STARTED.
-9. **Phase 7** (Public Deployment) — NOT STARTED.
-10. **Phase 8** (Portfolio Release) — NOT STARTED.
+8. **WP-REC-04-DEC** (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; prepared as a Draft PR (not merged). After closure, the next planned implementation package is WP-REC-04B (audit-event backend foundation).
+9. **Phase 6** (Approval and Audit) — NOT STARTED (implementation). Decomposed via WP-REC-04-DEC; implementation NOT STARTED until the WP-REC-04-DEC package is merged and its post-merge verification passes.
+10. **Phase 7** (Public Deployment) — NOT STARTED.
+11. **Phase 8** (Portfolio Release) — NOT STARTED.
 
 **Accepted sequencing (DEC-044):**
 
@@ -164,10 +165,10 @@ Without explicit Product Owner authorization, do not:
 | AT-006 | RAG retrieval | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
 | AT-007 | Document access control | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
 | AT-008 | Structured output validation | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03C + 03E + 03F) |
-| AT-009 | Human approval blocks write | NOT IMPLEMENTED |
-| AT-010 | Approval executes action | NOT IMPLEMENTED |
-| AT-011 | Reject path | NOT IMPLEMENTED |
-| AT-012 | Audit trace completeness | NOT IMPLEMENTED |
+| AT-009 | Human approval blocks write | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
+| AT-010 | Approval executes action | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
+| AT-011 | Reject path | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
+| AT-012 | Audit trace completeness | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
 | AT-013 | Model outage | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03D + 03E + 03F + 03G) |
 | AT-014 | Public HTTPS smoke | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 | Demo reset | NOT IMPLEMENTED |
@@ -252,7 +253,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ## Next Milestone
 
 **Last Updated:** 2026-08-15
-**Reconciliation base snapshot:** main @ `d9dd1e5d6293db8ba5482b6e043cf53965feb8a3` (PR #95 merge commit; snapshot semantics per DEC-051)
+**Reconciliation base snapshot:** main @ `5b7323dec414aba321fc6ca2284ca1de4aa17dd7` (PR #96 merge commit; snapshot semantics per DEC-051)
 
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
@@ -270,10 +271,11 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 - **WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening):** COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed; external live interoperability subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no Groq/OpenRouter key or ~USD 5 OpenRouter budget configured for general use
 
 **Planning package status:**
-- WP-REC-05-DEC (RAG integration decomposition and planning) — COMPLETE and CLOSED (planning artifact delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed; originally authorized by DEC-044, 2026-08-14). No planning or implementation package is currently authorized.
+- WP-REC-05-DEC (RAG integration decomposition and planning) — COMPLETE and CLOSED (planning artifact delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed; originally authorized by DEC-044, 2026-08-14).
+- WP-REC-04-DEC (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; prepared as a Draft PR (not merged). After closure, the next planned implementation package is WP-REC-04B (audit-event backend foundation).
 
 **Not authorized:**
-- Phase 6 (approval and audit), Phase 7 (public deployment)
+- Phase 6 implementation (approval and audit — decomposed but NOT STARTED), Phase 7 (public deployment)
 - SP-0B and forgemind-agent-runtime creation
 - Agent automation activation (deferred)
 
