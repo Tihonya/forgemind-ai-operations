@@ -270,6 +270,58 @@ async def _task_count(db_session: AsyncSession) -> int:
     return (await db_session.execute(select(func.count(ProcurementTask.id)))).scalar_one()
 
 
+_PROCUREMENT_AUDIT_TYPES = (
+    "PROCUREMENT_TASK_CREATION_ATTEMPTED",
+    "PROCUREMENT_TASK_CREATED",
+    "PROCUREMENT_TASK_CREATION_FAILED",
+)
+
+
+async def _assert_binding_mismatch_audit(
+    db_session: AsyncSession, approval: ApprovalRequest
+) -> None:
+    """Assert the exact ATTEMPTED → FAILED audit sequence for a binding mismatch.
+
+    A fail-closed binding outcome must persist exactly two procurement audit
+    events (attempt then terminal failure), carry the approval's persisted
+    correlation ID, contain no CREATED result, and expose only safe
+    secret-free binding/provenance metadata.
+    """
+    result = await db_session.execute(
+        select(AuditEvent)
+        .where(
+            AuditEvent.correlation_id == approval.correlation_id,
+            AuditEvent.event_type.in_(_PROCUREMENT_AUDIT_TYPES),
+        )
+        .order_by(AuditEvent.created_at, AuditEvent.id)
+    )
+    events = list(result.scalars().all())
+    assert [e.event_type for e in events] == [
+        "PROCUREMENT_TASK_CREATION_ATTEMPTED",
+        "PROCUREMENT_TASK_CREATION_FAILED",
+    ]
+    attempt, failed = events
+    assert attempt.correlation_id == approval.correlation_id
+    assert failed.correlation_id == approval.correlation_id
+    assert attempt.entity_type == "APPROVAL_REQUEST"
+    assert failed.entity_type == "APPROVAL_REQUEST"
+    assert failed.entity_id == approval.id
+    assert failed.after_summary is not None
+    assert failed.after_summary["reason"] == "binding_mismatch"
+    assert "PROCUREMENT_TASK_CREATED" not in {e.event_type for e in events}
+    # Binding/provenance metadata is a safe, secret-free mapping.
+    metadata = failed.event_metadata
+    assert metadata is not None
+    assert set(metadata) == {
+        "approval_request_id",
+        "reason",
+        "binding_hash",
+    }
+    assert metadata["reason"] == "binding_mismatch"
+    assert metadata["approval_request_id"] == str(approval.id)
+    assert isinstance(metadata["binding_hash"], str)
+
+
 # ---------------------------------------------------------------------------
 # Execute — approved path
 # ---------------------------------------------------------------------------
@@ -452,6 +504,116 @@ class TestExecuteBindingFailures:
         assert response.status_code == 422
         assert response.json()["detail"]["error"] == "binding_mismatch"
         assert await _task_count(db_session) == 0
+        await _assert_binding_mismatch_audit(db_session, approval)
+
+    async def test_component_substitution_fails_closed(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_approved_request(db_session, rec=rec)
+
+        # Tamper the snapshot's component_code in place (binding hash intact).
+        engine = _get_sync_engine()
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE approval_requests SET action_snapshot = jsonb_set("
+                        "action_snapshot, '{component_code}', '\"MOTOR-M2\"'"
+                        ") WHERE id = :id"
+                    ),
+                    {"id": approval.id},
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        response = await client.post(
+            "/api/v1/procurement-tasks",
+            json=_execute_payload(approval),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "binding_mismatch"
+        assert await _task_count(db_session) == 0
+        await _assert_binding_mismatch_audit(db_session, approval)
+
+    async def test_quantity_substitution_fails_closed(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_approved_request(db_session, rec=rec)
+
+        # Tamper the snapshot's quantity in place (binding hash intact).
+        engine = _get_sync_engine()
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE approval_requests SET action_snapshot = jsonb_set("
+                        "action_snapshot, '{quantity}', '\"99\"'"
+                        ") WHERE id = :id"
+                    ),
+                    {"id": approval.id},
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        response = await client.post(
+            "/api/v1/procurement-tasks",
+            json=_execute_payload(approval),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "binding_mismatch"
+        assert await _task_count(db_session) == 0
+        await _assert_binding_mismatch_audit(db_session, approval)
+
+    async def test_malformed_snapshot_fails_closed(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_approved_request(db_session, rec=rec)
+
+        # Remove a canonical field from the snapshot so it is no longer
+        # reconstructable (binding hash intact).
+        engine = _get_sync_engine()
+        try:
+            with engine.connect() as conn:
+                conn.execute(
+                    text(
+                        "UPDATE approval_requests "
+                        "SET action_snapshot = action_snapshot - 'quantity' "
+                        "WHERE id = :id"
+                    ),
+                    {"id": approval.id},
+                )
+                conn.commit()
+        finally:
+            engine.dispose()
+
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        response = await client.post(
+            "/api/v1/procurement-tasks",
+            json=_execute_payload(approval),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "binding_mismatch"
+        assert await _task_count(db_session) == 0
+        await _assert_binding_mismatch_audit(db_session, approval)
 
     async def test_provenance_mismatch_fails_closed(
         self, client: AsyncClient, db_session: AsyncSession,
@@ -483,6 +645,7 @@ class TestExecuteBindingFailures:
         assert response.status_code == 422
         assert response.json()["detail"]["error"] == "binding_mismatch"
         assert await _task_count(db_session) == 0
+        await _assert_binding_mismatch_audit(db_session, approval)
 
 
 class TestDuplicateAndConcurrency:

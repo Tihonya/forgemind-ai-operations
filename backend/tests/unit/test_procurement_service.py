@@ -134,6 +134,50 @@ def _added_objects(session: MagicMock) -> list[Any]:
     return [call[0][0] for call in session.add.call_args_list]
 
 
+def _assert_binding_mismatch_audit(
+    session: MagicMock, request: ApprovalRequest
+) -> None:
+    """Assert the exact ATTEMPTED → FAILED audit sequence for a binding mismatch.
+
+    A fail-closed binding outcome must persist exactly two audit events
+    (attempt then terminal failure), carry the approval's persisted
+    correlation ID, and contain no CREATED result and no task row. The
+    failure metadata must be a safe, secret-free mapping.
+    """
+    events = [
+        obj for obj in _added_objects(session) if isinstance(obj, AuditEvent)
+    ]
+    assert [e.event_type for e in events] == [
+        AuditEventType.PROCUREMENT_TASK_CREATION_ATTEMPTED.value,
+        AuditEventType.PROCUREMENT_TASK_CREATION_FAILED.value,
+    ]
+    attempt, failed = events
+    # Both events reuse the approval request's persisted correlation ID.
+    assert attempt.correlation_id == request.correlation_id
+    assert failed.correlation_id == request.correlation_id
+    assert attempt.entity_type == AuditEntityType.APPROVAL_REQUEST.value
+    assert failed.entity_type == AuditEntityType.APPROVAL_REQUEST.value
+    assert failed.entity_id == request.id
+    assert failed.after_summary is not None
+    assert failed.after_summary["reason"] == "binding_mismatch"
+    # No CREATED event and no task row for a fail-closed outcome.
+    assert all(
+        e.event_type != AuditEventType.PROCUREMENT_TASK_CREATED.value for e in events
+    )
+    assert all(not isinstance(obj, ProcurementTask) for obj in _added_objects(session))
+    # Binding/provenance metadata is a safe, secret-free mapping.
+    metadata = failed.event_metadata
+    assert metadata is not None
+    assert set(metadata) == {
+        "approval_request_id",
+        "reason",
+        "binding_hash",
+    }
+    assert metadata["reason"] == "binding_mismatch"
+    assert metadata["binding_hash"] == request.binding_hash
+    assert metadata["approval_request_id"] == str(request.id)
+
+
 class TestExecuteForApproval:
     async def test_approved_request_creates_task_with_provenance(self) -> None:
         request_id = uuid4()
@@ -310,9 +354,7 @@ class TestExecuteForApproval:
             await service.execute_for_approval(
                 approval_request_id=request_id, actor=approver
             )
-        assert all(
-            not isinstance(obj, ProcurementTask) for obj in _added_objects(session)
-        )
+        _assert_binding_mismatch_audit(session, request)
 
     async def test_quantity_substitution_fails_closed(self) -> None:
         request_id = uuid4()
@@ -337,6 +379,7 @@ class TestExecuteForApproval:
             await service.execute_for_approval(
                 approval_request_id=request_id, actor=approver
             )
+        _assert_binding_mismatch_audit(session, request)
 
     async def test_changed_binding_hash_fails_closed(self) -> None:
         request_id = uuid4()
@@ -361,6 +404,7 @@ class TestExecuteForApproval:
             await service.execute_for_approval(
                 approval_request_id=request_id, actor=approver
             )
+        _assert_binding_mismatch_audit(session, request)
 
     async def test_risk_provenance_mismatch_fails_closed(self) -> None:
         request_id = uuid4()
@@ -386,6 +430,57 @@ class TestExecuteForApproval:
             await service.execute_for_approval(
                 approval_request_id=request_id, actor=approver
             )
+        _assert_binding_mismatch_audit(session, request)
+
+    async def test_workflow_provenance_mismatch_fails_closed(self) -> None:
+        request_id = uuid4()
+        run_id = uuid4()
+        rec_id = uuid4()
+        requester = _user(username="manager.demo", roles=frozenset({"PRODUCTION_MANAGER"}))
+        approver = _user(username="procurement.demo")
+        snapshot = _snapshot(run_id, rec_id)
+        request = _approved_request(
+            request_id=request_id,
+            requested_by=requester.user_id,
+            approver=approver.user_id,
+            run_id=uuid4(),  # denormalized column tampered; snapshot intact
+            rec_id=rec_id,
+            snapshot=snapshot,
+            binding_hash=compute_binding_hash(snapshot),
+        )
+        session = _make_session(_result_with_scalar(request))
+        service = ProcurementService(session)
+
+        with pytest.raises(BindingMismatchError):
+            await service.execute_for_approval(
+                approval_request_id=request_id, actor=approver
+            )
+        _assert_binding_mismatch_audit(session, request)
+
+    async def test_recommendation_provenance_mismatch_fails_closed(self) -> None:
+        request_id = uuid4()
+        run_id = uuid4()
+        rec_id = uuid4()
+        requester = _user(username="manager.demo", roles=frozenset({"PRODUCTION_MANAGER"}))
+        approver = _user(username="procurement.demo")
+        snapshot = _snapshot(run_id, rec_id)
+        request = _approved_request(
+            request_id=request_id,
+            requested_by=requester.user_id,
+            approver=approver.user_id,
+            run_id=run_id,
+            rec_id=uuid4(),  # denormalized column tampered; snapshot intact
+            snapshot=snapshot,
+            binding_hash=compute_binding_hash(snapshot),
+        )
+        session = _make_session(_result_with_scalar(request))
+        service = ProcurementService(session)
+
+        with pytest.raises(BindingMismatchError):
+            await service.execute_for_approval(
+                approval_request_id=request_id, actor=approver
+            )
+        _assert_binding_mismatch_audit(session, request)
 
     async def test_non_reconstructable_snapshot_fails_closed(self) -> None:
         request_id = uuid4()
@@ -412,6 +507,7 @@ class TestExecuteForApproval:
             await service.execute_for_approval(
                 approval_request_id=request_id, actor=approver
             )
+        _assert_binding_mismatch_audit(session, request)
 
 
 class TestDuplicateAndIdempotency:

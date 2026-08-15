@@ -204,7 +204,11 @@ class ProcurementService:
             raise ApproverMismatchError()
 
         # Verify the immutable action binding (fail closed on any mismatch).
-        component_code, quantity = self._verify_binding(request)
+        try:
+            component_code, quantity = self._verify_binding(request)
+        except BindingMismatchError:
+            await self._emit_failure(audit, request, actor, "binding_mismatch")
+            raise
 
         # Idempotency re-read under the row lock: return the already-created
         # task for a repeated identical execution (no second CREATED event).
