@@ -39,11 +39,23 @@
 **When:** workflow шукає mitigation  
 **Then:** відповідь містить valid document ID, version і chunk ID.
 
+**Status:** PASS
+**Accepted evidence:** composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02`
+**Product Owner acceptance date:** 2026-08-15
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_05_vfy_composite_evidence_review.md` (independent composite review) and `docs/reviews/wp_rec_05_phase_4_product_owner_acceptance.md` (Product Owner acceptance declaration).
+
 ## AT-007 — Document access control
 
 **Given:** користувач без доступу до restricted document  
 **When:** він ставить запит, відповідь на який є лише в цьому документі  
 **Then:** restricted chunk не потрапляє до retrieval context або response.
+
+**Status:** PASS
+**Accepted evidence:** composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02`
+**Product Owner acceptance date:** 2026-08-15
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_05_vfy_composite_evidence_review.md` (independent composite review) and `docs/reviews/wp_rec_05_phase_4_product_owner_acceptance.md` (Product Owner acceptance declaration).
 
 ## AT-008 — Structured output validation
 
