@@ -4,6 +4,7 @@ Re-exports the domain models so they are registered with Base.metadata
 for Alembic autogenerate discovery.
 """
 
+from app.models.approval import ApprovalRequest, ApprovalStatus
 from app.models.audit import AuditEvent
 from app.models.component import BomItem, Component, ComponentAlternative
 from app.models.diagnostic import DiagnosticJob
@@ -87,4 +88,7 @@ __all__ = [
     "AuditEvent",
     "AuditEventType",
     "AuditEntityType",
+    # Approval requests (WP-REC-04A)
+    "ApprovalRequest",
+    "ApprovalStatus",
 ]

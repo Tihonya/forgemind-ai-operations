@@ -96,7 +96,7 @@ def _seeded_golden_dataset() -> Generator[None, None, None]:
     from alembic import command
 
     # A prior migration test may leave the DB downgraded; the Golden Dataset
-    # loader requires the current Alembic head (bf6f888442e9).
+    # loader requires the current Alembic head (3e619e551708).
     command.upgrade(Config(str(_find_alembic_ini())), "head")
     load_golden_dataset()
     yield
