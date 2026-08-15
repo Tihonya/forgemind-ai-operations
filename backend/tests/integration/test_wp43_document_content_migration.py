@@ -510,8 +510,8 @@ Third paragraph with special chars: ñ é ü ß"""
                 rev_after = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 )
-                # Head tracks the latest migration (WP-REC-04A).
-                assert rev_after.scalar() == "3e619e551708", (
+                # Head tracks the latest migration (WP-REC-04C).
+                assert rev_after.scalar() == "d00f71c78f67", (
                     "Cleanup must restore head even after body failure"
                 )
         finally:
@@ -542,8 +542,8 @@ Third paragraph with special chars: ñ é ü ß"""
                 rev_after = conn.execute(
                     text("SELECT version_num FROM alembic_version")
                 )
-                # Head tracks the latest migration (WP-REC-04A).
-                assert rev_after.scalar() == "3e619e551708", (
+                # Head tracks the latest migration (WP-REC-04C).
+                assert rev_after.scalar() == "d00f71c78f67", (
                     "Cleanup must restore head after upgrade-path failure"
                 )
         finally:

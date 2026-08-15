@@ -111,6 +111,7 @@ async def db_session(db_engine: AsyncEngine) -> AsyncIterator[AsyncSession]:
     )
     async with session_factory() as session:
         yield session
+        await session.execute(text("DELETE FROM procurement_tasks"))
         await session.execute(text("DELETE FROM approval_requests"))
         await session.execute(text("DELETE FROM audit_events"))
         await session.execute(text("DELETE FROM recommendations"))
@@ -765,14 +766,13 @@ class TestDecisions:
             json={"comment": "ok"},
             headers=_auth(token),
         )
-        # WP-REC-04A owns no procurement-task persistence (04C scope).
+        # WP-REC-04A owns no procurement-task creation (04C scope): approving
+        # must not create a procurement-task row (the table itself is owned
+        # by WP-REC-04C).
         result = await db_session.execute(
-            text(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = 'public' AND table_name = 'procurement_tasks'"
-            )
+            text("SELECT count(*) FROM procurement_tasks")
         )
-        assert result.fetchone() is None
+        assert result.scalar_one() == 0
 
 
 # ---------------------------------------------------------------------------

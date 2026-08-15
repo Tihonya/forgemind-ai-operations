@@ -23,8 +23,8 @@ from sqlalchemy import Engine, create_engine, text
 _INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 PARENT_REVISION = "d4e5f6a7b8c9"
-# Current single Alembic head after WP-REC-04A (approval requests).
-CURRENT_HEAD = "3e619e551708"
+# Current single Alembic head after WP-REC-04C (procurement tasks).
+CURRENT_HEAD = "d00f71c78f67"
 
 _EXPECTED_COLUMNS = {
     "id",

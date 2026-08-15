@@ -17,6 +17,7 @@ from app.api.ingestion import router as ingestion_router
 from app.api.inventory import router as inventory_router
 from app.api.inventory_reservations import router as inventory_reservations_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
+from app.api.procurement import router as procurement_router
 from app.api.production_orders import router as production_orders_router
 from app.api.production_plans import router as production_plans_router
 from app.api.products import router as products_router
@@ -112,6 +113,9 @@ app.include_router(audit_router, prefix=settings.api_v1_prefix)
 
 # Approval-request API (WP-REC-04A)
 app.include_router(approval_router, prefix=settings.api_v1_prefix)
+
+# Procurement-task API (WP-REC-04C)
+app.include_router(procurement_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])

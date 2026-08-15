@@ -1,9 +1,9 @@
-"""Integration tests for the WP-REC-04A ``approval_requests`` migration.
+"""Integration tests for the WP-REC-04C ``procurement_tasks`` migration.
 
 Verifies against a live PostgreSQL database:
 
 - ``alembic upgrade head`` creates the table, columns, CHECK constraints,
-  foreign keys, and indexes matching the ORM.
+  foreign keys, unique constraint, and indexes matching the ORM.
 - Downgrade to the parent revision drops the table cleanly.
 - Re-upgrade restores it.
 - Exactly one Alembic head exists (no branch / multiple-head state).
@@ -22,48 +22,51 @@ from sqlalchemy import Engine, create_engine, text
 
 _INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
-PARENT_REVISION = "bf6f888442e9"
-CURRENT_HEAD = "d00f71c78f67"
+PROCUREMENT_REVISION = "d00f71c78f67"
+PARENT_REVISION = "3e619e551708"
 
 _EXPECTED_COLUMNS = {
     "id",
     "correlation_id",
+    "approval_request_id",
     "recommendation_id",
     "workflow_run_id",
     "risk_id",
     "action_type",
-    "action_snapshot",
+    "component_code",
+    "quantity",
     "binding_hash",
+    "task_state",
     "requested_by",
     "requested_by_username",
-    "status",
-    "decided_by",
-    "decided_by_username",
-    "decision_comment",
-    "requested_at",
-    "decided_at",
+    "approved_by",
+    "approved_by_username",
+    "created_at",
 }
 
 _EXPECTED_CHECK_CONSTRAINTS = {
-    "ck_approval_requests_status",
-    "ck_approval_requests_terminal_fields",
+    "ck_procurement_tasks_action_type",
+    "ck_procurement_tasks_task_state",
+    "ck_procurement_tasks_quantity_positive",
 }
 
 _EXPECTED_FOREIGN_KEYS = {
-    "approval_requests_recommendation_id_fkey",
-    "approval_requests_workflow_run_id_fkey",
-    "approval_requests_requested_by_fkey",
-    "approval_requests_decided_by_fkey",
+    "procurement_tasks_approval_request_id_fkey",
+    "procurement_tasks_recommendation_id_fkey",
+    "procurement_tasks_workflow_run_id_fkey",
+    "procurement_tasks_requested_by_fkey",
+    "procurement_tasks_approved_by_fkey",
 }
 
 _EXPECTED_INDEXES = {
-    "idx_approval_requests_correlation_id",
-    "idx_approval_requests_recommendation_id",
-    "idx_approval_requests_workflow_run_id",
-    "idx_approval_requests_requested_by",
-    "idx_approval_requests_status",
-    "idx_approval_requests_requested_at",
-    "uq_approval_requests_active_action",
+    "idx_procurement_tasks_correlation_id",
+    "idx_procurement_tasks_recommendation_id",
+    "idx_procurement_tasks_workflow_run_id",
+    "idx_procurement_tasks_risk_id",
+    "idx_procurement_tasks_requested_by",
+    "idx_procurement_tasks_approved_by",
+    "idx_procurement_tasks_created_at",
+    "uq_procurement_tasks_approval_request_id",
 }
 
 
@@ -146,44 +149,44 @@ def _table_names(engine: Engine) -> set[str]:
         }
 
 
-class TestApprovalMigration:
+class TestProcurementMigration:
     def test_single_alembic_head(self) -> None:
         from alembic.script import ScriptDirectory
 
         script = ScriptDirectory.from_config(_alembic_config())
         heads = script.get_heads()
-        assert heads == [CURRENT_HEAD]
+        assert heads == [PROCUREMENT_REVISION]
 
     def test_upgrade_creates_schema(self) -> None:
         _run_alembic("upgrade", "head")
         engine = _get_sync_engine()
         try:
-            assert "approval_requests" in _table_names(engine)
+            assert "procurement_tasks" in _table_names(engine)
 
             columns = _query(
                 engine,
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'approval_requests'",
+                "WHERE table_name = 'procurement_tasks'",
             )
             assert columns == _EXPECTED_COLUMNS
 
             check_constraints = _query(
                 engine,
                 "SELECT conname FROM pg_constraint "
-                "WHERE conrelid = 'approval_requests'::regclass AND contype = 'c'",
+                "WHERE conrelid = 'procurement_tasks'::regclass AND contype = 'c'",
             )
             assert check_constraints == _EXPECTED_CHECK_CONSTRAINTS
 
             foreign_keys = _query(
                 engine,
                 "SELECT conname FROM pg_constraint "
-                "WHERE conrelid = 'approval_requests'::regclass AND contype = 'f'",
+                "WHERE conrelid = 'procurement_tasks'::regclass AND contype = 'f'",
             )
             assert foreign_keys == _EXPECTED_FOREIGN_KEYS
 
             indexes = _query(
                 engine,
-                "SELECT indexname FROM pg_indexes WHERE tablename = 'approval_requests'",
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'procurement_tasks'",
             )
             assert indexes >= _EXPECTED_INDEXES
         finally:
@@ -195,13 +198,13 @@ class TestApprovalMigration:
         _run_alembic("downgrade", PARENT_REVISION)
         engine = _get_sync_engine()
         try:
-            assert "approval_requests" not in _table_names(engine)
+            assert "procurement_tasks" not in _table_names(engine)
         finally:
             engine.dispose()
 
         _run_alembic("upgrade", "head")
         engine = _get_sync_engine()
         try:
-            assert "approval_requests" in _table_names(engine)
+            assert "procurement_tasks" in _table_names(engine)
         finally:
             engine.dispose()
