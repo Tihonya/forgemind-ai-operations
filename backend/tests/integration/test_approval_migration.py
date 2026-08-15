@@ -1,4 +1,4 @@
-"""Integration tests for the WP-REC-04B ``audit_events`` migration.
+"""Integration tests for the WP-REC-04A ``approval_requests`` migration.
 
 Verifies against a live PostgreSQL database:
 
@@ -22,42 +22,48 @@ from sqlalchemy import Engine, create_engine, text
 
 _INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
-PARENT_REVISION = "d4e5f6a7b8c9"
-# Current single Alembic head after WP-REC-04A (approval requests).
-CURRENT_HEAD = "3e619e551708"
+APPROVAL_REVISION = "3e619e551708"
+PARENT_REVISION = "bf6f888442e9"
 
 _EXPECTED_COLUMNS = {
     "id",
     "correlation_id",
-    "event_type",
-    "actor_id",
-    "actor_username",
-    "entity_type",
-    "entity_id",
+    "recommendation_id",
     "workflow_run_id",
     "risk_id",
-    "before_summary",
-    "after_summary",
-    "metadata",
-    "created_at",
+    "action_type",
+    "action_snapshot",
+    "binding_hash",
+    "requested_by",
+    "requested_by_username",
+    "status",
+    "decided_by",
+    "decided_by_username",
+    "decision_comment",
+    "requested_at",
+    "decided_at",
 }
 
 _EXPECTED_CHECK_CONSTRAINTS = {
-    "ck_audit_events_event_type",
-    "ck_audit_events_entity_type",
+    "ck_approval_requests_status",
+    "ck_approval_requests_terminal_fields",
 }
 
 _EXPECTED_FOREIGN_KEYS = {
-    "audit_events_actor_id_fkey",
-    "audit_events_workflow_run_id_fkey",
+    "approval_requests_recommendation_id_fkey",
+    "approval_requests_workflow_run_id_fkey",
+    "approval_requests_requested_by_fkey",
+    "approval_requests_decided_by_fkey",
 }
 
 _EXPECTED_INDEXES = {
-    "idx_audit_events_created_at",
-    "idx_audit_events_correlation_id",
-    "idx_audit_events_entity",
-    "idx_audit_events_workflow_run_id",
-    "idx_audit_events_event_type",
+    "idx_approval_requests_correlation_id",
+    "idx_approval_requests_recommendation_id",
+    "idx_approval_requests_workflow_run_id",
+    "idx_approval_requests_requested_by",
+    "idx_approval_requests_status",
+    "idx_approval_requests_requested_at",
+    "uq_approval_requests_active_action",
 }
 
 
@@ -140,44 +146,44 @@ def _table_names(engine: Engine) -> set[str]:
         }
 
 
-class TestAuditMigration:
+class TestApprovalMigration:
     def test_single_alembic_head(self) -> None:
         from alembic.script import ScriptDirectory
 
         script = ScriptDirectory.from_config(_alembic_config())
         heads = script.get_heads()
-        assert heads == [CURRENT_HEAD]
+        assert heads == [APPROVAL_REVISION]
 
     def test_upgrade_creates_schema(self) -> None:
         _run_alembic("upgrade", "head")
         engine = _get_sync_engine()
         try:
-            assert "audit_events" in _table_names(engine)
+            assert "approval_requests" in _table_names(engine)
 
             columns = _query(
                 engine,
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = 'audit_events'",
+                "WHERE table_name = 'approval_requests'",
             )
             assert columns == _EXPECTED_COLUMNS
 
             check_constraints = _query(
                 engine,
                 "SELECT conname FROM pg_constraint "
-                "WHERE conrelid = 'audit_events'::regclass AND contype = 'c'",
+                "WHERE conrelid = 'approval_requests'::regclass AND contype = 'c'",
             )
             assert check_constraints == _EXPECTED_CHECK_CONSTRAINTS
 
             foreign_keys = _query(
                 engine,
                 "SELECT conname FROM pg_constraint "
-                "WHERE conrelid = 'audit_events'::regclass AND contype = 'f'",
+                "WHERE conrelid = 'approval_requests'::regclass AND contype = 'f'",
             )
             assert foreign_keys == _EXPECTED_FOREIGN_KEYS
 
             indexes = _query(
                 engine,
-                "SELECT indexname FROM pg_indexes WHERE tablename = 'audit_events'",
+                "SELECT indexname FROM pg_indexes WHERE tablename = 'approval_requests'",
             )
             assert indexes >= _EXPECTED_INDEXES
         finally:
@@ -189,13 +195,13 @@ class TestAuditMigration:
         _run_alembic("downgrade", PARENT_REVISION)
         engine = _get_sync_engine()
         try:
-            assert "audit_events" not in _table_names(engine)
+            assert "approval_requests" not in _table_names(engine)
         finally:
             engine.dispose()
 
         _run_alembic("upgrade", "head")
         engine = _get_sync_engine()
         try:
-            assert "audit_events" in _table_names(engine)
+            assert "approval_requests" in _table_names(engine)
         finally:
             engine.dispose()
