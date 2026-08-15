@@ -22,6 +22,7 @@ from app.models.enums import (
     PurchaseOrderStatus,
 )
 from app.models.knowledge import KnowledgeChunk
+from app.models.procurement import ProcurementTask, ProcurementTaskState
 from app.models.product import Product, ProductVersion
 from app.models.production import (
     ProductionOrder,
@@ -91,4 +92,7 @@ __all__ = [
     # Approval requests (WP-REC-04A)
     "ApprovalRequest",
     "ApprovalStatus",
+    # Procurement tasks (WP-REC-04C)
+    "ProcurementTask",
+    "ProcurementTaskState",
 ]
