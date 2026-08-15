@@ -875,6 +875,57 @@ Phase 4 exit criteria (AT-006 and AT-007 PASS) are now satisfied by the accepted
 
 ---
 
+## DEC-051 — Durable reconciliation-base snapshot convention
+
+**Date:** 2026-08-15
+
+**Status:** Accepted
+
+**Context:**
+
+- PR #94 incorporated Phase 4 closure.
+- PR #95 reconciled post-merge current-state wording.
+- Post-merge verification of PR #95 proved that interpreting `Reconciled against: origin/main @ <SHA>` as an always-current main-tip assertion creates an infinite reconciliation loop.
+- The issue is documentation-convention debt only and does not invalidate Phase 4 closure.
+
+**Decision:**
+
+- status-document reconciliation headers record an immutable reconciliation base snapshot;
+- the header must use a label equivalent to `Reconciliation base snapshot`;
+- it must not claim to be the current tip of `main`;
+- current `main` is determined from Git/GitHub;
+- merging the reconciliation package does not stale its base-snapshot header;
+- no freshness-only SHA-bump PR is required after the merge;
+- the header is updated only when a later substantive lifecycle/status reconciliation is prepared from a newer base.
+
+**Reason:**
+
+- a commit cannot contain its own future merge SHA;
+- requiring equality with post-merge `main` creates an infinite sequence of freshness-only PRs;
+- snapshot semantics preserve provenance without self-reference.
+
+**Consequences:**
+
+- the three current headers adopt the durable label;
+- Phase 4 remains CLOSED / ACCEPTED;
+- Phase 5 remains ACCEPTED;
+- Phase 6 planning may proceed separately;
+- Phase 6/7 implementation and deployment are not started by this decision;
+- Release 1 remains NOT READY / NOT DEPLOYED;
+- no post-merge SHA-only reconciliation is required for this convention package.
+
+**Affected documents:**
+
+- `docs/ACTIVE_WORK.md`
+- `docs/next_steps.md`
+- `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:**
+
+Product Owner (2026-08-15).
+
+---
+
 ## Template for new decisions
 
 ```markdown

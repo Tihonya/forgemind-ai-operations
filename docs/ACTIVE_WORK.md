@@ -1,8 +1,10 @@
 # ForgeMind Active Work
 
 **Last Updated:** 2026-08-15
-**Reconciled against:** origin/main @ `f69dfc342d9f82f9f7cb1cf3e11818fa9813c706` (PR #94 merge commit)
+**Reconciliation base snapshot:** main @ `d9dd1e5d6293db8ba5482b6e043cf53965feb8a3` (PR #95 merge commit; snapshot semantics per DEC-051)
 **Status:** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). Phase 5 implementation packages are all merged. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`). WP-REC-03H Phase C (formal acceptance execution) and Phase D (Product Owner evidence review and acceptance declaration) are complete; Phase E (documentation lifecycle reconciliation) is complete through PR #86. WP-REC-05 implementation is COMPLETE and incorporated into main via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed. WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening) is COMPLETE and incorporated into main via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed. **AT-006 PASS; AT-007 PASS; Phase 4 CLOSED / ACCEPTED; WP-REC-05-VFY ACCEPTED** (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15, DEC-049; bounded documentation-only Phase 4 closure package, DEC-050).
+
+The `Reconciliation base snapshot` field records the immutable base snapshot used to prepare this document's lifecycle state — it is not a current-`main` assertion; current `main` is determined from Git/GitHub (see DEC-051).
 
 ---
 
