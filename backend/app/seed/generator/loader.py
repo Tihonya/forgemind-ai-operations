@@ -42,9 +42,8 @@ from app.seed.generator.golden_dataset import (
 
 logger = logging.getLogger(__name__)
 
-# Expected Alembic revision after WP-REC-05 workflow authorization-records
-# migration (M1/M2, DEC-045/046)
-EXPECTED_ALEMBIC_HEAD = "d4e5f6a7b8c9"
+# Expected Alembic revision after WP-REC-04B audit-event migration.
+EXPECTED_ALEMBIC_HEAD = "bf6f888442e9"
 
 
 def _get_sync_engine() -> Engine:
