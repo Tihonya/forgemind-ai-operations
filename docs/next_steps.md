@@ -2,7 +2,7 @@
 
 **Last Updated:** 2026-08-15
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciled against:** origin/main @ `67844235c6ec412b11e9868451f41994142b86fc` (PR #93 merge commit)
+**Reconciled against:** origin/main @ `f69dfc342d9f82f9f7cb1cf3e11818fa9813c706` (PR #94 merge commit)
 
 ---
 
@@ -250,7 +250,7 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 ## Next Milestone
 
 **Last Updated:** 2026-08-15
-**Reconciled against:** origin/main @ `67844235c6ec412b11e9868451f41994142b86fc` (PR #93 merge commit)
+**Reconciled against:** origin/main @ `f69dfc342d9f82f9f7cb1cf3e11818fa9813c706` (PR #94 merge commit)
 
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
