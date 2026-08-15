@@ -922,7 +922,7 @@ Phase 4 exit criteria (AT-006 and AT-007 PASS) are now satisfied by the accepted
 
 **Approved by:**
 
-Product Owner under the standing Release 1 execution authorization, 2026-08-15.
+Product Owner (2026-08-15).
 
 ---
 
