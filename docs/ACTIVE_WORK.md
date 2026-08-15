@@ -130,17 +130,19 @@ No application code, tests, dependencies, lockfiles, migrations, CI configuratio
 
 ---
 
-## Verification Checklist
+## Verification Checklist (WP-STRAT-01 — Historical)
 
-### Before Commit
+### Before Commit — WP-STRAT-01 completion checklist
+
+This checklist records the verification state and scope at the time WP-STRAT-01 was completed (2026-08-09, merged via PR #67). Its entries describe that historical package only and are not current-state assertions; the current status is stated in this file's header (AT-006 PASS; AT-007 PASS; Phase 4 CLOSED / ACCEPTED) and in the Lifecycle State section below.
 
 - [x] `git diff --check` passes
-- [x] Only authorized documentation files changed (9 files)
+- [x] Only authorized documentation files changed (9 files — WP-STRAT-01 scope)
 - [x] No secrets in changed files
 - [x] No planned technology presented as released
 - [x] ForgeMind and Runtime goals not conflated
-- [x] AT-006 and AT-007 are not marked PASS
-- [x] Phase 4 is consistently PARTIALLY COMPLETE
+- [x] AT-006 and AT-007 were not marked PASS (WP-STRAT-01 state; now PASS per DEC-049)
+- [x] Phase 4 was consistently PARTIALLY COMPLETE (WP-STRAT-01 state; now CLOSED / ACCEPTED)
 - [x] Phase 4 exit criteria not weakened
 - [x] WP-REC-03C, WP-REC-03D, WP-REC-03E are COMPLETE (merged via PRs #72, #73, #74)
 - [x] No new duplicate Release 1 or AT-status artifact created
