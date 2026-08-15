@@ -1,8 +1,8 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-14
+**Last Updated:** 2026-08-15
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciled against:** origin/main @ `7d425c1d3f1e92e08d62360c28ced22481136fe7` (PR #91 merge commit)
+**Reconciled against:** origin/main @ `67844235c6ec412b11e9868451f41994142b86fc` (PR #93 merge commit)
 
 ---
 
@@ -37,9 +37,9 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Phase 1: Running Skeleton | COMPLETE | FastAPI + PostgreSQL + Redis + ARQ (Phase 1 baseline: 239 backend tests; additional tests added in later phases) |
 | Phase 2: Synthetic ERP Core | COMPLETE | 14 business tables, seed generator, deterministic risk engine |
 | Phase 3: Core UI | COMPLETE | Dashboard, supply risk list, supply risk detail |
-| Phase 4: Knowledge and RAG | PARTIALLY COMPLETE | Substantial implementation exists (document ingestion, pgvector index, retrieval with citations, role-filtered retrieval, DocumentPermission model); formal AT-006/AT-007 PASS evidence incomplete |
+| Phase 4: Knowledge and RAG | COMPLETE / ACCEPTED | Document ingestion, pgvector index, retrieval with citations, role-filtered retrieval, and DocumentPermission model (WP-REC-05, PR #89); AT-006 PASS and AT-007 PASS via composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049) |
 | Authentication + RBAC | COMPLETE | JWT auth, 5 demo accounts (manager/procurement/engineer/admin/auditor) |
-| AI provider adapter (chat/reasoning) | COMPLETE | OpenAI-compatible ChatProvider adapter (PR #63); external chat-provider chain — Groq free primary → OpenRouter paid fallback — implemented and incorporated via PR #91 (merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`). Runtime architecture present but NOT live-provider verified: no provider key/budget configured |
+| AI provider adapter (chat/reasoning) | COMPLETE | OpenAI-compatible ChatProvider adapter (PR #63); external chat-provider chain — Groq free primary → OpenRouter paid fallback — implemented and incorporated via PR #91 (merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`). Runtime architecture present; external live interoperability was subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no provider key/budget configured for general use |
 | WP-REC-03B: Workflow/state-machine foundation | COMPLETE | Explicit state machine (7 states, immutable transition table), WorkflowEngine with conditional UPDATE concurrency safety, WorkflowRun/WorkflowStep/Recommendation ORM models, Alembic migration, Pydantic run/step schemas, unit and integration tests — merged via PR #65 |
 | WP-REC-03C: Structured-output validation | COMPLETE | Structured-output validator, recommendation Pydantic wire schema, versioned prompt template, and unit tests — merged via PR #72 |
 | WP-REC-03D: Automatic provider retry/outage | COMPLETE | Automatic provider retry/outage handler, retry policy, unit and integration tests — merged via PR #73 |
@@ -47,12 +47,12 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | WP-REC-03F: Backend workflow start/retry API + ARQ worker | COMPLETE | Backend start/retry API (POST /api/v1/workflow-runs, POST /api/v1/workflow-runs/{run_id}/retry), ARQ worker functions (workflow_start, workflow_retry), D6 reconciler cron job, dispatch generation, conditional UPDATE state transitions, all D1–D6 contracts — merged via PR #78 |
 | WP-REC-03G: Frontend start/retry UI interaction | COMPLETE | Frontend workflow start and retry controls, stale-mutation protection, role-based authorization (production_manager or run creator), plan-change guard, deterministic polling lifecycle, safe error display — merged via PR #80 |
 | WP-REC-05: RAG integration into the AI workflow | COMPLETE | Retrieval integrated into the controlled workflow — server-derived deterministic queries, role-filtered retrieval, bounded/deduplicated context, citation allow-list validation, `FAILED_RETRIEVAL` fail-closed handling, generation-specific WorkflowAuthorizationRecord — merged via PR #89 (merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`) |
-| WP-REC-05-PROVIDER-IMP: external chat-provider chain + grounded-output hardening | COMPLETE | Groq free primary → OpenRouter paid fallback; capability-aware structured output; per-risk citation allow-list validation; merged via PR #91 (merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`); strict post-merge verification passed; DEC-048; external live inference NOT VERIFIED (no provider key/budget configured) |
+| WP-REC-05-PROVIDER-IMP: external chat-provider chain + grounded-output hardening | COMPLETE | Groq free primary → OpenRouter paid fallback; capability-aware structured output; per-risk citation allow-list validation; merged via PR #91 (merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`); strict post-merge verification passed; DEC-048; external live interoperability subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no provider key/budget configured for general use |
 | AT-003 (Golden Dataset) | PASS | Seed produces deterministic RISK-001/002/003 |
 | AT-004 (Deterministic risk) | PASS | Risk engine returns exact expected values |
 | AT-005 (No hidden mocks) | PASS | UI displays real backend data |
 
-**Phase 4 is PARTIALLY COMPLETE.** Substantial RAG and role-filtering implementation exists (retriever, citations, DocumentPermission model, role-filtered SQL query, server-side role derivation, unauthorized-role test). The remaining gap is formal AT-006/AT-007 PASS evidence — not the absence of document access control implementation or RAG workflow integration (both now implemented via WP-REC-05, PR #89). This is a documentation/status and acceptance-evidence contradiction, not a false technical foundation. Phase 5 builds on real, implemented infrastructure.
+**Phase 4 is COMPLETE / ACCEPTED.** RAG and role-filtering implementation exists (retriever, citations, DocumentPermission model, role-filtered SQL query, server-side role derivation, unauthorized-role test, WP-REC-05 PR #89). AT-006 and AT-007 are PASS via the composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049). Phase 5 builds on real, implemented infrastructure.
 
 **WP-REC-03B is a foundation package.** It delivers the workflow state machine, engine, models, and migration — but does NOT deliver end-to-end AI workflow execution. WP-REC-03C (structured-output validation), 03D (automatic provider retry/outage), 03E (workflow-run detail API + recommendation UI), 03F (backend start/retry API + ARQ worker), and 03G (frontend start/retry UI interaction) are now COMPLETE (merged via PRs #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. AT-008 and AT-013 are now PASS and Phase 5 is ACCEPTED (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`). No acceptance test newly passed as a result of 03B alone.
 
@@ -60,7 +60,6 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 | Capability | Required For | Phase |
 |-----------|--------------|-------|
-| Formal AT-006/AT-007 verification | Achieve AT-006 PASS, AT-007 PASS | Bounded verification package WP-REC-05-VFY (SD-2, DEC-035) — first run `wp-rec-05-vfy-20260814-01` EXECUTED and FAILED/INCOMPLETE; a rerun is NOT AUTHORIZED |
 | Approval service | AT-009, AT-010, AT-011 | Phase 6 |
 | Audit event service | AT-012 | Phase 6 |
 | Procurement task service | AT-010 | Phase 6 |
@@ -74,7 +73,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 ### Current MVP completion
 
-Three of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 has implementation and a test file but formal AT-006/AT-007 PASS evidence is incomplete; step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 4–5 of the condensed milestones (approval → procurement → audit → deployment) are not implemented. Phase 5 delivers the structured AI recommendation workflow and workflow retry; human approval and controlled procurement writes remain Phase 6 work.
+Three of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 now has formal AT-006/AT-007 PASS evidence (composite accepted packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15); step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 4–5 of the condensed milestones (approval → procurement → audit → deployment) are not implemented. Phase 5 delivers the structured AI recommendation workflow and workflow retry; human approval and controlled procurement writes remain Phase 6 work.
 
 ---
 
@@ -113,8 +112,8 @@ The accepted planning sequence is:
 3. **WP-REC-03A through 03G** (Phase 5 AI Workflow, packages A-G) — COMPLETE. Merged via PRs #63, #65, #72, #73, #74, #78, #80. WP-REC-03G (frontend start/retry UI) merged via PR #80 on 2026-08-12. Phase 5 implementation packages are all delivered.
 4. **WP-REC-05-DEC** (RAG integration decomposition and planning) — COMPLETE and CLOSED — planning artifact `docs/planning/wp_rec_05_rag_integration.md` delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed. Planning only; does not authorize implementation or verification.
 5. **WP-REC-05** (RAG integration into the AI workflow) — COMPLETE — merged via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed.
-6. **WP-REC-05-PROVIDER-IMP** (external chat-provider chain and grounded-output hardening) — COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed. External live inference NOT VERIFIED (no Groq/OpenRouter key, no ~USD 5 OpenRouter budget configured).
-7. **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — EXECUTED — FAILED/INCOMPLETE (first run `wp-rec-05-vfy-20260814-01`); AT-006 grounded-source assertion failed, AT-007 negative assertions succeeded; AT-006/AT-007 remain NOT PASS; a rerun is NOT AUTHORIZED. Separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
+6. **WP-REC-05-PROVIDER-IMP** (external chat-provider chain and grounded-output hardening) — COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed. External live interoperability was subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no Groq/OpenRouter key or ~USD 5 OpenRouter budget configured for general use.
+7. **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — ACCEPTED — composite of sealed packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` accepted by the Product Owner 2026-08-15 (DEC-049); AT-006 PASS; AT-007 PASS. Separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
 8. **Phase 6** (Approval and Audit) — NOT STARTED.
 9. **Phase 7** (Public Deployment) — NOT STARTED.
 10. **Phase 8** (Portfolio Release) — NOT STARTED.
@@ -126,8 +125,8 @@ WP-REC-05 implementation → separate WP-REC-05-VFY bounded verification
 → separate Product Owner Phase 4 acceptance/closure
 ```
 
-- **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). First run `wp-rec-05-vfy-20260814-01` was EXECUTED and is FAILED/INCOMPLETE (AT-006 grounded-source assertion failed; AT-007 negative assertions succeeded); AT-006/AT-007 remain NOT PASS; a rerun is NOT AUTHORIZED. Phase 4 cannot become COMPLETE until its unchanged exit criteria, including accepted AT-006/AT-007 PASS evidence from a future authorized WP-REC-05-VFY run, are satisfied.
-- **Formal VFY provider pinning (DEC-048):** the formal WP-REC-05-VFY will run AT-006 and AT-007 against one exact pinned commercial provider/model with automatic provider fallback disabled inside those scenarios; the failover smoke is a separate scenario.
+- **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — formal execution and accepted PASS evidence for AT-006 and AT-007. Separate from WP-REC-05 (DEC-035). The composite of sealed packages `wp-rec-05-vfy-20260814-01` (aggregate `f37f0ac8…`, exact canonical AT-007 restricted-only Given) and `wp-rec-05-vfy-20260815-02` (aggregate `2ce0ba6f…`, live OpenRouter AT-006 grounded citation + equal-similarity AT-007 discrimination + empty-role fail-closed) was accepted by the Product Owner 2026-08-15 (DEC-049); AT-006 PASS; AT-007 PASS. Phase 4 is CLOSED / ACCEPTED.
+- **Formal VFY provider pinning (DEC-048):** DEC-048 specified that the formal WP-REC-05-VFY would run AT-006 and AT-007 against one exact pinned commercial provider/model with automatic provider fallback disabled inside those scenarios; the failover smoke is a separate scenario. The later execution used OpenRouter `qwen/qwen3.7-flash` with automatic fallback disabled.
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
 
@@ -140,8 +139,7 @@ This is a planning sequence, not an execution authorization. Every future packag
 ## What Must NOT Be Started Automatically
 
 Without explicit Product Owner authorization, do not:
-- Implement any MVP phase (Phase 5, 6, or 7)
-- Start WP-REC-05-VFY (the bounded AT-006/AT-007 verification package)
+- Implement any MVP phase (Phase 6 or 7)
 - Start SP-0B or create forgemind-agent-runtime
 - Copy or move Runtime files
 - Access or modify the VPS
@@ -161,8 +159,8 @@ Without explicit Product Owner authorization, do not:
 | AT-003 | Golden Dataset integrity | ✅ PASS |
 | AT-004 | Deterministic risk calculation | ✅ PASS |
 | AT-005 | No hidden UI mocks | ✅ PASS |
-| AT-006 | RAG retrieval | IMPLEMENTED — NOT VERIFIED AS PASS (VFY run `wp-rec-05-vfy-20260814-01`: grounded-source assertion failed; AT-006 remains NOT PASS) |
-| AT-007 | Document access control | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS (VFY run `wp-rec-05-vfy-20260814-01`: negative assertions succeeded; AT-007 remains NOT PASS) |
+| AT-006 | RAG retrieval | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
+| AT-007 | Document access control | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
 | AT-008 | Structured output validation | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03C + 03E + 03F) |
 | AT-009 | Human approval blocks write | NOT IMPLEMENTED |
 | AT-010 | Approval executes action | NOT IMPLEMENTED |
@@ -173,14 +171,15 @@ Without explicit Product Owner authorization, do not:
 | AT-015 | Demo reset | NOT IMPLEMENTED |
 
 **Summary:**
-- 5 ATs are PASS: AT-003, AT-004, AT-005, AT-008, AT-013.
-- 2 ATs have relevant implementation but lack accepted PASS evidence: AT-006, AT-007.
+- 7 ATs are PASS: AT-003, AT-004, AT-005, AT-006, AT-007, AT-008, AT-013.
+- AT-006 is PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15).
+- AT-007 is PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15).
 - AT-008 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - AT-013 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - 3 ATs require deployment/environment verification: AT-001, AT-002, AT-014.
 - 5 ATs require capabilities that are not implemented: AT-009, AT-010, AT-011, AT-012, AT-015.
 
-**AT-006 and AT-007 must not be inferred as PASS from inspection alone.** Formal execution and accepted evidence are required via a bounded verification package (SD-2). The first VFY run (`wp-rec-05-vfy-20260814-01`) was EXECUTED and is FAILED/INCOMPLETE (AT-006 grounded-source assertion failed; AT-007 negative assertions succeeded); AT-006/AT-007 remain NOT PASS, and a rerun is NOT AUTHORIZED.
+**AT-006 and AT-007 are PASS** via the accepted composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049). These are Product Owner decisions based on accepted composite evidence, not inferences from inspection alone.
 
 **WP-REC-03B does not cause any AT to newly pass.** The state machine and engine are foundational; AT coverage accrues in later packages (03C–03G and Phase 6).
 
@@ -199,6 +198,8 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 - DEC-044 through DEC-046 (WP-REC-05 planning/authorization contracts)
 - DEC-047 (WP-REC-05 implementation authorization and incorporation)
 - DEC-048 (WP-REC-05 external provider architecture and formal VFY pinning)
+- DEC-049 (WP-REC-05-VFY composite-evidence acceptance and AT-006/AT-007 PASS)
+- DEC-050 (bounded documentation-only Phase 4 closure package authorization)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
@@ -248,8 +249,8 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 ## Next Milestone
 
-**Last Updated:** 2026-08-14
-**Reconciled against:** origin/main @ `7d425c1d3f1e92e08d62360c28ced22481136fe7` (PR #91 merge commit)
+**Last Updated:** 2026-08-15
+**Reconciled against:** origin/main @ `67844235c6ec412b11e9868451f41994142b86fc` (PR #93 merge commit)
 
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
@@ -257,19 +258,21 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 3. WP-REC-03A through WP-REC-03G are COMPLETE and MERGED via PRs #63, #65, #72, #73, #74, #78, #80 (2026-08-09 through 2026-08-12). Phase 5 implementation packages are all delivered. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`).
 
 **Current implementation status:**
+- **Phase 4 (Knowledge and RAG):** COMPLETE / ACCEPTED — AT-006 PASS; AT-007 PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15, DEC-049); WP-REC-05 CLOSED; WP-REC-05-PROVIDER-IMP CLOSED; WP-REC-05-VFY ACCEPTED
 - **Phase 5 (WP-REC-03A–03G):** COMPLETE / ACCEPTED — all implementation packages merged; AT-008 and AT-013 formally accepted (Product Owner acceptance 2026-08-14)
+- **AT-006:** PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`
+- **AT-007:** PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`
 - **AT-008:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
 - **AT-013:** PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02`
 - **WP-REC-05 (RAG integration into the AI workflow):** COMPLETE — merged via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed
-- **WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening):** COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed; external live inference NOT VERIFIED (no Groq/OpenRouter key, no ~USD 5 OpenRouter budget configured)
+- **WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening):** COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed; external live interoperability subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no Groq/OpenRouter key or ~USD 5 OpenRouter budget configured for general use
 
 **Planning package status:**
 - WP-REC-05-DEC (RAG integration decomposition and planning) — COMPLETE and CLOSED (planning artifact delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed; originally authorized by DEC-044, 2026-08-14). No planning or implementation package is currently authorized.
 
 **Not authorized:**
-- WP-REC-05-VFY rerun (bounded AT-006/AT-007 verification — first run `wp-rec-05-vfy-20260814-01` EXECUTED and FAILED/INCOMPLETE)
 - Phase 6 (approval and audit), Phase 7 (public deployment)
 - SP-0B and forgemind-agent-runtime creation
 - Agent automation activation (deferred)
 
-The accepted sequence was WP-REC-05 implementation first, separate WP-REC-05-VFY verification second. WP-REC-05 implementation is COMPLETE (merged via PR #89, merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`) and WP-REC-05-PROVIDER-IMP is COMPLETE (merged via PR #91, merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`); strict post-merge verification passed for both. WP-REC-05-VFY was executed once (`wp-rec-05-vfy-20260814-01`) and is FAILED/INCOMPLETE; a rerun is NOT AUTHORIZED. Active work package: None. No later package is authorized or inferred.
+The accepted sequence was WP-REC-05 implementation first, separate WP-REC-05-VFY verification second. WP-REC-05 implementation is COMPLETE (merged via PR #89, merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`) and WP-REC-05-PROVIDER-IMP is COMPLETE (merged via PR #91, merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`); strict post-merge verification passed for both. WP-REC-05-VFY is ACCEPTED (composite of sealed packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15, DEC-049); AT-006 PASS; AT-007 PASS; Phase 4 CLOSED / ACCEPTED. Active implementation package: None. No implementation package is authorized or inferred.

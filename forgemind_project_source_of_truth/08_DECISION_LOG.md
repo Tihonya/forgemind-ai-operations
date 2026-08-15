@@ -816,6 +816,65 @@ M3 — The repository document UUID string is the canonical `Source.document_id`
 
 ---
 
+## DEC-049 — WP-REC-05-VFY composite-evidence acceptance and AT-006/AT-007 PASS
+
+**Date:** 2026-08-15
+
+**Status:** Accepted
+
+**Context:**
+- An independent composite evidence review (`docs/reviews/wp_rec_05_vfy_composite_evidence_review.md`) over the two sealed WP-REC-05-VFY evidence packages concluded: `APPROVE — COMPOSITE EVIDENCE IS SUFFICIENT FOR A SEPARATE PRODUCT OWNER ACCEPTANCE DECISION`.
+- Previous sealed package `wp-rec-05-vfy-20260814-01` (source `9add3b40f07b7669dced65dcca026468a09c6357`, aggregate `f37f0ac8a6268dc95d2ef5b7216f3bc5c4d9f06aa2de3c9f8735bc0508b27177`) executes the exact canonical AT-007 restricted-only Given.
+- Current sealed package `wp-rec-05-vfy-20260815-02` (source `67844235c6ec412b11e9868451f41994142b86fc`, aggregate `2ce0ba6fc71ffed9d09f45dcea9c4dd898e4b5c967211df8d7717389716e9ec8`) proves AT-006 on current `main` using live OpenRouter and persists the exact M3 tuple; independently demonstrates equal-similarity AT-007 permission discrimination; and confirms empty-role fail-closed behavior.
+- `backend/app/ai/rag/retriever.py` and `backend/app/ai/workflow/prompts.py` are byte-identical between the two source commits.
+
+**Decision:**
+The Product Owner accepts the composite of the two sealed evidence packages as sufficient evidence that the AT-006 and AT-007 acceptance contracts are satisfied, and declares:
+- AT-006 — PASS
+- AT-007 — PASS
+
+**Reason:**
+Taken together the packages cover the canonical restricted-only case, current-main role filtering, live grounded output, citation validation, and empty-role fail-closed behavior. The review verified integrity, provenance, and contract coverage across both sealed packages.
+
+**Consequences:**
+- AT-006 is PASS; AT-007 is PASS.
+- Phase 4 closure, documentation reconciliation, Phase 6/7, and deployment are NOT authorized by this decision.
+- Phase 6 remains NOT STARTED / NOT AUTHORIZED; Phase 7 remains NOT STARTED / NOT AUTHORIZED; deployment remains NOT AUTHORIZED; Release 1 remains NOT READY / NOT DEPLOYED.
+
+**Affected documents/tests:** `docs/reviews/wp_rec_05_vfy_composite_evidence_review.md`, `docs/reviews/wp_rec_05_phase_4_product_owner_acceptance.md`, `forgemind_project_source_of_truth/04_ACCEPTANCE_TESTS.md`, `docs/planning/requirements_traceability_matrix.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`
+
+**Approved by:** Product Owner (2026-08-15)
+
+---
+
+## DEC-050 — Bounded documentation-only Phase 4 closure package authorization
+
+**Date:** 2026-08-15
+
+**Status:** Accepted
+
+**Context:**
+- The Product Owner separately accepted the composite WP-REC-05-VFY evidence and declared AT-006/AT-007 PASS (DEC-049).
+- A bounded documentation-only Phase 4 closure package was then requested to record the composite evidence review, the Product Owner acceptance, the AT-006/AT-007 PASS statuses, and to prepare the Phase 4 closure.
+
+**Decision:**
+Authorize a bounded documentation-only Phase 4 closure package. The authorized scope is documentation only: record the composite evidence review and Product Owner acceptance artifacts, set AT-006 and AT-007 to PASS, reconcile Phase 4 to closed/accepted, and update the Decision Log. Phase 6/7, deployment, and any non-documentation change are NOT authorized.
+
+**Reason:**
+Phase 4 exit criteria (AT-006 and AT-007 PASS) are now satisfied by the accepted composite evidence; the closure must be recorded without expanding scope into implementation or later phases.
+
+**Consequences:**
+- Phase 4 is closed/accepted (documentation reconciled).
+- WP-REC-05 implementation: CLOSED; WP-REC-05-PROVIDER-IMP: CLOSED; WP-REC-05-VFY: ACCEPTED.
+- Phase 6 and Phase 7 remain NOT STARTED / NOT AUTHORIZED; deployment remains NOT AUTHORIZED; Release 1 remains NOT READY / NOT DEPLOYED.
+- Closing Phase 4 does NOT start Phase 6.
+
+**Affected documents/tests:** `docs/reviews/wp_rec_05_vfy_composite_evidence_review.md`, `docs/reviews/wp_rec_05_phase_4_product_owner_acceptance.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/04_ACCEPTANCE_TESTS.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-15)
+
+---
+
 ## Template for new decisions
 
 ```markdown

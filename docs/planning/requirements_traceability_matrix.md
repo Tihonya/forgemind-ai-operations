@@ -32,8 +32,8 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | AT-003 — Golden Dataset integrity | Phase 2 | ✅ PASS |
 | AT-004 — Deterministic risk calculation | Phase 2 | ✅ PASS |
 | AT-005 — No hidden UI mocks | Phase 2 + Phase 3 | ✅ PASS |
-| AT-006 — RAG retrieval | Phase 4 | IMPLEMENTED — NOT VERIFIED AS PASS. Implementation-completion owner: WP-REC-05 (COMPLETE, merged via PR #89); formal verification owner: WP-REC-05-VFY (EXECUTED — FAILED/INCOMPLETE; rerun NOT AUTHORIZED) |
-| AT-007 — Document access control | Phase 4 | IMPLEMENTED AT SERVICE/API LEVEL — NOT VERIFIED AS AT-007 PASS. Workflow-path completion owner: WP-REC-05 (COMPLETE, merged via PR #89); formal verification owner: WP-REC-05-VFY (EXECUTED — FAILED/INCOMPLETE; rerun NOT AUTHORIZED) |
+| AT-006 — RAG retrieval | Phase 4 | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15; DEC-049) |
+| AT-007 — Document access control | Phase 4 | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15; DEC-049) |
 | AT-008 — Structured output validation | Phase 5 | ✅ PASS — WP-REC-03C (validator) + WP-REC-03E (trace) + WP-REC-03F (worker execution); accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14) |
 | AT-009 — Human approval blocks write | Phase 6 | NOT IMPLEMENTED |
 | AT-010 — Approval executes action | Phase 6 | NOT IMPLEMENTED |
@@ -43,7 +43,7 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | AT-014 — Public HTTPS smoke test | Phase 7 | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 — Demo reset | Phase 7 | NOT IMPLEMENTED |
 
-**AT-006 and AT-007 must not be inferred as PASS from inspection alone.** Formal execution and accepted evidence are required via a bounded verification package (SD-2).
+**AT-006 and AT-007 are PASS** via the accepted composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049).
 
 ---
 
@@ -60,8 +60,8 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 | WP-REC-03G (Frontend Start/Retry UI Interaction) | COMPLETE | PR #80 merged at `1582c39`; frontend start/retry controls, stale-mutation protection, deterministic polling lifecycle |
 | WP-REC-05-DEC (RAG integration planning) | COMPLETE — CLOSED | Planning artifact `docs/planning/wp_rec_05_rag_integration.md` delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`; successful post-merge verification; accepted decisions DEC-044, DEC-045, DEC-046. Does not authorize implementation or verification |
 | WP-REC-05 (RAG integration implementation) | COMPLETE | Merged via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed. Implementation-completion owner for the AT-006/AT-007 workflow path |
-| WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening) | COMPLETE | Merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed; DEC-048. External live inference NOT VERIFIED; no provider credentials/budget configured. Does not imply AT-006/AT-007 PASS |
-| WP-REC-05-VFY (AT-006/AT-007 verification) | EXECUTED — FAILED/INCOMPLETE | First run `wp-rec-05-vfy-20260814-01` executed; aggregate identity `f37f0ac8…`; AT-006 grounded-source assertion failed; AT-007 negative assertions succeeded; AT-006/AT-007 remain NOT PASS; a rerun is NOT AUTHORIZED; Product Owner acceptance NOT PERFORMED. Separate bounded verification package (DEC-035); follows WP-REC-05 implementation. Formal verification owner for AT-006/AT-007 |
+| WP-REC-05-PROVIDER-IMP (external chat-provider chain and grounded-output hardening) | COMPLETE | Merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed; DEC-048. This package did not itself perform live inference; external live interoperability was subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049). AT-006/AT-007 PASS belongs to WP-REC-05-VFY and the Product Owner acceptance (DEC-049), not to this package. No provider credentials/budget are configured in the repository for general use. |
+| WP-REC-05-VFY (AT-006/AT-007 verification) | ACCEPTED | Composite of sealed packages `wp-rec-05-vfy-20260814-01` (aggregate `f37f0ac8…`) and `wp-rec-05-vfy-20260815-02` (aggregate `2ce0ba6f…`) accepted by the Product Owner 2026-08-15 (DEC-049); AT-006 PASS; AT-007 PASS. Separate bounded verification package (DEC-035); follows WP-REC-05 implementation |
 
 ---
 
@@ -70,8 +70,8 @@ Mapping each functional requirement (FR-01 through FR-12) to its implementation 
 - **12 functional requirements** mapped to implementation + tests.
 - **15 acceptance tests** mapped to phases.
 - FR-06 now has implementation via WP-REC-03C (COMPLETE). FR-08, FR-09, FR-12 reference capabilities not yet implemented — marked as such; no nonexistent file paths cited.
-- AT-006 and AT-007 are not marked PASS.
-- AT-006/AT-007 implementation completion is owned by WP-REC-05 (COMPLETE, merged via PR #89) and WP-REC-05-PROVIDER-IMP (COMPLETE, merged via PR #91); formal verification is owned by the separate WP-REC-05-VFY package (EXECUTED — FAILED/INCOMPLETE; rerun NOT AUTHORIZED). Phase 4 remains PARTIALLY COMPLETE.
+- AT-006 and AT-007 are PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15, DEC-049).
+- AT-006/AT-007 implementation completion is owned by WP-REC-05 (COMPLETE, merged via PR #89) and WP-REC-05-PROVIDER-IMP (COMPLETE, merged via PR #91); formal verification is owned by the separate WP-REC-05-VFY package (ACCEPTED, DEC-049). Phase 4 is closed/accepted.
 - AT-001, AT-002, AT-014 require deployment/environment verification.
 - AT-008 and AT-013 are PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14; durable review `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`, durable acceptance declaration `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`).
 - AT-009, AT-010, AT-011, AT-012, AT-015 require capabilities that are not implemented.
