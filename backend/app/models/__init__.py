@@ -4,10 +4,13 @@ Re-exports the domain models so they are registered with Base.metadata
 for Alembic autogenerate discovery.
 """
 
+from app.models.audit import AuditEvent
 from app.models.component import BomItem, Component, ComponentAlternative
 from app.models.diagnostic import DiagnosticJob
 from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.enums import (
+    AuditEntityType,
+    AuditEventType,
     ComponentAlternativeStatus,
     ComponentUnit,
     DocumentVersionStatus,
@@ -80,4 +83,8 @@ __all__ = [
     "Recommendation",
     # Workflow authorization context (WP-REC-05 M1)
     "WorkflowAuthorizationRecord",
+    # Audit events (WP-REC-04B)
+    "AuditEvent",
+    "AuditEventType",
+    "AuditEntityType",
 ]

@@ -81,3 +81,35 @@ class DocumentVersionStatus(enum.StrEnum):
     DRAFT = "DRAFT"
     APPROVED = "APPROVED"
     OBSOLETE = "OBSOLETE"
+
+
+class AuditEventType(enum.StrEnum):
+    """Canonical Phase 6 audit-event taxonomy (WP-REC-04B).
+
+    The bounded set of events the audit foundation must be able to
+    persist for later approval (04A) and procurement (04C) integration:
+    approval request creation, approval decision, rejection, and
+    procurement-task creation attempt and result. Emitting these events
+    is the integration responsibility of WP-REC-04A and WP-REC-04C; this
+    package only defines and persists them.
+    """
+
+    APPROVAL_REQUEST_CREATED = "APPROVAL_REQUEST_CREATED"
+    APPROVAL_APPROVED = "APPROVAL_APPROVED"
+    APPROVAL_REJECTED = "APPROVAL_REJECTED"
+    PROCUREMENT_TASK_CREATION_ATTEMPTED = "PROCUREMENT_TASK_CREATION_ATTEMPTED"
+    PROCUREMENT_TASK_CREATED = "PROCUREMENT_TASK_CREATED"
+    PROCUREMENT_TASK_CREATION_FAILED = "PROCUREMENT_TASK_CREATION_FAILED"
+
+
+class AuditEntityType(enum.StrEnum):
+    """Bounded entity-type allow-list for audit events (WP-REC-04B).
+
+    Only the Phase 6 business entities the audit foundation must trace.
+    ``entity_id`` is a logical UUID reference (not a foreign key) because
+    the approval-request and procurement-task tables are owned by
+    WP-REC-04A and WP-REC-04C respectively.
+    """
+
+    APPROVAL_REQUEST = "APPROVAL_REQUEST"
+    PROCUREMENT_TASK = "PROCUREMENT_TASK"

@@ -9,6 +9,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.audit import router as audit_router
 from app.api.auth import router as auth_router
 from app.api.components import router as components_router
 from app.api.ingestion import router as ingestion_router
@@ -104,6 +105,9 @@ app.include_router(retrieval_router, prefix=settings.api_v1_prefix)
 
 # Workflow run detail API (WP-REC-03E)
 app.include_router(workflow_router, prefix=settings.api_v1_prefix)
+
+# Read-only audit-event API (WP-REC-04B)
+app.include_router(audit_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health", tags=["Health"])
