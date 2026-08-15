@@ -14,8 +14,11 @@ Authorization (canonical roles, DEC-052 M1; decomposition §3.6):
 - Create: ``PRODUCTION_MANAGER`` only.
 - Approve/reject: ``PROCUREMENT_SPECIALIST`` only; self-decision fails
   closed (requester/approver separation).
-- Read (list + detail): ``PRODUCTION_MANAGER``, ``PROCUREMENT_SPECIALIST``,
-  and ``AI_ADMINISTRATOR`` (administrative read).
+- Read (list + detail): ``PRODUCTION_MANAGER`` (own requests),
+  ``PROCUREMENT_SPECIALIST`` (PENDING requests), and ``AI_ADMINISTRATOR``
+  (administrative read of all requests) — decomposition §3.6. Row scope is
+  enforced at the service/query boundary; scoped-out and nonexistent IDs are
+  indistinguishable (404).
 - ``ENGINEER`` and ``AUDITOR`` have no Phase 6 approval authority.
 
 There is no procurement-execution route (owned by WP-REC-04C) and no
@@ -29,14 +32,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.database import get_async_session
 from app.dependencies import require_role
-from app.models.approval import ApprovalRequest
 from app.schemas.approval import (
     ApprovalRequestCreate,
     ApprovalRequestListResponse,
@@ -52,6 +53,7 @@ from app.services.approval_service import (
     RecommendationContentInvalidError,
     RecommendationIneligibleError,
     RecommendationNotFoundError,
+    RiskActionParametersMismatchError,
     SelfDecisionError,
 )
 from app.services.auth_service import AuthenticatedUser
@@ -82,6 +84,11 @@ def _map_service_error(exc: ApprovalServiceError) -> HTTPException:
         return HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail={"error": exc.code},
+        )
+    if isinstance(exc, RiskActionParametersMismatchError):
+        return HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"error": "risk_action_parameters_mismatch"},
         )
     if isinstance(exc, ApprovalRequestNotFoundError):
         return HTTPException(
@@ -121,7 +128,9 @@ async def create_approval_request(
 ) -> ApprovalRequestResponse:
     """Create a PENDING approval request bound to an eligible action.
 
-    Requires PRODUCTION_MANAGER. The action binding (snapshot + SHA-256
+    Requires PRODUCTION_MANAGER. The executable parameters
+    (``component_code`` and ``quantity``) are verified against the
+    deterministic risk engine and the action binding (snapshot + SHA-256
     hash) is derived from the persisted recommendation; the request and its
     audit event commit atomically.
 
@@ -130,7 +139,8 @@ async def create_approval_request(
         HTTPException(403): not PRODUCTION_MANAGER.
         HTTPException(404): recommendation not found.
         HTTPException(409): duplicate active approval request.
-        HTTPException(422): ineligible action input.
+        HTTPException(422): ineligible action input or risk-parameter
+            mismatch.
         HTTPException(500): invalid recommendation content or internal error.
     """
     service = ApprovalService(session)
@@ -139,6 +149,8 @@ async def create_approval_request(
             recommendation_id=body.recommendation_id,
             risk_id=body.risk_id,
             action_type=body.action_type,
+            component_code=body.component_code,
+            quantity=body.quantity,
             requester=current_user,
         )
         await session.commit()
@@ -166,26 +178,25 @@ async def list_approval_requests(
     current_user: AuthenticatedUser = Depends(require_role(_READ_ROLES)),  # noqa: B008
     session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> ApprovalRequestListResponse:
-    """Return a paginated list of approval requests.
+    """Return a caller-scoped paginated list of approval requests.
+
+    Scope (decomposition §3.6): PRODUCTION_MANAGER sees its own requests;
+    PROCUREMENT_SPECIALIST sees PENDING requests; AI_ADMINISTRATOR sees all.
 
     Ordering: requested_at DESC, id DESC (deterministic tie-breaker).
     """
-    total_stmt = select(func.count(ApprovalRequest.id))
-    total = (await session.execute(total_stmt)).scalar_one()
-
-    stmt = (
-        select(ApprovalRequest)
-        .order_by(ApprovalRequest.requested_at.desc(), ApprovalRequest.id.desc())
-        .limit(limit)
-        .offset(offset)
+    service = ApprovalService(session)
+    items, total = await service.list_requests(
+        user=current_user, limit=limit, offset=offset
     )
-    result = await session.execute(stmt)
-    items = [
-        ApprovalRequestResponse.model_validate(request)
-        for request in result.scalars().all()
-    ]
-
-    return ApprovalRequestListResponse(items=items, limit=limit, offset=offset, total=total)
+    return ApprovalRequestListResponse(
+        items=[
+            ApprovalRequestResponse.model_validate(request) for request in items
+        ],
+        limit=limit,
+        offset=offset,
+        total=total,
+    )
 
 
 @router.get(
@@ -198,18 +209,16 @@ async def get_approval_request(
     current_user: AuthenticatedUser = Depends(require_role(_READ_ROLES)),  # noqa: B008
     session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> ApprovalRequestResponse:
-    """Return a single approval request by ID."""
-    result = await session.execute(
-        select(ApprovalRequest).where(ApprovalRequest.id == request_id)
-    )
-    approval = result.scalars().one_or_none()
+    """Return a single approval request within the caller's scope.
 
-    if approval is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "approval_request_not_found", "request_id": str(request_id)},
-        )
-
+    A request outside the caller's scope returns 404 exactly as a
+    nonexistent ID does, so scoped-out and missing IDs are indistinguishable.
+    """
+    service = ApprovalService(session)
+    try:
+        approval = await service.get_request(user=current_user, request_id=request_id)
+    except ApprovalServiceError as exc:
+        raise _map_service_error(exc) from None
     return ApprovalRequestResponse.model_validate(approval)
 
 

@@ -1,24 +1,33 @@
 """Unit tests for the approval-request service (WP-REC-04A).
 
 Covers create/approve/reject with a mock ``AsyncSession`` (no live
-database): eligibility validation, self-decision rejection, single-shot
+database): eligibility validation, executable-parameter binding and
+mismatch fail-closed behavior, self-decision rejection, single-shot
 terminal semantics, duplicate-active detection, deterministic binding
-hash, correlation-ID propagation, and atomic audit-event emission. No
-secret values are stored or printed.
+hash, correlation-ID lineage, and atomic audit-event emission. No secret
+values are stored or printed.
 """
 
 from __future__ import annotations
 
+from datetime import date
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
 
-from app.models.approval import ApprovalRequest, ApprovalStatus, compute_binding_hash
+from app.models.approval import (
+    BINDING_VERSION,
+    ApprovalRequest,
+    ApprovalStatus,
+    compute_binding_hash,
+)
 from app.models.audit import AuditEvent
 from app.models.enums import AuditEntityType, AuditEventType
 from app.models.workflow import Recommendation
 from app.schemas.recommendation import RecommendationData, RecommendedAction, RiskItem
+from app.schemas.risk import RiskRecord
 from app.services.approval_service import (
     ApprovalRequestNotFoundError,
     ApprovalRequestNotPendingError,
@@ -27,6 +36,7 @@ from app.services.approval_service import (
     RecommendationContentInvalidError,
     RecommendationIneligibleError,
     RecommendationNotFoundError,
+    RiskActionParametersMismatchError,
     SelfDecisionError,
     build_action_snapshot,
 )
@@ -35,6 +45,8 @@ from app.services.auth_service import AuthenticatedUser
 CORRELATION_ID = "550e8400-e29b-41d4-a716-446655440000"
 ACTION_TYPE = "CREATE_PROCUREMENT_TASK"
 RISK_ID = "RISK-001"
+COMPONENT_CODE = "CTRL-X4"
+QUANTITY = Decimal("8")
 
 
 def _user(user_id: UUID | None = None, username: str = "manager.demo") -> AuthenticatedUser:
@@ -93,6 +105,35 @@ def _recommendation(
     )
 
 
+def _risk_record(
+    *,
+    component_code: str = COMPONENT_CODE,
+    shortage: str = "8.0000",
+) -> RiskRecord:
+    return RiskRecord(
+        component_code=component_code,
+        component_name="Control Unit X4",
+        affected_wo_code="WO-2026-0142",
+        required=Decimal("20.0000"),
+        available=Decimal("12.0000"),
+        confirmed_early=Decimal("0.0000"),
+        confirmed_late=Decimal("0.0000"),
+        shortage=Decimal(shortage),
+        severity="CRITICAL",
+        has_approved_alternative=False,
+        has_proposed_alternative=False,
+        need_date=date(2026, 7, 31),
+        plan_code="PLAN-2026-W31",
+    )
+
+
+def _patch_analyze_plan(monkeypatch: pytest.MonkeyPatch, risks: list[RiskRecord]) -> None:
+    monkeypatch.setattr(
+        "app.services.approval_service.analyze_plan",
+        AsyncMock(return_value=risks),
+    )
+
+
 def _make_session(*results: object) -> MagicMock:
     """Build a mock session with a sync ``add`` and an async ``flush``.
 
@@ -116,13 +157,30 @@ def _result_with_first(value: object | None) -> MagicMock:
     return result
 
 
+def _expected_snapshot(run_id: UUID, rec_id: UUID) -> dict[str, object]:
+    return {
+        "binding_version": BINDING_VERSION,
+        "action_type": ACTION_TYPE,
+        "component_code": COMPONENT_CODE,
+        "quantity": "8",
+        "risk_id": RISK_ID,
+        "workflow_run_id": str(run_id),
+        "recommendation_id": str(rec_id),
+        "title": "Procure replacement component",
+        "rationale": "Shortage detected",
+    }
+
+
 class TestCreateRequest:
-    async def test_creates_pending_request_with_binding_and_audit_event(self) -> None:
+    async def test_creates_pending_request_with_binding_and_audit_event(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         run_id = uuid4()
         rec_id = uuid4()
         rec = _recommendation(
             recommendation_id=rec_id, run_id=run_id, content=_content(run_id=run_id)
         )
+        _patch_analyze_plan(monkeypatch, [_risk_record()])
         session = _make_session(
             _result_with_scalar(rec), _result_with_first(None)
         )
@@ -133,6 +191,8 @@ class TestCreateRequest:
             recommendation_id=rec_id,
             risk_id=RISK_ID,
             action_type=ACTION_TYPE,
+            component_code=COMPONENT_CODE,
+            quantity=QUANTITY,
             requester=requester,
             correlation_id=CORRELATION_ID,
         )
@@ -148,14 +208,7 @@ class TestCreateRequest:
         assert approval.decided_by is None
         assert approval.decision_comment is None
 
-        expected_snapshot = {
-            "action_type": ACTION_TYPE,
-            "risk_id": RISK_ID,
-            "title": "Procure replacement component",
-            "rationale": "Shortage detected",
-            "workflow_run_id": str(run_id),
-            "recommendation_id": str(rec_id),
-        }
+        expected_snapshot = _expected_snapshot(run_id, rec_id)
         assert approval.action_snapshot == expected_snapshot
         assert approval.binding_hash == compute_binding_hash(expected_snapshot)
         assert approval.correlation_id == UUID(CORRELATION_ID)
@@ -174,12 +227,15 @@ class TestCreateRequest:
         # The service flushes but never commits (caller owns the transaction).
         session.commit.assert_not_called()
 
-    async def test_deterministic_hash_for_equivalent_input(self) -> None:
+    async def test_deterministic_hash_for_equivalent_input(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         run_id = uuid4()
         rec_id = uuid4()
         rec = _recommendation(
             recommendation_id=rec_id, run_id=run_id, content=_content(run_id=run_id)
         )
+        _patch_analyze_plan(monkeypatch, [_risk_record()])
         session = _make_session(
             _result_with_scalar(rec), _result_with_first(None)
         )
@@ -187,6 +243,8 @@ class TestCreateRequest:
             recommendation_id=rec_id,
             risk_id=RISK_ID,
             action_type=ACTION_TYPE,
+            component_code=COMPONENT_CODE,
+            quantity=QUANTITY,
             requester=_user(),
             correlation_id=CORRELATION_ID,
         )
@@ -195,8 +253,101 @@ class TestCreateRequest:
             risk_id=RISK_ID,
             action=RecommendationData.model_validate(rec.content).risks[0]
             .recommended_actions[0],
+            component_code=COMPONENT_CODE,
+            quantity=QUANTITY,
         )
         assert approval.binding_hash == compute_binding_hash(snapshot)
+
+    async def test_component_code_mismatch_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rec_id = uuid4()
+        rec = _recommendation(
+            recommendation_id=rec_id, run_id=uuid4(), content=_content(run_id=uuid4())
+        )
+        _patch_analyze_plan(monkeypatch, [_risk_record(component_code="CTRL-X4")])
+        session = _make_session(
+            _result_with_scalar(rec), _result_with_first(None)
+        )
+        service = ApprovalService(session)
+        with pytest.raises(RiskActionParametersMismatchError):
+            await service.create_request(
+                recommendation_id=rec_id,
+                risk_id=RISK_ID,
+                action_type=ACTION_TYPE,
+                component_code="MOTOR-M2",
+                quantity=QUANTITY,
+                requester=_user(),
+            )
+
+    async def test_quantity_mismatch_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rec_id = uuid4()
+        rec = _recommendation(
+            recommendation_id=rec_id, run_id=uuid4(), content=_content(run_id=uuid4())
+        )
+        _patch_analyze_plan(monkeypatch, [_risk_record(shortage="8.0000")])
+        session = _make_session(
+            _result_with_scalar(rec), _result_with_first(None)
+        )
+        service = ApprovalService(session)
+        with pytest.raises(RiskActionParametersMismatchError):
+            await service.create_request(
+                recommendation_id=rec_id,
+                risk_id=RISK_ID,
+                action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=Decimal("9"),
+                requester=_user(),
+            )
+
+    async def test_empty_risk_result_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rec_id = uuid4()
+        rec = _recommendation(
+            recommendation_id=rec_id, run_id=uuid4(), content=_content(run_id=uuid4())
+        )
+        _patch_analyze_plan(monkeypatch, [])
+        session = _make_session(
+            _result_with_scalar(rec), _result_with_first(None)
+        )
+        service = ApprovalService(session)
+        with pytest.raises(RiskActionParametersMismatchError):
+            await service.create_request(
+                recommendation_id=rec_id,
+                risk_id=RISK_ID,
+                action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
+                requester=_user(),
+            )
+
+    async def test_risk_engine_failure_fails_closed(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        rec_id = uuid4()
+        rec = _recommendation(
+            recommendation_id=rec_id, run_id=uuid4(), content=_content(run_id=uuid4())
+        )
+        monkeypatch.setattr(
+            "app.services.approval_service.analyze_plan",
+            AsyncMock(side_effect=ValueError("Plan 'PLAN-2026-W31' not found")),
+        )
+        session = _make_session(
+            _result_with_scalar(rec), _result_with_first(None)
+        )
+        service = ApprovalService(session)
+        with pytest.raises(RiskActionParametersMismatchError):
+            await service.create_request(
+                recommendation_id=rec_id,
+                risk_id=RISK_ID,
+                action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
+                requester=_user(),
+            )
 
     async def test_recommendation_not_found(self) -> None:
         session = _make_session(_result_with_scalar(None))
@@ -206,6 +357,8 @@ class TestCreateRequest:
                 recommendation_id=uuid4(),
                 risk_id=RISK_ID,
                 action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
 
@@ -223,6 +376,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id=RISK_ID,
                 action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
 
@@ -238,6 +393,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id="RISK-DOES-NOT-EXIST",
                 action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
         assert exc_info.value.code == "risk_not_found_in_recommendation"
@@ -254,6 +411,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id=RISK_ID,
                 action_type="SOME_OTHER_ACTION",
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
         assert exc_info.value.code == "action_not_found_in_recommendation"
@@ -272,6 +431,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id=RISK_ID,
                 action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
         assert exc_info.value.code == "action_not_requiring_approval"
@@ -291,6 +452,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id=RISK_ID,
                 action_type="UNSUPPORTED_ACTION",
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
         assert exc_info.value.code == "unsupported_action_type"
@@ -309,6 +472,8 @@ class TestCreateRequest:
                 recommendation_id=rec_id,
                 risk_id=RISK_ID,
                 action_type=ACTION_TYPE,
+                component_code=COMPONENT_CODE,
+                quantity=QUANTITY,
                 requester=_user(),
             )
 
@@ -321,6 +486,17 @@ def _pending_request(
     risk_id: str = RISK_ID,
     action_type: str = ACTION_TYPE,
 ) -> ApprovalRequest:
+    snapshot = {
+        "binding_version": BINDING_VERSION,
+        "action_type": action_type,
+        "component_code": COMPONENT_CODE,
+        "quantity": "8",
+        "risk_id": risk_id,
+        "workflow_run_id": str(run_id),
+        "recommendation_id": str(uuid4()),
+        "title": "t",
+        "rationale": "r",
+    }
     return ApprovalRequest(
         id=request_id,
         correlation_id=uuid4(),
@@ -328,24 +504,8 @@ def _pending_request(
         workflow_run_id=run_id,
         risk_id=risk_id,
         action_type=action_type,
-        action_snapshot={
-            "action_type": action_type,
-            "risk_id": risk_id,
-            "title": "t",
-            "rationale": "r",
-            "workflow_run_id": str(run_id),
-            "recommendation_id": str(uuid4()),
-        },
-        binding_hash=compute_binding_hash(
-            {
-                "action_type": action_type,
-                "risk_id": risk_id,
-                "title": "t",
-                "rationale": "r",
-                "workflow_run_id": str(run_id),
-                "recommendation_id": str(uuid4()),
-            }
-        ),
+        action_snapshot=snapshot,
+        binding_hash=compute_binding_hash(snapshot),
         requested_by=requested_by,
         requested_by_username="manager.demo",
         status=ApprovalStatus.PENDING.value,
@@ -367,7 +527,6 @@ class TestApproveRequest:
             request_id=request.id,
             approver=approver,
             comment="Approved after review",
-            correlation_id=CORRELATION_ID,
         )
 
         assert result.status == ApprovalStatus.APPROVED.value
@@ -382,7 +541,8 @@ class TestApproveRequest:
         assert audit.event_type == AuditEventType.APPROVAL_APPROVED.value
         assert audit.entity_id == request.id
         assert audit.actor_id == approver.user_id
-        assert audit.correlation_id == UUID(CORRELATION_ID)
+        # The decision event reuses the approval request's correlation ID.
+        assert audit.correlation_id == request.correlation_id
 
     async def test_approve_self_decision_forbidden(self) -> None:
         requester = _user(username="manager.demo")
@@ -441,7 +601,6 @@ class TestRejectRequest:
             request_id=request.id,
             approver=approver,
             reason="Insufficient justification",
-            correlation_id=CORRELATION_ID,
         )
 
         assert result.status == ApprovalStatus.REJECTED.value
@@ -452,6 +611,8 @@ class TestRejectRequest:
         audit = session.add.call_args_list[0][0][0]
         assert audit.event_type == AuditEventType.APPROVAL_REJECTED.value
         assert audit.entity_id == request.id
+        # The decision event reuses the approval request's correlation ID.
+        assert audit.correlation_id == request.correlation_id
 
     async def test_reject_self_decision_forbidden(self) -> None:
         requester = _user(username="manager.demo")

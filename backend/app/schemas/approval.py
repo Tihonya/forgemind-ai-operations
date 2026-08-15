@@ -8,6 +8,7 @@ amount, currency, payment, or financial field is ever present.
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +24,13 @@ class ApprovalRequestCreate(BaseModel):
         recommendation_id: Authoritative recommendation UUID.
         risk_id: Originating risk identifier (e.g. ``RISK-001``).
         action_type: Action type (``CREATE_PROCUREMENT_TASK``).
+        component_code: Component/item identity for the controlled action
+            (e.g. ``CTRL-X4``). Verified against the deterministic risk
+            engine at creation and persisted in the action snapshot.
+        quantity: Executable quantity for the controlled action, derived
+            from the authoritative shortage. Must be positive; verified
+            against the risk engine at creation and persisted in the
+            action snapshot.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -39,8 +47,19 @@ class ApprovalRequestCreate(BaseModel):
         max_length=50,
         description="Action type (CREATE_PROCUREMENT_TASK)",
     )
+    component_code: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="Component/item identity (e.g. CTRL-X4)",
+    )
+    quantity: Decimal = Field(
+        ...,
+        gt=0,
+        description="Positive executable quantity (authoritative shortage)",
+    )
 
-    @field_validator("risk_id", "action_type")
+    @field_validator("risk_id", "action_type", "component_code")
     @classmethod
     def _reject_whitespace(cls, v: str) -> str:
         if v.strip() == "":

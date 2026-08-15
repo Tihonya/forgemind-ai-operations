@@ -15,8 +15,10 @@ unavailable. No provider/vendor/financial call occurs.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import AsyncIterator, Generator
+from decimal import Decimal
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -31,11 +33,11 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.main import app
-from app.models.approval import ApprovalRequest
+from app.models.approval import ApprovalRequest, compute_binding_hash
 from app.models.audit import AuditEvent
 from app.models.workflow import Recommendation, WorkflowRun
 from app.schemas.recommendation import RecommendationData, RecommendedAction, RiskItem
-from app.services.approval_service import ApprovalService
+from app.services.approval_service import ApprovalRequestNotPendingError, ApprovalService
 from app.services.auth_service import AuthenticatedUser
 
 _INTEGRATION_DB_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
@@ -50,6 +52,9 @@ _DEMO_PASSWORDS = {
 
 ACTION_TYPE = "CREATE_PROCUREMENT_TASK"
 RISK_ID = "RISK-001"
+# Golden Dataset RISK-001: CTRL-X4, shortage 8 (deterministic).
+RISK_COMPONENT_CODE = "CTRL-X4"
+RISK_QUANTITY = "8"
 
 
 def _can_connect() -> bool:
@@ -243,10 +248,24 @@ async def _create_pending_request(
         recommendation_id=rec.id,
         risk_id=RISK_ID,
         action_type=ACTION_TYPE,
+        component_code=RISK_COMPONENT_CODE,
+        quantity=Decimal(RISK_QUANTITY),
         requester=requester,
     )
     await db_session.commit()
     return approval
+
+
+def _create_payload(rec: Recommendation, **overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "recommendation_id": str(rec.id),
+        "risk_id": RISK_ID,
+        "action_type": ACTION_TYPE,
+        "component_code": RISK_COMPONENT_CODE,
+        "quantity": RISK_QUANTITY,
+    }
+    payload.update(overrides)
+    return payload
 
 
 def _auth(token: str) -> dict[str, str]:
@@ -268,11 +287,7 @@ class TestCreateApprovalRequest:
 
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
             headers=_auth(token),
         )
 
@@ -293,23 +308,20 @@ class TestCreateApprovalRequest:
         self, client: AsyncClient, db_session: AsyncSession,
         _seeded_golden_dataset: None,
     ) -> None:
-        from app.models.approval import compute_binding_hash
-
         rec = await _seed_recommendation(db_session)
         token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
             headers=_auth(token),
         )
         assert response.status_code == 201
         data = response.json()
         expected = {
+            "binding_version": 1,
             "action_type": ACTION_TYPE,
+            "component_code": RISK_COMPONENT_CODE,
+            "quantity": RISK_QUANTITY,
             "risk_id": RISK_ID,
             "title": "Procure replacement component",
             "rationale": "Shortage detected",
@@ -331,11 +343,7 @@ class TestCreateApprovalRequest:
         token = await _login(client, username, _DEMO_PASSWORDS[username])
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
             headers=_auth(token),
         )
         assert response.status_code == 403
@@ -348,11 +356,7 @@ class TestCreateApprovalRequest:
         rec = await _seed_recommendation(db_session)
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
         )
         assert response.status_code == 401
 
@@ -366,6 +370,8 @@ class TestCreateApprovalRequest:
                 "recommendation_id": str(uuid4()),
                 "risk_id": RISK_ID,
                 "action_type": ACTION_TYPE,
+                "component_code": RISK_COMPONENT_CODE,
+                "quantity": RISK_QUANTITY,
             },
             headers=_auth(token),
         )
@@ -380,11 +386,7 @@ class TestCreateApprovalRequest:
         token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
             headers=_auth(token),
         )
         assert response.status_code == 422
@@ -396,11 +398,7 @@ class TestCreateApprovalRequest:
     ) -> None:
         rec = await _seed_recommendation(db_session)
         token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
-        payload = {
-            "recommendation_id": str(rec.id),
-            "risk_id": RISK_ID,
-            "action_type": ACTION_TYPE,
-        }
+        payload = _create_payload(rec)
         first = await client.post(
             "/api/v1/approval-requests", json=payload, headers=_auth(token)
         )
@@ -419,11 +417,7 @@ class TestCreateApprovalRequest:
         token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
+            json=_create_payload(rec),
             headers=_auth(token),
         )
         assert response.status_code == 201
@@ -455,6 +449,8 @@ class TestCreateApprovalRequest:
             recommendation_id=rec.id,
             risk_id=RISK_ID,
             action_type=ACTION_TYPE,
+            component_code=RISK_COMPONENT_CODE,
+            quantity=Decimal(RISK_QUANTITY),
             requester=requester,
         )
         request_id = approval.id
@@ -870,31 +866,33 @@ class TestReadApi:
 
 
 class TestSafety:
-    async def test_correlation_id_propagates_to_audit_event(
+    async def test_creation_inherits_workflow_run_correlation(
         self, client: AsyncClient, db_session: AsyncSession,
         _seeded_golden_dataset: None,
     ) -> None:
         rec = await _seed_recommendation(db_session)
         token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
-        correlation_id = uuid4()
+        run = (
+            await db_session.execute(
+                select(WorkflowRun).where(WorkflowRun.id == rec.run_id)
+            )
+        ).scalar_one()
         response = await client.post(
             "/api/v1/approval-requests",
-            json={
-                "recommendation_id": str(rec.id),
-                "risk_id": RISK_ID,
-                "action_type": ACTION_TYPE,
-            },
-            headers={**_auth(token), "X-Correlation-ID": str(correlation_id)},
+            json=_create_payload(rec),
+            headers=_auth(token),
         )
         assert response.status_code == 201
         request_id = response.json()["id"]
-        assert response.json()["correlation_id"] == str(correlation_id)
+        # The approval request inherits the originating workflow run's
+        # canonical correlation ID (not a fresh or request-scoped ID).
+        assert response.json()["correlation_id"] == str(run.correlation_id)
 
         result = await db_session.execute(
             select(AuditEvent).where(AuditEvent.entity_id == UUID(request_id))
         )
         event = result.scalars().one()
-        assert event.correlation_id == correlation_id
+        assert event.correlation_id == run.correlation_id
 
     async def test_no_secret_bearing_field_in_audit(
         self, client: AsyncClient, db_session: AsyncSession,
@@ -939,3 +937,424 @@ class TestSafety:
         for role_set in (_APPROVER_ROLE, _MANAGER_ROLE, _READ_ROLES):
             assert "platform_admin" not in role_set
             assert role_set <= canonical
+
+
+# ---------------------------------------------------------------------------
+# Action-parameter binding (F-1)
+# ---------------------------------------------------------------------------
+
+
+class TestActionParameterMismatch:
+    async def test_changed_component_code_rejected(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        response = await client.post(
+            "/api/v1/approval-requests",
+            json=_create_payload(rec, component_code="MOTOR-M2"),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "risk_action_parameters_mismatch"
+
+    async def test_changed_quantity_rejected(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        response = await client.post(
+            "/api/v1/approval-requests",
+            json=_create_payload(rec, quantity="9"),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["error"] == "risk_action_parameters_mismatch"
+
+    async def test_nonpositive_quantity_rejected(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        response = await client.post(
+            "/api/v1/approval-requests",
+            json=_create_payload(rec, quantity="0"),
+            headers=_auth(token),
+        )
+        assert response.status_code == 422
+
+    async def test_client_supplied_binding_hash_rejected(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        response = await client.post(
+            "/api/v1/approval-requests",
+            json={**_create_payload(rec), "binding_hash": "0" * 64},
+            headers=_auth(token),
+        )
+        # The binding hash is server-derived; a client-supplied hash is
+        # rejected by the extra-forbid schema.
+        assert response.status_code == 422
+
+
+class TestNoMutationRoutes:
+    @pytest.mark.parametrize("method", ["put", "patch", "delete"])
+    async def test_no_update_or_delete_route(
+        self, client: AsyncClient, _seeded_golden_dataset: None, method: str,
+    ) -> None:
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        response = await getattr(client, method)(
+            f"/api/v1/approval-requests/{uuid4()}",
+            headers=_auth(token),
+        )
+        assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Read scope (F-3)
+# ---------------------------------------------------------------------------
+
+
+class TestReadScope:
+    async def test_manager_sees_own_but_not_others(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        own_rec = await _seed_recommendation(db_session)
+        own = await _create_pending_request(
+            db_session,
+            rec=own_rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+        foreign_rec = await _seed_recommendation(db_session)
+        foreign = await _create_pending_request(
+            db_session,
+            rec=foreign_rec,
+            requester_id=_get_user_id("procurement.demo"),
+            requester_username="procurement.demo",
+        )
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+
+        own_detail = await client.get(
+            f"/api/v1/approval-requests/{own.id}", headers=_auth(token)
+        )
+        assert own_detail.status_code == 200
+
+        foreign_detail = await client.get(
+            f"/api/v1/approval-requests/{foreign.id}", headers=_auth(token)
+        )
+        assert foreign_detail.status_code == 404
+
+        listing = await client.get("/api/v1/approval-requests", headers=_auth(token))
+        ids = {item["id"] for item in listing.json()["items"]}
+        assert str(own.id) in ids
+        assert str(foreign.id) not in ids
+
+    async def test_specialist_sees_pending_but_not_terminal(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+
+        pending_detail = await client.get(
+            f"/api/v1/approval-requests/{approval.id}", headers=_auth(token)
+        )
+        assert pending_detail.status_code == 200
+
+        approve = await client.post(
+            f"/api/v1/approval-requests/{approval.id}/approve",
+            json={"comment": "ok"},
+            headers=_auth(token),
+        )
+        assert approve.status_code == 200
+
+        terminal_detail = await client.get(
+            f"/api/v1/approval-requests/{approval.id}", headers=_auth(token)
+        )
+        assert terminal_detail.status_code == 404
+
+        listing = await client.get("/api/v1/approval-requests", headers=_auth(token))
+        ids = {item["id"] for item in listing.json()["items"]}
+        assert str(approval.id) not in ids
+
+    async def test_admin_sees_terminal_and_pending(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+        approver_token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        await client.post(
+            f"/api/v1/approval-requests/{approval.id}/approve",
+            json={"comment": "ok"},
+            headers=_auth(approver_token),
+        )
+        admin_token = await _login(client, "admin.demo", _DEMO_PASSWORDS["admin.demo"])
+        detail = await client.get(
+            f"/api/v1/approval-requests/{approval.id}", headers=_auth(admin_token)
+        )
+        assert detail.status_code == 200
+        assert detail.json()["status"] == "APPROVED"
+
+    async def test_scoped_out_and_nonexistent_indistinguishable(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        foreign = await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("procurement.demo"),
+            requester_username="procurement.demo",
+        )
+        token = await _login(client, "manager.demo", _DEMO_PASSWORDS["manager.demo"])
+        scoped = await client.get(
+            f"/api/v1/approval-requests/{foreign.id}", headers=_auth(token)
+        )
+        missing = await client.get(
+            f"/api/v1/approval-requests/{uuid4()}", headers=_auth(token)
+        )
+        assert scoped.status_code == 404
+        assert missing.status_code == 404
+        assert scoped.json() == missing.json()
+
+
+# ---------------------------------------------------------------------------
+# Correlation lineage (F-2)
+# ---------------------------------------------------------------------------
+
+
+class TestCorrelationLineage:
+    async def test_create_and_approve_share_correlation(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        manager_token = await _login(
+            client, "manager.demo", _DEMO_PASSWORDS["manager.demo"]
+        )
+        create = await client.post(
+            "/api/v1/approval-requests",
+            json=_create_payload(rec),
+            headers=_auth(manager_token),
+        )
+        assert create.status_code == 201
+        request_id = create.json()["id"]
+        row_correlation = create.json()["correlation_id"]
+
+        approver_token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        approve = await client.post(
+            f"/api/v1/approval-requests/{request_id}/approve",
+            json={"comment": "ok"},
+            headers=_auth(approver_token),
+        )
+        assert approve.status_code == 200
+
+        events = (
+            await db_session.execute(
+                select(AuditEvent)
+                .where(AuditEvent.entity_id == UUID(request_id))
+                .order_by(AuditEvent.created_at)
+            )
+        ).scalars().all()
+        assert len(events) == 2
+        for event in events:
+            assert str(event.correlation_id) == row_correlation
+
+    async def test_create_and_reject_share_correlation(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        rec = await _seed_recommendation(db_session)
+        manager_token = await _login(
+            client, "manager.demo", _DEMO_PASSWORDS["manager.demo"]
+        )
+        create = await client.post(
+            "/api/v1/approval-requests",
+            json=_create_payload(rec),
+            headers=_auth(manager_token),
+        )
+        assert create.status_code == 201
+        request_id = create.json()["id"]
+        row_correlation = create.json()["correlation_id"]
+
+        approver_token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        reject = await client.post(
+            f"/api/v1/approval-requests/{request_id}/reject",
+            json={"comment": "no"},
+            headers=_auth(approver_token),
+        )
+        assert reject.status_code == 200
+
+        events = (
+            await db_session.execute(
+                select(AuditEvent).where(AuditEvent.entity_id == UUID(request_id))
+            )
+        ).scalars().all()
+        assert len(events) == 2
+        for event in events:
+            assert str(event.correlation_id) == row_correlation
+
+
+# ---------------------------------------------------------------------------
+# Two-session concurrency (F-4)
+# ---------------------------------------------------------------------------
+
+
+class TestConcurrentDecisions:
+    async def _run_concurrent_decision(
+        self,
+        db_engine: AsyncEngine,
+        approval_id: UUID,
+        approver: AuthenticatedUser,
+        first_action: str,
+        second_action: str,
+    ) -> tuple[str, str]:
+        """Run two decisions against the same request on two sessions.
+
+        ``first_action`` acquires the row lock and holds it uncommitted while
+        ``second_action`` attempts the competing decision on an independent
+        session. Returns the two outcome labels.
+        """
+        factory = async_sessionmaker[AsyncSession](
+            bind=db_engine, expire_on_commit=False
+        )
+        lock_held = asyncio.Event()
+
+        async def _decide(session: AsyncSession, action: str, comment: str) -> None:
+            service = ApprovalService(session)
+            if action == "approve":
+                await service.approve_request(
+                    request_id=approval_id, approver=approver, comment=comment
+                )
+            else:
+                await service.reject_request(
+                    request_id=approval_id, approver=approver, reason=comment
+                )
+
+        async def _first() -> str:
+            async with factory() as sa:
+                await _decide(sa, first_action, "first")
+                lock_held.set()
+                await asyncio.sleep(0.5)
+                await sa.commit()
+                return "SUCCESS"
+
+        async def _second() -> str:
+            await lock_held.wait()
+            async with factory() as sa:
+                try:
+                    await _decide(sa, second_action, "second")
+                    await sa.commit()
+                    return "UNEXPECTED_SUCCESS"
+                except ApprovalRequestNotPendingError:
+                    await sa.rollback()
+                    return "NOT_PENDING"
+
+        results = await asyncio.gather(_first(), _second())
+        return results[0], results[1]
+
+    async def _assert_single_terminal_decision(
+        self,
+        db_session: AsyncSession,
+        approval_id: UUID,
+        expected_status: str,
+        expected_event_type: str,
+    ) -> None:
+        row = (
+            await db_session.execute(
+                select(ApprovalRequest)
+                .where(ApprovalRequest.id == approval_id)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        assert row.status == expected_status
+
+        terminal_events = (
+            await db_session.execute(
+                select(AuditEvent).where(
+                    AuditEvent.entity_id == approval_id,
+                    AuditEvent.event_type == expected_event_type,
+                )
+            )
+        ).scalars().all()
+        assert len(terminal_events) == 1
+
+    async def _seed_pending_for_race(
+        self, db_session: AsyncSession,
+    ) -> ApprovalRequest:
+        rec = await _seed_recommendation(db_session)
+        return await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+
+    async def test_approve_vs_approve(
+        self, db_engine: AsyncEngine, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        approval = await self._seed_pending_for_race(db_session)
+        assert approval.status == "PENDING"
+        approver = AuthenticatedUser(
+            user_id=_get_user_id("procurement.demo"),
+            username="procurement.demo",
+            display_name="Procurement Specialist",
+            roles=frozenset({"PROCUREMENT_SPECIALIST"}),
+        )
+        first_result, second_result = await self._run_concurrent_decision(
+            db_engine, approval.id, approver, "approve", "approve"
+        )
+        assert first_result == "SUCCESS"
+        assert second_result == "NOT_PENDING"
+        await self._assert_single_terminal_decision(
+            db_session, approval.id, "APPROVED", "APPROVAL_APPROVED"
+        )
+
+    async def test_approve_vs_reject(
+        self, db_engine: AsyncEngine, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        approval = await self._seed_pending_for_race(db_session)
+        assert approval.status == "PENDING"
+        approver = AuthenticatedUser(
+            user_id=_get_user_id("procurement.demo"),
+            username="procurement.demo",
+            display_name="Procurement Specialist",
+            roles=frozenset({"PROCUREMENT_SPECIALIST"}),
+        )
+        first_result, second_result = await self._run_concurrent_decision(
+            db_engine, approval.id, approver, "approve", "reject"
+        )
+        assert first_result == "SUCCESS"
+        assert second_result == "NOT_PENDING"
+        await self._assert_single_terminal_decision(
+            db_session, approval.id, "APPROVED", "APPROVAL_APPROVED"
+        )

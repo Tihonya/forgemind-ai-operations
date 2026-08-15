@@ -7,23 +7,30 @@ action-binding hash contract consumed later by WP-REC-04C.
 Action binding (WP-REC-04-DEC §3.8, §5; task §5):
 
 An approval request binds an immutable action snapshot — never a mutable
-pointer. The snapshot is a fixed, ordered set of fields derived from the
-persisted recommendation at creation time and never recomputed from later
-recommendation state. ``compute_binding_hash`` hashes the canonical
-serialization (SHA-256) so WP-REC-04C can re-derive and compare its
-intended action against the stored approved binding; a mismatch fails
-closed.
+pointer. The snapshot is a fixed, versioned set of fields derived from the
+persisted recommendation and the deterministic risk engine at creation
+time, and never recomputed from later recommendation or risk state. It
+carries the executable procurement parameters (``component_code`` and
+``quantity``) in addition to action/risk identity and
+recommendation/workflow-run linkage, so WP-REC-04C can consume the stored
+snapshot directly and compare its binding without re-deriving quantity
+from mutable risk state.
 
-The snapshot contains no secrets: only action identity, risk identity,
-and recommendation/workflow-run linkage.
+``compute_binding_hash`` hashes a versioned canonical JSON serialization
+(SHA-256) so WP-REC-04C can re-derive and compare its intended action
+against the stored approved binding; a mismatch fails closed.
+
+The snapshot contains no secrets and no vendor/price/payment fields.
 """
 
 from __future__ import annotations
 
 import enum
 import hashlib
+import json
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -56,31 +63,97 @@ class ApprovalStatus(enum.StrEnum):
     REJECTED = "REJECTED"
 
 
-#: Canonical ordered field list for the action snapshot. The order is fixed
-#: and explicit — the binding hash does not depend on dictionary insertion
-#: order, and every field is required (a missing field cannot be silently
-#: treated as a different action).
+#: Canonical binding schema version. Bumped only when the action-snapshot
+#: field set or normalization changes; included in the snapshot and the
+#: binding hash so a schema change invalidates prior bindings.
+BINDING_VERSION = 1
+
+#: Canonical field set for the action snapshot. The set is fixed and
+#: explicit — the binding hash is computed over these fields only, every
+#: field is required (a missing field cannot be silently treated as a
+#: different action), and the canonical serialization is deterministic
+#: (independent of dictionary insertion order).
 ACTION_SNAPSHOT_FIELDS: tuple[str, ...] = (
+    "binding_version",
     "action_type",
+    "component_code",
+    "quantity",
     "risk_id",
-    "title",
-    "rationale",
     "workflow_run_id",
     "recommendation_id",
+    "title",
+    "rationale",
 )
+
+#: Snapshot fields whose value is a UUID and must be canonicalized to the
+#: lowercase hyphenated form so case/format variation cannot split bindings.
+_UUID_FIELDS: frozenset[str] = frozenset(
+    {"workflow_run_id", "recommendation_id"}
+)
+
+
+def _canonical_decimal(value: object) -> str:
+    """Return the canonical string form of a Decimal quantity.
+
+    Contractually equivalent decimal representations (``Decimal("5")``,
+    ``"5"``, ``"5.0"``, ``"5.00"``) normalize to the same string, so a
+    quantity cannot be re-serialized into a different binding. NaN,
+    Infinity, and non-numeric values fail closed.
+    """
+    if isinstance(value, bool):
+        raise ValueError(f"quantity must not be a boolean: {value!r}")
+    try:
+        dec = Decimal(str(value))
+    except (InvalidOperation, ValueError, TypeError) as exc:
+        raise ValueError(f"invalid decimal quantity: {value!r}") from exc
+    if not dec.is_finite():
+        raise ValueError(f"quantity must be finite: {value!r}")
+    if dec == 0:
+        return "0"
+    return format(dec.normalize(), "f")
+
+
+def _canonical_uuid(value: object) -> str:
+    """Return the canonical lowercase-hyphenated UUID string form."""
+    try:
+        return str(UUID(str(value)))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError(f"invalid UUID: {value!r}") from exc
 
 
 def canonical_action_serialization(snapshot: Mapping[str, Any]) -> str:
     """Return the deterministic canonical serialization of an action snapshot.
 
-    Each field in :data:`ACTION_SNAPSHOT_FIELDS` is emitted as ``field=value``
-    on its own line, in the fixed order. Values must already be in canonical
-    string form (UUIDs as ``str(uuid)``). Missing fields raise ``KeyError``
-    (fail-closed), so an incomplete snapshot can never collide with a
-    complete one.
+    The snapshot is serialized as a versioned JSON object with a fixed
+    schema, deterministic key ordering (``sort_keys``), compact separators,
+    and stable UUID/numeric normalization. Missing fields raise ``KeyError``
+    (fail-closed); invalid values raise ``ValueError``/``TypeError``.
+
+    JSON string escaping makes it impossible for delimiter/newline
+    characters inside descriptive text (``title``, ``rationale``) to forge
+    an additional field or collide with a distinct structured snapshot.
     """
-    parts = [f"{field}={snapshot[field]}" for field in ACTION_SNAPSHOT_FIELDS]
-    return "\n".join(parts)
+    canonical: dict[str, Any] = {}
+    for field in ACTION_SNAPSHOT_FIELDS:
+        value = snapshot[field]  # KeyError on a missing field → fail closed
+        if field == "binding_version":
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise ValueError(f"binding_version must be an integer: {value!r}")
+            canonical[field] = value
+        elif field == "quantity":
+            canonical[field] = _canonical_decimal(value)
+        elif field in _UUID_FIELDS:
+            canonical[field] = _canonical_uuid(value)
+        else:
+            if not isinstance(value, str):
+                raise TypeError(f"{field} must be a string: {value!r}")
+            canonical[field] = value
+    return json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
 
 
 def compute_binding_hash(snapshot: Mapping[str, Any]) -> str:
