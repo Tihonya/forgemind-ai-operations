@@ -334,6 +334,7 @@ class TestCompleteTrace:
         assert data["triggered_by"] == "manager.demo"
         assert data["final_state"] == "COMPLETED"
         assert data["complete"] is True
+        assert data["is_legacy"] is False
         assert data["missing_categories"] == []
 
         categories = [item["category"] for item in data["items"]]
@@ -544,6 +545,7 @@ class TestLegacyIncomplete:
         assert response.status_code == 200
         data = response.json()
         assert data["complete"] is False
+        assert data["is_legacy"] is True
         assert data["missing_categories"] == [
             "user_action",
             "deterministic_calculation",
@@ -554,6 +556,84 @@ class TestLegacyIncomplete:
         ]
         categories = [item["category"] for item in data["items"]]
         assert categories == ["retrieval", "model_call", "structured_validation"]
+
+
+class TestLegacyClassification:
+    async def test_current_incomplete_with_user_action_is_not_legacy(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        """A current run carrying the user_action marker is never legacy."""
+        plan_id = await _get_plan_id(db_session)
+        run = await _create_run(db_session, plan_id, state="FAILED_PROVIDER")
+        await _create_step(
+            db_session, run, seq=0, step_name="user_action",
+            step_metadata={"capture_action": "start", "username": "manager.demo"},
+        )
+        await db_session.commit()
+
+        token = await _login(client, "auditor.demo", _DEMO_PASSWORDS["auditor.demo"])
+        response = await client.get(
+            f"/api/v1/audit-trace/{run.correlation_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["complete"] is False
+        assert data["is_legacy"] is False
+        assert data["missing_categories"] == [
+            "deterministic_calculation",
+            "retrieval",
+            "model_call",
+            "structured_validation",
+            "recommendation",
+            "approval_request",
+            "human_decision",
+            "write_action",
+        ]
+        # No fabricated item: only the single user_action step is present.
+        assert [item["category"] for item in data["items"]] == ["user_action"]
+
+    async def test_current_incomplete_with_deterministic_calculation_is_not_legacy(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        """A current run carrying the deterministic_calculation marker is not legacy."""
+        plan_id = await _get_plan_id(db_session)
+        run = await _create_run(db_session, plan_id, state="FAILED_PROVIDER")
+        await _create_step(
+            db_session, run, seq=0, step_name="deterministic_calculation",
+            step_metadata={
+                "plan_code": "PLAN-2026-W31",
+                "risk_count": 1,
+                "risks": [{"risk_id": "RISK-001", "component_code": "CTRL-X4",
+                           "severity": "CRITICAL", "shortage": "8"}],
+            },
+        )
+        await db_session.commit()
+
+        token = await _login(client, "auditor.demo", _DEMO_PASSWORDS["auditor.demo"])
+        response = await client.get(
+            f"/api/v1/audit-trace/{run.correlation_id}",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["complete"] is False
+        assert data["is_legacy"] is False
+        assert data["missing_categories"] == [
+            "user_action",
+            "retrieval",
+            "model_call",
+            "structured_validation",
+            "recommendation",
+            "approval_request",
+            "human_decision",
+            "write_action",
+        ]
+        assert [item["category"] for item in data["items"]] == [
+            "deterministic_calculation"
+        ]
 
 
 class TestRedaction:

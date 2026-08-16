@@ -286,12 +286,24 @@ async def get_audit_trace(
         category for category in TRACE_CATEGORY_ORDER if category not in present
     ]
 
+    # AT-012 complete-trace remediation (R-1): classify legacy vs current
+    # incompleteness from durable capture markers, never from timestamps.
+    # A run is legacy only when it carries NEITHER post-remediation marker
+    # (user_action, deterministic_calculation). A current PENDING/RUNNING/
+    # FAILED_* run carries at least one marker, so it is never mislabelled
+    # as pre-remediation.
+    is_legacy = (
+        "user_action" not in present
+        and "deterministic_calculation" not in present
+    )
+
     return AuditTraceResponse(
         correlation_id=run.correlation_id,
         workflow_run_id=run.id,
         triggered_by=run.triggered_by,
         final_state=run.state,
         complete=not missing_categories,
+        is_legacy=is_legacy,
         missing_categories=list(missing_categories),
         items=items,
     )

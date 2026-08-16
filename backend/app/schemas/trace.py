@@ -90,6 +90,15 @@ class AuditTraceResponse(BaseModel):
     )
     final_state: str = Field(..., description="Final workflow run state")
     complete: bool = Field(..., description="True when all nine categories present")
+    is_legacy: bool = Field(
+        ...,
+        description=(
+            "True only when the trace contains neither of the two "
+            "post-remediation capture markers (user_action, "
+            "deterministic_calculation). Derived from durable capture markers, "
+            "never from timestamps."
+        ),
+    )
     missing_categories: list[str] = Field(
         default_factory=list,
         description="Canonical category names absent from the trace, in order",

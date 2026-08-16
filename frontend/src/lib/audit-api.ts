@@ -157,6 +157,7 @@ export interface AuditTraceResponse {
   triggered_by: string | null
   final_state: string
   complete: boolean
+  is_legacy: boolean
   missing_categories: string[]
   items: AuditTraceItem[]
 }

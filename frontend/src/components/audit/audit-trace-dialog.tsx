@@ -3,8 +3,12 @@
  *
  * Presents the normalized nine-item trace for a single correlation lineage:
  * the header summary (correlation/run/initiator/final state), a completeness
- * indicator, and the canonical items in stable 1-9 order. Legacy runs are
- * labelled explicitly as incomplete (never fabricated into a complete trace).
+ * indicator, and the canonical items in stable 1-9 order. Three truthful
+ * states are rendered: complete (all nine categories), legacy-incomplete
+ * (``is_legacy=true`` — pre-remediation capture), and current-incomplete
+ * (neutral wording, never described as pre-remediation). Missing categories
+ * are listed for every incomplete trace, using the backend-supplied set in
+ * canonical order; no placeholder item is fabricated.
  *
  * Strictly read-only: no create/edit/delete, approve/reject, retry, or
  * procurement-execute control. Structured summaries render through the shared
@@ -18,6 +22,7 @@ import { X } from 'lucide-react'
 import {
   formatShortId,
   formatTimestamp,
+  formatTraceCategory,
   getAuditErrorMessage,
 } from '@/lib/audit-api'
 import { useAuditTrace } from '@/hooks/use-audit-events'
@@ -184,13 +189,42 @@ export function AuditTraceDialog({
               >
                 Complete trace — all nine categories captured.
               </div>
+            ) : trace.is_legacy ? (
+              <div
+                className="rounded-md border border-amber-600/30 bg-amber-600/10 px-4 py-2 text-sm text-amber-300"
+                data-testid="trace-incomplete-label"
+              >
+                Legacy incomplete trace — created before complete trace capture
+                was introduced.
+              </div>
             ) : (
               <div
                 className="rounded-md border border-amber-600/30 bg-amber-600/10 px-4 py-2 text-sm text-amber-300"
                 data-testid="trace-incomplete-label"
               >
-                Incomplete trace — created before complete trace capture was
-                introduced.
+                Incomplete trace — {trace.items.length} of 9 categories captured.
+              </div>
+            )}
+
+            {!trace.complete && trace.missing_categories.length > 0 && (
+              <div
+                className="rounded-md border border-steel-700 bg-steel-800/40 px-4 py-3"
+                data-testid="trace-missing-categories"
+              >
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-steel-400">
+                  Missing categories
+                </h3>
+                <ul className="mt-2 space-y-1 text-sm text-steel-300">
+                  {trace.missing_categories.map((category) => (
+                    <li
+                      key={category}
+                      data-testid="trace-missing-category"
+                      data-category={category}
+                    >
+                      {formatTraceCategory(category)}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
