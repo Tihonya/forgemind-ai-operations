@@ -162,6 +162,30 @@ class WorkflowEngine:
         self._session.add(run)
         await self._session.flush()
 
+        # AT-012 complete-trace remediation (item 1): record the durable
+        # ``user_action`` workflow step exactly once, at run creation. It
+        # binds to the new run_id and the run's correlation_id and carries
+        # only the safe minimum metadata (authenticated username + the
+        # ``capture_action="start"`` marker). ``workflow_runs.triggered_by``
+        # is preserved because retry authorization depends on it, and
+        # ``create_run`` is never re-invoked on retry (retry reuses the run
+        # via ``retry_transition``), so no emit-once guard is required.
+        user_action_metadata: dict[str, Any] = {"capture_action": "start"}
+        if triggered_by is not None:
+            user_action_metadata["username"] = triggered_by
+        user_action_step = WorkflowStep(
+            run_id=run.id,
+            correlation_id=correlation_id,
+            seq=await self._next_step_seq(run.id),
+            step_name="user_action",
+            status="completed",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            step_metadata=user_action_metadata,
+        )
+        self._session.add(user_action_step)
+        await self._session.flush()
+
         _logger.info(
             "workflow.run.created",
             run_id=str(run.id),

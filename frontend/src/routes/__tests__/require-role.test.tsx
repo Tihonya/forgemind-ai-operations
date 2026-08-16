@@ -16,6 +16,9 @@ vi.mock('@/hooks/use-audit-events', () => ({
 vi.mock('@/components/audit/audit-event-detail', () => ({
   AuditEventDetail: () => null,
 }))
+vi.mock('@/components/audit/audit-trace-dialog', () => ({
+  AuditTraceDialog: () => null,
+}))
 
 const mockUseAuth = vi.mocked(useAuth)
 const mockUseAuditEvents = vi.mocked(useAuditEvents)

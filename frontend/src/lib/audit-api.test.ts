@@ -8,6 +8,7 @@ import {
   EVENT_TYPE_LABELS,
   fetchAuditEvent,
   fetchAuditEvents,
+  fetchAuditTrace,
   formatEntityType,
   formatEventType,
   formatShortId,
@@ -154,6 +155,27 @@ describe('fetchAuditEvent (read-only detail)', () => {
   })
 })
 
+describe('fetchAuditTrace (read-only trace)', () => {
+  it('fetches the trace by correlation ID via GET on the exact endpoint', async () => {
+    mockApi.get.mockResolvedValue({ data: { items: [], complete: true } })
+    await fetchAuditTrace('11111111-2222-3333-4444-555555555555')
+    expect(mockApi.get).toHaveBeenCalledTimes(1)
+    expect(mockApi.get).toHaveBeenCalledWith(
+      '/audit-trace/11111111-2222-3333-4444-555555555555',
+    )
+  })
+
+  it('uses GET only — no write method is invoked', async () => {
+    mockApi.get.mockResolvedValue({ data: { items: [], complete: true } })
+    await fetchAuditTrace('11111111-2222-3333-4444-555555555555')
+    expect(mockApi.get).toHaveBeenCalled()
+    expect(mockApi.post).not.toHaveBeenCalled()
+    expect(mockApi.put).not.toHaveBeenCalled()
+    expect(mockApi.patch).not.toHaveBeenCalled()
+    expect(mockApi.delete).not.toHaveBeenCalled()
+  })
+})
+
 describe('getAuditErrorCode', () => {
   it('extracts the stable error code from the detail body', () => {
     expect(getAuditErrorCode(axiosError(404, { error: 'audit_event_not_found' }))).toBe(
@@ -182,6 +204,12 @@ describe('getAuditErrorMessage', () => {
   it('maps scoped-out/missing 404 without disclosing existence', () => {
     const message = getAuditErrorMessage(axiosError(404, { error: 'audit_event_not_found' }))
     expect(message).toBe('The audit event was not found.')
+    expect(message).not.toMatch(/uuid|exists|id=/i)
+  })
+
+  it('maps the trace 404 error code safely', () => {
+    const message = getAuditErrorMessage(axiosError(404, { error: 'audit_trace_not_found' }))
+    expect(message).toBe('The trace was not found.')
     expect(message).not.toMatch(/uuid|exists|id=/i)
   })
 

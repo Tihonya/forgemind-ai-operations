@@ -262,9 +262,15 @@ class TestStaleGenerationWorkerSkip:
         assert result.success is False
         assert result.final_state == WorkflowState.PENDING.value
 
-        # Verify no provider call was made (no steps recorded).
+        # The stale generation should result in a skip. Only the
+        # user_action step (emitted at run creation) exists; no execution
+        # step (deterministic_calculation/retrieval/provider_call/validation/
+        # recommendation) was recorded.
         steps_result = await db_session.execute(
-            text("SELECT COUNT(*) FROM workflow_steps WHERE run_id = :id"),
+            text(
+                "SELECT COUNT(*) FROM workflow_steps WHERE run_id = :id "
+                "AND step_name <> 'user_action'"
+            ),
             {"id": str(run.id)},
         )
         assert steps_result.scalar() == 0
