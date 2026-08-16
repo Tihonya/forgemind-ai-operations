@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -267,6 +267,41 @@ describe('AuditLog route', () => {
       mockUseAuditEvents.mock.calls.length - 1
     ]
     expect(lastCall[0]).toBe(25)
+    expect(lastCall[1]).toBe(0)
+  })
+
+  it('shows a page-out-of-range state instead of "No audit events" when total > 0', () => {
+    mockUseAuditEvents.mockReturnValue({
+      ...baseList(),
+      events: [],
+      total: 10,
+      limit: 50,
+      offset: 0,
+    })
+    renderRoute()
+    expect(screen.queryByText('No audit events')).not.toBeInTheDocument()
+    expect(screen.getByTestId('out-of-range-state')).toBeInTheDocument()
+    expect(screen.getByTestId('reset-page-button')).toBeInTheDocument()
+  })
+
+  it('normalizes an out-of-range offset back to the first page without a request loop', async () => {
+    const user = userEvent.setup()
+    mockUseAuditEvents.mockImplementation((_limit: number, offset: number) => {
+      const total = offset >= 50 ? 20 : 120
+      const items = offset < total ? [createAuditEvent({ id: `evt-${offset}` })] : []
+      return { ...baseList(), events: items, total, limit: 50, offset }
+    })
+    renderRoute()
+    expect(screen.getByTestId('page-indicator')).toHaveTextContent('Page 1 of 3')
+    // Page 2 (offset 50): the result set has shrunk so the offset is now out
+    // of range. The component must normalize back to offset 0.
+    await user.click(screen.getByTestId('next-page'))
+    await waitFor(() => {
+      expect(screen.getByTestId('page-indicator')).toHaveTextContent('Page 1 of 3')
+    })
+    expect(screen.queryByText('No audit events')).not.toBeInTheDocument()
+    const lastCall =
+      mockUseAuditEvents.mock.calls[mockUseAuditEvents.mock.calls.length - 1]
     expect(lastCall[1]).toBe(0)
   })
 })

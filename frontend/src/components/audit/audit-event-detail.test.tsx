@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuditEventDetail } from './audit-event-detail'
@@ -105,19 +105,49 @@ describe('AuditEventDetail', () => {
     expect(screen.queryByText(/^retry$/i)).not.toBeInTheDocument()
   })
 
-  it('never renders a binding hash, prompt, or raw secret label', () => {
+  it('suppresses binding_hash keys and values across approval and procurement metadata', () => {
+    const hash = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
     mockUseAuditEvent.mockReturnValue({
       ...baseDetail(),
       event: createAuditEvent({
-        event_metadata: { note: 'safe' },
+        event_type: 'PROCUREMENT_TASK_CREATED',
+        before_summary: { status: 'PENDING', binding_hash: hash },
+        after_summary: {
+          task_state: 'READY',
+          component_code: 'CTRL-X4',
+          quantity: '250',
+          binding_hash: hash,
+        },
+        event_metadata: {
+          action_type: 'CREATE_PROCUREMENT_TASK',
+          binding_hash: hash,
+          approval_request_id: 'req-1',
+          nested: { bindingHash: hash, reason: 'sufficient' },
+          items: [{ 'binding-hash': hash, component_code: 'CTRL-X9' }],
+        },
       }),
     })
-    render(<AuditEventDetail eventId="evt-1" onClose={vi.fn()} />)
-    expect(screen.queryByText(/binding[_ ]hash/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/access[_ ]token/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/authorization/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/password/i)).not.toBeInTheDocument()
-    expect(screen.queryByText(/api[_ ]key/i)).not.toBeInTheDocument()
+    const { container } = render(
+      <AuditEventDetail eventId="evt-1" onClose={vi.fn()} />,
+    )
+    const text = container.textContent ?? ''
+    expect(text).not.toContain('binding_hash')
+    expect(text).not.toContain('bindingHash')
+    expect(text).not.toContain('binding-hash')
+    expect(text).not.toContain(hash)
+    // Safe neighbouring metadata still renders.
+    expect(screen.getByText('task_state:')).toBeInTheDocument()
+    expect(screen.getByText('READY')).toBeInTheDocument()
+    expect(screen.getAllByText('component_code:')).toHaveLength(2)
+    expect(screen.getByText('CTRL-X4')).toBeInTheDocument()
+    expect(screen.getByText('CTRL-X9')).toBeInTheDocument()
+    expect(screen.getByText('quantity:')).toBeInTheDocument()
+    expect(screen.getByText('250')).toBeInTheDocument()
+    expect(screen.getByText('approval_request_id:')).toBeInTheDocument()
+    expect(screen.getByText('req-1')).toBeInTheDocument()
+    expect(screen.getByText('reason:')).toBeInTheDocument()
+    expect(screen.getByText('sufficient')).toBeInTheDocument()
+    expect(screen.getByText('PENDING')).toBeInTheDocument()
   })
 
   it('copies the correlation ID via a labeled control', () => {
@@ -131,6 +161,79 @@ describe('AuditEventDetail', () => {
     fireEvent.click(button)
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       '11111111-2222-3333-4444-555555555555',
+    )
+  })
+
+  it('moves focus into the dialog on open', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    render(<AuditEventDetail eventId="evt-1" onClose={vi.fn()} />)
+    expect(document.activeElement).toBe(screen.getByTestId('audit-detail-panel'))
+  })
+
+  it('traps forward Tab at the last focusable element back to the first', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    render(<AuditEventDetail eventId="evt-1" onClose={vi.fn()} />)
+    const panel = screen.getByTestId('audit-detail-panel')
+    const buttons = within(panel).getAllByRole('button')
+    const first = buttons[0]
+    const last = buttons[buttons.length - 1]
+    last.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(first)
+  })
+
+  it('traps reverse Tab (Shift+Tab) at the first focusable element back to the last', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    render(<AuditEventDetail eventId="evt-1" onClose={vi.fn()} />)
+    const panel = screen.getByTestId('audit-detail-panel')
+    const buttons = within(panel).getAllByRole('button')
+    const first = buttons[0]
+    const last = buttons[buttons.length - 1]
+    first.focus()
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+  })
+
+  it('closes on Escape', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    const onClose = vi.fn()
+    render(<AuditEventDetail eventId="evt-1" onClose={onClose} />)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('restores focus to the opener on close', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    const opener = document.createElement('button')
+    document.body.appendChild(opener)
+    opener.focus()
+
+    const { rerender } = render(
+      <AuditEventDetail eventId="evt-1" onClose={vi.fn()} />,
+    )
+    expect(document.activeElement).toBe(screen.getByTestId('audit-detail-panel'))
+
+    rerender(<AuditEventDetail eventId={null} onClose={vi.fn()} />)
+    expect(document.activeElement).toBe(opener)
+    opener.remove()
+  })
+
+  it('keeps keyboard focus inside the dialog (background exclusion)', () => {
+    mockUseAuditEvent.mockReturnValue({ ...baseDetail(), event: createAuditEvent() })
+    render(
+      <div>
+        <button data-testid="background-button">Background</button>
+        <AuditEventDetail eventId="evt-1" onClose={vi.fn()} />
+      </div>,
+    )
+    const panel = screen.getByTestId('audit-detail-panel')
+    const buttons = within(panel).getAllByRole('button')
+    const last = buttons[buttons.length - 1]
+    last.focus()
+    fireEvent.keyDown(document, { key: 'Tab' })
+    expect(document.activeElement).toBe(buttons[0])
+    expect(document.activeElement).not.toBe(
+      screen.getByTestId('background-button'),
     )
   })
 })

@@ -8,11 +8,13 @@
  * procurement-execute control — the panel is strictly read-only.
  *
  * The backend ``[REDACTED]`` sentinel is preserved verbatim (rendered by
- * SafeMetadata), and no binding hash, prompt, token, or raw provider payload
- * is ever rendered because the audit wire schema carries none.
+ * SafeMetadata). The ``binding_hash`` field that the audit wire schema
+ * legitimately carries inside structured metadata is suppressed at the
+ * centralized display-sanitization boundary (SafeMetadata), so neither the
+ * key nor its value ever reaches the DOM.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Check, Copy, X } from 'lucide-react'
 
 import {
@@ -33,14 +35,63 @@ interface AuditEventDetailProps {
 export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
   const { event, isLoading, isError, error, refetch } = useAuditEvent(eventId)
 
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previouslyFocusedRef = useRef<Element | null>(null)
+  const onCloseRef = useRef(onClose)
+
+  // Keep the latest onClose available to the stable keydown listener without
+  // re-running the focus-management effect on every parent render.
   useEffect(() => {
-    if (!eventId) return
+    onCloseRef.current = onClose
+  })
+
+  useEffect(() => {
+    if (eventId === null) return
+
+    // Remember the element that opened the dialog so focus can be restored.
+    previouslyFocusedRef.current = document.activeElement
+
+    // Apply initial focus inside the dialog (the container itself, focusable
+    // via tabIndex=-1 so it announces the accessible name).
+    panelRef.current?.focus()
+
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onCloseRef.current()
+        return
+      }
+      if (e.key !== 'Tab') return
+
+      const container = panelRef.current
+      if (!container) return
+      const focusable = getFocusableElements(container)
+      if (focusable.length === 0) return
+
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+
+      if (e.shiftKey) {
+        if (active === first || !container.contains(active)) {
+          e.preventDefault()
+          last.focus()
+        }
+      } else if (active === last || !container.contains(active)) {
+        e.preventDefault()
+        first.focus()
+      }
     }
+
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [eventId, onClose])
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      const prev = previouslyFocusedRef.current
+      if (prev instanceof HTMLElement) {
+        prev.focus()
+      }
+    }
+  }, [eventId])
 
   if (eventId === null) {
     return null
@@ -56,6 +107,8 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
         role="dialog"
         aria-modal="true"
         aria-label="Audit event detail"
+        ref={panelRef}
+        tabIndex={-1}
         className="h-full w-full max-w-xl overflow-y-auto border-l border-steel-700 bg-steel-900 p-6"
         data-testid="audit-detail-panel"
         onClick={(e) => e.stopPropagation()}
@@ -196,6 +249,22 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
 interface FieldProps {
   label: string
   children: React.ReactNode
+}
+
+/**
+ * Return the keyboard-focusable elements inside the dialog, in DOM order, so
+ * the Tab trap can wrap focus between the first and last interactive control.
+ */
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  const selector = [
+    'a[href]',
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',')
+  return Array.from(container.querySelectorAll<HTMLElement>(selector))
 }
 
 function Field({ label, children }: FieldProps) {

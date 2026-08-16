@@ -12,6 +12,8 @@
 
 import type { ReactNode } from 'react'
 
+import { isBindingHashKey } from './audit-sanitize'
+
 const MAX_DEPTH = 6
 const MAX_ITEMS = 50
 
@@ -72,7 +74,11 @@ function renderArray(value: unknown[], depth: number): ReactNode {
 }
 
 function renderObject(value: Record<string, unknown>, depth: number): ReactNode {
-  const entries = Object.entries(value)
+  // Centralized display-sanitization boundary: suppress binding_hash entries
+  // (any spelling variant) so neither the key nor its value reaches the DOM.
+  // The filter is non-mutating — the original object and React Query cache
+  // entries are left untouched.
+  const entries = Object.entries(value).filter(([key]) => !isBindingHashKey(key))
   if (entries.length === 0) {
     return <span className="text-steel-500">{'{}'}</span>
   }

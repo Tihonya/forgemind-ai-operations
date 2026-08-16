@@ -12,7 +12,7 @@
  * renders whatever the backend returns and surfaces 401/403/404 safely.
  */
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AlertCircle, FileText, Search } from 'lucide-react'
 
 import { AuditEventDetail } from '@/components/audit/audit-event-detail'
@@ -55,6 +55,18 @@ export default function AuditLog() {
     error,
     refetch,
   } = useAuditEvents(limit, offset)
+
+  // When the result set shrinks while the user is on a later page (or an
+  // out-of-range offset is requested directly), a page can return zero items
+  // while total > 0. Normalize the offset back to the first page so the UI
+  // never shows the misleading "No audit events" state, and to avoid a
+  // request loop or oscillating offset. The `total > 0` guard also prevents
+  // this from firing while a fresh page is still loading (total is 0 then).
+  useEffect(() => {
+    if (total > 0 && events.length === 0 && !isLoading && !isError && offset > 0) {
+      setOffset(0)
+    }
+  }, [total, events.length, isLoading, isError, offset])
 
   const filtered = useMemo(() => filterAuditEvents(events, query), [events, query])
 
@@ -143,7 +155,7 @@ export default function AuditLog() {
             Reload audit log
           </Button>
         </div>
-      ) : events.length === 0 ? (
+      ) : total === 0 ? (
         <DataEmptyState
           primaryText="No audit events"
           secondaryText="Audit events will appear here once approval and procurement actions occur."
@@ -154,6 +166,29 @@ export default function AuditLog() {
             />
           }
         />
+      ) : events.length === 0 ? (
+        <div
+          className="flex flex-col items-center gap-4 rounded-md border border-steel-700 bg-steel-800/40 px-6 py-12 text-center"
+          data-testid="out-of-range-state"
+        >
+          <AlertCircle className="h-10 w-10 text-steel-500" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-steel-300">
+              No events on this page.
+            </p>
+            <p className="mt-1 text-xs text-steel-500">
+              This page is outside the available range. Showing the first page.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setOffset(0)}
+            data-testid="reset-page-button"
+          >
+            Go to first page
+          </Button>
+        </div>
       ) : filtered.length === 0 ? (
         <div
           className="flex flex-col items-center gap-4 rounded-md border border-steel-700 bg-steel-800/40 px-6 py-12 text-center"
