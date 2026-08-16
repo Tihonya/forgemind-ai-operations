@@ -123,14 +123,24 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('nav-disabled-knowledge')).toBeInTheDocument()
   })
 
-  it('renders Audit Log for auditor (disabled)', () => {
+  it('renders Audit Log link for auditor (active)', () => {
     const user: AuthUser = {
       id: '1',
       username: 'auditor',
       roles: ['auditor'],
     }
     renderSidebar(user)
-    expect(screen.getByTestId('nav-disabled-audit')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /audit log/i })).toBeInTheDocument()
+  })
+
+  it('renders Audit Log link for ai_administrator (active)', () => {
+    const user: AuthUser = {
+      id: '1',
+      username: 'ai_admin',
+      roles: ['ai_administrator'],
+    }
+    renderSidebar(user)
+    expect(screen.getByRole('link', { name: /audit log/i })).toBeInTheDocument()
   })
 
   it('renders only Dashboard for engineer', () => {

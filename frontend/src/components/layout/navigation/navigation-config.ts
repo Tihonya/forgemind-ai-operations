@@ -51,7 +51,7 @@ export interface NavigationItem {
  *   ai_administrator (Phase 5)
  * - Approval Center: production_manager, procurement_specialist,
  *   ai_administrator (Phase 6 — active)
- * - Audit Log: auditor (Phase 6)
+ * - Audit Log: auditor, ai_administrator (Phase 6 — active)
  * - Admin / Model Status: ai_administrator (Phase 7)
  * - Unknown or missing role: Dashboard only
  */
@@ -111,9 +111,9 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     id: 'audit',
     label: 'Audit Log',
-    phase: 6,
+    path: '/audit-log',
     icon: FileText,
-    roles: new Set<UserRole>(['auditor']),
+    roles: new Set<UserRole>(['auditor', 'ai_administrator']),
   },
   {
     id: 'admin',
