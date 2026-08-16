@@ -4,7 +4,9 @@ This module owns the complete long-running workflow execution sequence:
 
 1. Load the durable run and related production plan.
 2. Generation-guarded PENDING → RUNNING transition (D6 §5).
-3. Deterministic risk calculation (persisted independently of provider).
+3. Deterministic risk calculation, snapshotted as a durable
+   ``deterministic_calculation`` workflow step (AT-012 complete-trace
+   remediation).
 4. Provider invocation through the existing WP-REC-03A abstraction.
 5. Existing WP-REC-03D provider retry/outage handling (via RetryingChatProvider).
 6. Validation through the existing WP-REC-03C validator.
@@ -22,9 +24,11 @@ Design contract (WP-REC-03F):
   - Recommendation ORM model from 03B
   - analyze_plan risk engine from WP-2.9
 
-- Deterministic risk results are persisted independently of provider
-  success. If the provider fails after the risk engine succeeds, the
-  deterministic risk result remains persisted and available.
+- The deterministic risk result is snapshotted into a durable
+  ``deterministic_calculation`` workflow step immediately after the risk
+  engine succeeds and before retrieval/provider processing. The snapshot
+  is the point-in-time result and is never recomputed from later mutable
+  plan/BOM/inventory/purchase-order state.
 
 - No secrets are exposed in error messages, logs, or responses.
 - Correlation ID is propagated through all steps.
@@ -303,6 +307,48 @@ async def execute_workflow(
         return VerticalExecutionResult(
             WorkflowState.FAILED_INTERNAL.value, False
         )
+
+    # 4.1 Snapshot the deterministic risk result as a durable
+    #     ``deterministic_calculation`` workflow step (AT-012 complete-trace
+    #     remediation, item 2). The snapshot is the point-in-time result
+    #     captured immediately after analyze_plan succeeds and before
+    #     retrieval/provider processing; it is never recomputed from later
+    #     mutable plan/BOM/inventory/purchase-order state. The emit-once
+    #     guard applies ONLY to this new step: on retry the original snapshot
+    #     is preserved and never overwritten or duplicated. The legacy
+    #     append-on-retry behavior of retrieval/provider_call/validation is
+    #     unaffected.
+    dc_existing = await session.execute(
+        select(WorkflowStep.id).where(
+            WorkflowStep.run_id == run.id,
+            WorkflowStep.step_name == "deterministic_calculation",
+        )
+    )
+    if dc_existing.scalar_one_or_none() is None:
+        dc_step = WorkflowStep(
+            run_id=run.id,
+            correlation_id=run.correlation_id,
+            seq=await engine._next_step_seq(run.id),
+            step_name="deterministic_calculation",
+            status="completed",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            step_metadata={
+                "plan_code": plan_code,
+                "risk_count": len(risks),
+                "risks": [
+                    {
+                        "risk_id": item["risk_id"],
+                        "component_code": item["component_code"],
+                        "severity": item["severity"],
+                        "shortage": item["shortage"],
+                    }
+                    for item in risk_items
+                ],
+            },
+        )
+        session.add(dc_step)
+        await session.flush()
 
     # 4.5 Retrieval orchestration (WP-REC-05) — inserted after deterministic
     #     risk calculation and before prompt construction. Resolves the
@@ -626,6 +672,45 @@ async def execute_workflow(
             completed_at=datetime.now(UTC),
         )
         session.add(val_step)
+        await session.flush()
+
+        # 7.5 Record the recommendation step (AT-012 complete-trace
+        #     remediation, item 6), immediately after the Recommendation row
+        #     is flushed and validation has succeeded. It binds to the same
+        #     run_id and correlation_id and carries only the safe minimum
+        #     metadata — never the full recommendation payload. Because
+        #     ``recommendations.run_id`` is unique and retry-eligible states
+        #     never persist a recommendation, this step is emitted exactly
+        #     once per run with no additional guard.
+        recommendation_step = WorkflowStep(
+            run_id=run.id,
+            correlation_id=run.correlation_id,
+            seq=await engine._next_step_seq(run.id),
+            step_name="recommendation",
+            status="completed",
+            started_at=datetime.now(UTC),
+            completed_at=datetime.now(UTC),
+            step_metadata={
+                "recommendation_id": str(recommendation.id),
+                "plan_id": str(run.plan_id),
+                "schema_version": RECOMMENDATION_SCHEMA_VERSION,
+                "status": "VALIDATED",
+                "risk_ids": [risk.risk_id for risk in recommendation_data.risks],
+                "action_types": sorted(
+                    {
+                        action.action_type
+                        for risk in recommendation_data.risks
+                        for action in risk.recommended_actions
+                    }
+                ),
+                "requires_approval": any(
+                    action.requires_approval
+                    for risk in recommendation_data.risks
+                    for action in risk.recommended_actions
+                ),
+            },
+        )
+        session.add(recommendation_step)
         await session.flush()
 
         # 8. Transition AWAITING_VALIDATION → COMPLETED.

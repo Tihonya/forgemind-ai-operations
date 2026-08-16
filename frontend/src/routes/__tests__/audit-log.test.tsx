@@ -30,6 +30,23 @@ vi.mock('@/components/audit/audit-event-detail', () => ({
     ),
 }))
 
+vi.mock('@/components/audit/audit-trace-dialog', () => ({
+  AuditTraceDialog: ({
+    correlationId,
+    onClose,
+  }: {
+    correlationId: string | null
+    onClose: () => void
+  }) =>
+    correlationId === null ? null : (
+      <div data-testid="audit-trace-panel">
+        <button type="button" data-testid="audit-trace-close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+    ),
+}))
+
 const mockUseAuditEvents = vi.mocked(useAuditEvents)
 
 function baseList() {
@@ -203,6 +220,18 @@ describe('AuditLog route', () => {
     renderRoute()
     await user.click(screen.getByTestId('view-event-evt-1'))
     expect(screen.getByTestId('audit-detail-panel')).toBeInTheDocument()
+  })
+
+  it('opens the read-only trace dialog when a row trace is requested', async () => {
+    const user = userEvent.setup()
+    mockUseAuditEvents.mockReturnValue({
+      ...baseList(),
+      events: [createAuditEvent({ id: 'evt-1' })],
+      total: 1,
+    })
+    renderRoute()
+    await user.click(screen.getByTestId('trace-event-evt-1'))
+    expect(screen.getByTestId('audit-trace-panel')).toBeInTheDocument()
   })
 
   it('exposes no mutation controls', () => {

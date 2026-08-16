@@ -12,8 +12,10 @@ import { useQuery } from '@tanstack/react-query'
 import {
   fetchAuditEvent,
   fetchAuditEvents,
+  fetchAuditTrace,
   type AuditEventListResponse,
   type AuditEventResponse,
+  type AuditTraceResponse,
 } from '@/lib/audit-api'
 
 export interface UseAuditEventsResult {
@@ -86,6 +88,42 @@ export function useAuditEvent(eventId: string | null): UseAuditEventResult {
 
   return {
     event: data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  }
+}
+
+export interface UseAuditTraceResult {
+  trace: AuditTraceResponse | undefined
+  isLoading: boolean
+  isError: boolean
+  error: Error | null
+  refetch: () => void
+}
+
+/**
+ * Fetch the normalized nine-item trace for a correlation ID. ``enabled`` is
+ * false until a correlation is selected, so no request is made for a null
+ * selection.
+ */
+export function useAuditTrace(
+  correlationId: string | null,
+): UseAuditTraceResult {
+  const { data, isLoading, isError, error, refetch } = useQuery<
+    AuditTraceResponse,
+    Error
+  >({
+    queryKey: ['audit-trace', correlationId],
+    queryFn: () => fetchAuditTrace(correlationId as string),
+    enabled: correlationId !== null,
+    staleTime: 60_000,
+    retry: false,
+  })
+
+  return {
+    trace: data,
     isLoading,
     isError,
     error,

@@ -274,7 +274,10 @@ class TestStepRecording:
         await engine.execute_provider_call(run, prompt="test")
 
         steps_result = await db_session.execute(
-            select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+            select(WorkflowStep).where(
+                WorkflowStep.run_id == run.id,
+                WorkflowStep.step_name == "provider_call",
+            )
         )
         steps = steps_result.scalars().all()
         assert len(steps) == 1
@@ -301,7 +304,10 @@ class TestStepRecording:
 
         assert result is None
         steps_result = await db_session.execute(
-            select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+            select(WorkflowStep).where(
+                WorkflowStep.run_id == run.id,
+                WorkflowStep.step_name == "provider_call",
+            )
         )
         steps = steps_result.scalars().all()
         assert len(steps) == 1
@@ -313,7 +319,7 @@ class TestStepRecording:
     async def test_step_seq_starts_at_zero(
         self, db_session: AsyncSession, plan_id: Any
     ) -> None:
-        """First step within a run has seq=0."""
+        """The user_action step has seq=0; subsequent steps increment."""
         provider = _RecordingFakeProvider(result=_make_chat_result())
         engine = WorkflowEngine(provider=provider, session=db_session)
         run = await engine.create_run(plan_id=plan_id)
@@ -321,12 +327,23 @@ class TestStepRecording:
 
         await engine.execute_provider_call(run, prompt="test")
 
-        steps_result = await db_session.execute(
-            select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+        user_action_result = await db_session.execute(
+            select(WorkflowStep).where(
+                WorkflowStep.run_id == run.id,
+                WorkflowStep.step_name == "user_action",
+            )
         )
-        steps = steps_result.scalars().all()
-        assert len(steps) == 1
-        assert steps[0].seq == 0
+        user_action = user_action_result.scalar_one()
+        assert user_action.seq == 0
+
+        provider_result = await db_session.execute(
+            select(WorkflowStep).where(
+                WorkflowStep.run_id == run.id,
+                WorkflowStep.step_name == "provider_call",
+            )
+        )
+        provider_step = provider_result.scalar_one()
+        assert provider_step.seq == 1
 
 
 # ---------------------------------------------------------------------------
@@ -383,7 +400,10 @@ class TestCorrelationPropagation:
         await engine.execute_provider_call(run, prompt="test")
 
         step_result = await db_session.execute(
-            select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+            select(WorkflowStep).where(
+                WorkflowStep.run_id == run.id,
+                WorkflowStep.step_name == "provider_call",
+            )
         )
         step = step_result.scalar_one()
         assert step.correlation_id == corr
@@ -409,7 +429,10 @@ class TestModelMetadataRecording:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.model_name == "gpt-4o-mini"
@@ -429,7 +452,10 @@ class TestModelMetadataRecording:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.token_usage == usage
@@ -449,7 +475,10 @@ class TestModelMetadataRecording:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.step_metadata is not None
@@ -672,7 +701,10 @@ class TestNoSecretLeakage:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.error_detail is not None
@@ -700,7 +732,10 @@ class TestNoSecretLeakage:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.error_detail is not None
@@ -726,7 +761,10 @@ class TestNoSecretLeakage:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.error_detail is not None
@@ -750,7 +788,10 @@ class TestNoSecretLeakage:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         assert step.error_detail is not None
@@ -791,7 +832,10 @@ class TestNoSecretLeakage:
 
         step = (
             await db_session.execute(
-                select(WorkflowStep).where(WorkflowStep.run_id == run.id)
+                select(WorkflowStep).where(
+                    WorkflowStep.run_id == run.id,
+                    WorkflowStep.step_name == "provider_call",
+                )
             )
         ).scalar_one()
         if step.step_metadata:

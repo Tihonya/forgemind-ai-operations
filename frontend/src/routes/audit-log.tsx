@@ -17,6 +17,7 @@ import { AlertCircle, FileText, Search } from 'lucide-react'
 
 import { AuditEventDetail } from '@/components/audit/audit-event-detail'
 import { AuditEventTypeBadge } from '@/components/audit/audit-event-type-badge'
+import { AuditTraceDialog } from '@/components/audit/audit-trace-dialog'
 import { filterAuditEvents } from '@/components/audit/audit-filter'
 import { DataEmptyState } from '@/components/common/DataEmptyState'
 import { Button } from '@/components/ui/button'
@@ -45,6 +46,7 @@ export default function AuditLog() {
   const [offset, setOffset] = useState(0)
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [traceCorrelationId, setTraceCorrelationId] = useState<string | null>(null)
 
   const {
     events,
@@ -273,15 +275,26 @@ export default function AuditLog() {
                     </button>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setSelectedId(event.id)}
-                      aria-label={`View details for ${formatEventType(event.event_type)}`}
-                      data-testid={`view-event-${event.id}`}
-                    >
-                      View
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTraceCorrelationId(event.correlation_id)}
+                        aria-label={`View trace for ${formatEventType(event.event_type)}`}
+                        data-testid={`trace-event-${event.id}`}
+                      >
+                        Trace
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedId(event.id)}
+                        aria-label={`View details for ${formatEventType(event.event_type)}`}
+                        data-testid={`view-event-${event.id}`}
+                      >
+                        View
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -342,6 +355,11 @@ export default function AuditLog() {
       <AuditEventDetail
         eventId={selectedId}
         onClose={() => setSelectedId(null)}
+      />
+
+      <AuditTraceDialog
+        correlationId={traceCorrelationId}
+        onClose={() => setTraceCorrelationId(null)}
       />
     </div>
   )

@@ -105,6 +105,71 @@ export function formatEntityType(entityType: string): string {
 }
 
 /**
+ * Canonical nine-item AT-012 trace categories in fixed display order
+ * (mirrors the backend ``TRACE_CATEGORY_ORDER``).
+ */
+export const TRACE_CATEGORY_ORDER = [
+  'user_action',
+  'deterministic_calculation',
+  'retrieval',
+  'model_call',
+  'structured_validation',
+  'recommendation',
+  'approval_request',
+  'human_decision',
+  'write_action',
+] as const
+
+/**
+ * Human-readable labels for the nine trace categories. Unknown values fall
+ * back to the raw value (no crash, no silent skip).
+ */
+export const TRACE_CATEGORY_LABELS: Record<string, string> = {
+  user_action: 'User action',
+  deterministic_calculation: 'Deterministic calculation',
+  retrieval: 'Retrieval',
+  model_call: 'Model call',
+  structured_validation: 'Structured validation',
+  recommendation: 'Recommendation',
+  approval_request: 'Approval request',
+  human_decision: 'Human decision',
+  write_action: 'Write action',
+}
+
+/** A single normalized item in the nine-item trace. */
+export interface AuditTraceItem {
+  category: string
+  category_order: number
+  occurred_at: string
+  source: 'workflow_step' | 'audit_event'
+  source_id: string
+  actor: string | null
+  entity_type: string | null
+  entity_id: string | null
+  risk_id: string | null
+  summary: Record<string, unknown> | null
+}
+
+/** Normalized, correlation-scoped nine-item trace response. */
+export interface AuditTraceResponse {
+  correlation_id: string
+  workflow_run_id: string
+  triggered_by: string | null
+  final_state: string
+  complete: boolean
+  missing_categories: string[]
+  items: AuditTraceItem[]
+}
+
+/**
+ * Return a human-readable label for a trace category, falling back to the raw
+ * value for unknown categories.
+ */
+export function formatTraceCategory(category: string): string {
+  return TRACE_CATEGORY_LABELS[category] ?? category
+}
+
+/**
  * Shorten an opaque UUID for compact list display (first 8 characters). The
  * full value remains available in the detail view and via ``title``.
  */
@@ -161,6 +226,21 @@ export async function fetchAuditEvent(
 }
 
 /**
+ * Fetch the normalized nine-item trace for a correlation ID (read-only).
+ *
+ * The backend exposes only a GET for the trace; this client deliberately
+ * exposes no mutation helper for it.
+ */
+export async function fetchAuditTrace(
+  correlationId: string,
+): Promise<AuditTraceResponse> {
+  const response = await api.get<AuditTraceResponse>(
+    `/audit-trace/${correlationId}`,
+  )
+  return response.data
+}
+
+/**
  * Extract the stable backend error code from an API error response body of
  * shape ``{ detail: { error: "..." } }`` (the repository-standard HTTP error).
  */
@@ -181,6 +261,7 @@ export function getAuditErrorCode(error: unknown): string | null {
  */
 const ERROR_MESSAGES: Record<string, string> = {
   audit_event_not_found: 'The audit event was not found.',
+  audit_trace_not_found: 'The trace was not found.',
 }
 
 /**
