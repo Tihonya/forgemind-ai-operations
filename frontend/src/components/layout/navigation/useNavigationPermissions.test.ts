@@ -6,7 +6,12 @@ import {
   normalizeRoles,
   filterNavigationForRoles,
 } from './useNavigationPermissions'
-import { NAVIGATION_ITEMS, type NavigationItem, type UserRole } from './navigation-config'
+import {
+  ALL_ROLES,
+  NAVIGATION_ITEMS,
+  type NavigationItem,
+  type UserRole,
+} from './navigation-config'
 
 describe('normalizeRoles', () => {
   it('returns empty set for undefined', () => {
@@ -32,18 +37,25 @@ describe('normalizeRoles', () => {
     expect(result.has('ai_administrator')).toBe(true)
   })
 
-  it('normalizes UPPERCASE backend role codes to lowercase', () => {
+  it('normalizes UPPERCASE backend role codes to lowercase (all five canonical roles)', () => {
     const result = normalizeRoles([
       'PRODUCTION_MANAGER',
       'PROCUREMENT_SPECIALIST',
+      'ENGINEER',
       'AI_ADMINISTRATOR',
       'AUDITOR',
     ])
-    expect(result.size).toBe(4)
+    expect(result.size).toBe(5)
     expect(result.has('production_manager')).toBe(true)
     expect(result.has('procurement_specialist')).toBe(true)
+    expect(result.has('engineer')).toBe(true)
     expect(result.has('ai_administrator')).toBe(true)
     expect(result.has('auditor')).toBe(true)
+  })
+
+  it('filters out the removed platform_admin role as unknown', () => {
+    const result = normalizeRoles(['platform_admin'])
+    expect(result.size).toBe(0)
   })
 
   it('handles mixed case roles defensively', () => {
@@ -65,7 +77,34 @@ describe('normalizeRoles', () => {
     expect(result.size).toBe(2)
     expect(result.has('production_manager')).toBe(true)
     expect(result.has('auditor')).toBe(true)
-    // 'UNKNOWN_ROLE' is not a valid UserRole, so it's filtered out (size check above)
+  })
+})
+
+describe('ALL_ROLES', () => {
+  it('contains exactly the five canonical roles', () => {
+    expect(ALL_ROLES).toEqual([
+      'production_manager',
+      'procurement_specialist',
+      'engineer',
+      'ai_administrator',
+      'auditor',
+    ])
+  })
+})
+
+describe('NAVIGATION_ITEMS', () => {
+  it('no navigation item references the removed platform_admin role', () => {
+    for (const item of NAVIGATION_ITEMS) {
+      const roleCodes = Array.from(item.roles) as string[]
+      expect(roleCodes).not.toContain('platform_admin')
+    }
+  })
+
+  it('Approval Center navigation item is active (has a path, no phase)', () => {
+    const approvals = NAVIGATION_ITEMS.find((item) => item.id === 'approvals')
+    expect(approvals).toBeDefined()
+    expect(approvals?.path).toBe('/approval-center')
+    expect(approvals?.phase).toBeUndefined()
   })
 })
 
@@ -101,10 +140,11 @@ describe('filterNavigationForRoles', () => {
     expect(ids).not.toContain('approvals')
   })
 
-  it('platform_admin sees all items', () => {
-    const roles = new Set<UserRole>(['platform_admin'])
+  it('engineer sees Dashboard only', () => {
+    const roles = new Set<UserRole>(['engineer'])
     const result = filterNavigationForRoles(NAVIGATION_ITEMS, roles)
-    expect(result).toHaveLength(NAVIGATION_ITEMS.length)
+    const ids = result.map((i: NavigationItem) => i.id)
+    expect(ids).toEqual(['dashboard'])
   })
 
   it('merges multiple roles into deduplicated union', () => {
@@ -114,17 +154,17 @@ describe('filterNavigationForRoles', () => {
     expect(ids).toContain('dashboard')
     expect(ids).toContain('supply-risk')
     expect(ids).toContain('audit')
-    // No duplicates
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('ai_administrator sees Dashboard, Knowledge, Workflows, Admin', () => {
+  it('ai_administrator sees Dashboard, Knowledge, Workflows, Approvals, Admin', () => {
     const roles = new Set<UserRole>(['ai_administrator'])
     const result = filterNavigationForRoles(NAVIGATION_ITEMS, roles)
     const ids = result.map((i: NavigationItem) => i.id)
     expect(ids).toContain('dashboard')
     expect(ids).toContain('knowledge')
     expect(ids).toContain('workflows')
+    expect(ids).toContain('approvals')
     expect(ids).toContain('admin')
     expect(ids).not.toContain('supply-risk')
     expect(ids).not.toContain('audit')
@@ -154,17 +194,18 @@ describe('useNavigationPermissions hook', () => {
 
   it('returns correct items for production_manager', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['production_manager'])
+      useNavigationPermissions(['production_manager']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
     expect(ids).toContain('dashboard')
     expect(ids).toContain('supply-risk')
+    expect(ids).toContain('approvals')
   })
 
   it('returns correct items for PRODUCTION_MANAGER (uppercase backend)', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['PRODUCTION_MANAGER'])
+      useNavigationPermissions(['PRODUCTION_MANAGER']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
@@ -176,7 +217,7 @@ describe('useNavigationPermissions hook', () => {
 
   it('returns correct items for PROCUREMENT_SPECIALIST (uppercase backend)', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['PROCUREMENT_SPECIALIST'])
+      useNavigationPermissions(['PROCUREMENT_SPECIALIST']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
@@ -186,14 +227,25 @@ describe('useNavigationPermissions hook', () => {
     expect(ids).toContain('approvals')
   })
 
-  it('returns all items for platform_admin', () => {
-    const { result } = renderHook(() => useNavigationPermissions(['platform_admin']))
-    expect(result.current.navigationItems).toHaveLength(NAVIGATION_ITEMS.length)
+  it('returns Dashboard only for ENGINEER (uppercase backend)', () => {
+    const { result } = renderHook(() => useNavigationPermissions(['ENGINEER']))
+    expect(result.current.unknownRole).toBe(false)
+    const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
+    expect(ids).toEqual(['dashboard'])
+  })
+
+  it('treats platform_admin as unknown (Dashboard only)', () => {
+    const { result } = renderHook(() =>
+      useNavigationPermissions(['platform_admin']),
+    )
+    expect(result.current.unknownRole).toBe(true)
+    expect(result.current.navigationItems).toHaveLength(1)
+    expect(result.current.navigationItems[0].id).toBe('dashboard')
   })
 
   it('deduplicates multi-role navigation', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['production_manager', 'auditor'])
+      useNavigationPermissions(['production_manager', 'auditor']),
     )
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
     expect(new Set(ids).size).toBe(ids.length)
@@ -201,7 +253,7 @@ describe('useNavigationPermissions hook', () => {
 
   it('handles mixed uppercase and lowercase roles', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['PRODUCTION_MANAGER', 'auditor'])
+      useNavigationPermissions(['PRODUCTION_MANAGER', 'auditor']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
@@ -210,24 +262,23 @@ describe('useNavigationPermissions hook', () => {
     expect(ids).toContain('audit')
   })
 
-  it('AI_ADMINISTRATOR does not see Supply Risk Analysis', () => {
+  it('AI_ADMINISTRATOR sees Approvals (administrative read)', () => {
     const { result } = renderHook(() =>
-      useNavigationPermissions(['AI_ADMINISTRATOR'])
+      useNavigationPermissions(['AI_ADMINISTRATOR']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
+    expect(ids).toContain('approvals')
     expect(ids).not.toContain('supply-risk')
-    expect(ids).toContain('dashboard')
-    expect(ids).toContain('knowledge')
+    expect(ids).not.toContain('audit')
   })
 
-  it('AUDITOR does not see Supply Risk Analysis', () => {
-    const { result } = renderHook(() =>
-      useNavigationPermissions(['AUDITOR'])
-    )
+  it('AUDITOR does not see Supply Risk Analysis or Approvals', () => {
+    const { result } = renderHook(() => useNavigationPermissions(['AUDITOR']))
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
     expect(ids).not.toContain('supply-risk')
+    expect(ids).not.toContain('approvals')
     expect(ids).toContain('dashboard')
     expect(ids).toContain('audit')
   })
