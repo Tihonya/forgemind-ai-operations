@@ -1,8 +1,8 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-15
+**Last Updated:** 2026-08-16
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciliation base snapshot:** main @ `5b7323dec414aba321fc6ca2284ca1de4aa17dd7` (PR #96 merge commit; snapshot semantics per DEC-051)
+**Reconciliation base snapshot:** main @ `b651abdcca0ab634f99f10af1a22ce457bfefa58` (PR #110 merge commit; snapshot semantics per DEC-051)
 
 The `Reconciliation base snapshot` field records the immutable base snapshot used to prepare this document's lifecycle state — it is not a current-`main` assertion; current `main` is determined from Git/GitHub (see DEC-051).
 
@@ -62,11 +62,6 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 | Capability | Required For | Phase |
 |-----------|--------------|-------|
-| Approval service | AT-009, AT-010, AT-011 | Phase 6 |
-| Audit event service | AT-012 | Phase 6 |
-| Procurement task service | AT-010 | Phase 6 |
-| Approval Center UI | AT-009, AT-010, AT-011 | Phase 6 |
-| Audit log UI | AT-012 | Phase 6 |
 | Demo reset | AT-015 | Phase 7 |
 | Rate limiting | Gate D | Phase 7 |
 | Backup/restore | Gate E | Phase 7 |
@@ -75,7 +70,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 ### Current MVP completion
 
-Three of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 now has formal AT-006/AT-007 PASS evidence (composite accepted packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15); step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Steps 4–5 of the condensed milestones (approval → procurement → audit → deployment) are not implemented. Phase 5 delivers the structured AI recommendation workflow and workflow retry; human approval and controlled procurement writes remain Phase 6 work.
+Four of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 now has formal AT-006/AT-007 PASS evidence (composite accepted packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15); step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED; step 4 — approval → procurement → audit — is implemented and formally accepted via Phase 6: AT-009 PASS, AT-010 PASS, AT-011 PASS, AT-012 PASS, Phase 6 CLOSED / ACCEPTED, accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Step 5 of the condensed milestones (deployment) is not implemented. Phase 5 delivers the structured AI recommendation workflow and workflow retry; Phase 6 delivers human approval, controlled procurement writes, and the complete correlated audit trace.
 
 ---
 
@@ -116,8 +111,8 @@ The accepted planning sequence is:
 5. **WP-REC-05** (RAG integration into the AI workflow) — COMPLETE — merged via PR #89 (regular merge commit `86e2d0cd3d6d3eaf889ca6d674829f7ac541778c`, 2026-08-14); strict post-merge verification passed.
 6. **WP-REC-05-PROVIDER-IMP** (external chat-provider chain and grounded-output hardening) — COMPLETE — merged via PR #91 (regular merge commit `7d425c1d3f1e92e08d62360c28ced22481136fe7`, 2026-08-14); strict post-merge verification passed. External live interoperability was subsequently demonstrated for OpenRouter `qwen/qwen3.7-flash` via the WP-REC-05-VFY formal rerun (DEC-049); the repository still has no Groq/OpenRouter key or ~USD 5 OpenRouter budget configured for general use.
 7. **WP-REC-05-VFY** (bounded AT-006/AT-007 verification) — ACCEPTED — composite of sealed packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` accepted by the Product Owner 2026-08-15 (DEC-049); AT-006 PASS; AT-007 PASS. Separate from WP-REC-05 (DEC-035); follows WP-REC-05 implementation.
-8. **WP-REC-04-DEC** (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; completed and incorporated into main through PR #97 (regular merge commit `19d41f75cbaedfb652054fc11e5e46562f9581dc`); post-merge verification passed. WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. Phase 6 implementation is now COMPLETE (all five implementation packages incorporated via PRs #99, #102, #104, #106, #108); the next planned Phase 6 package is WP-REC-04-VFY (formal AT-009–AT-012 evidence, independent review, Product Owner acceptance, and Phase 6 closure), NOT STARTED.
-9. **Phase 6** (Approval and Audit) — IN PROGRESS (implementation complete; verification pending). Decomposed via WP-REC-04-DEC; WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. The next Phase 6 package is WP-REC-04-VFY (formal AT-009–AT-012 evidence, independent review, Product Owner acceptance, and Phase 6 closure) — NOT STARTED; beginning it is a separate lifecycle action.
+8. **WP-REC-04-DEC** (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; completed and incorporated into main through PR #97 (regular merge commit `19d41f75cbaedfb652054fc11e5e46562f9581dc`); post-merge verification passed. WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. Phase 6 implementation is now COMPLETE (all five implementation packages incorporated via PRs #99, #102, #104, #106, #108); WP-REC-04-VFY is ACCEPTED (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16, DEC-053); AT-009 PASS; AT-010 PASS; AT-011 PASS; AT-012 PASS; Phase 6 CLOSED / ACCEPTED.
+9. **Phase 6** (Approval and Audit) — CLOSED / ACCEPTED. Decomposed via WP-REC-04-DEC; WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. WP-REC-04-VFY is ACCEPTED (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16, DEC-053); AT-009 PASS; AT-010 PASS; AT-011 PASS; AT-012 PASS; Phase 6 is CLOSED / ACCEPTED.
 10. **Phase 7** (Public Deployment) — NOT STARTED.
 11. **Phase 8** (Portfolio Release) — NOT STARTED.
 
@@ -142,7 +137,7 @@ This is a planning sequence, not an execution authorization. Every future packag
 ## What Must NOT Be Started Automatically
 
 Without explicit Product Owner authorization, do not:
-- Implement any MVP phase (Phase 6 or 7)
+- Implement any MVP phase (Phase 7)
 - Start SP-0B or create forgemind-agent-runtime
 - Copy or move Runtime files
 - Access or modify the VPS
@@ -165,22 +160,23 @@ Without explicit Product Owner authorization, do not:
 | AT-006 | RAG retrieval | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
 | AT-007 | Document access control | ✅ PASS — composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15) |
 | AT-008 | Structured output validation | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03C + 03E + 03F) |
-| AT-009 | Human approval blocks write | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
-| AT-010 | Approval executes action | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
-| AT-011 | Reject path | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
-| AT-012 | Audit trace completeness | NOT PASS — not implemented (decomposed via WP-REC-04-DEC, DEC-052) |
+| AT-009 | Human approval blocks write | ✅ PASS — accepted evidence run `wp-rec-04-vfy-20260816-03` (Product Owner acceptance 2026-08-16) |
+| AT-010 | Approval executes action | ✅ PASS — accepted evidence run `wp-rec-04-vfy-20260816-03` (Product Owner acceptance 2026-08-16) |
+| AT-011 | Reject path | ✅ PASS — accepted evidence run `wp-rec-04-vfy-20260816-03` (Product Owner acceptance 2026-08-16) |
+| AT-012 | Audit trace completeness | ✅ PASS — accepted evidence run `wp-rec-04-vfy-20260816-03` (Product Owner acceptance 2026-08-16) |
 | AT-013 | Model outage | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03D + 03E + 03F + 03G) |
 | AT-014 | Public HTTPS smoke | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
 | AT-015 | Demo reset | NOT IMPLEMENTED |
 
 **Summary:**
-- 7 ATs are PASS: AT-003, AT-004, AT-005, AT-006, AT-007, AT-008, AT-013.
+- 11 ATs are PASS: AT-003, AT-004, AT-005, AT-006, AT-007, AT-008, AT-009, AT-010, AT-011, AT-012, AT-013.
 - AT-006 is PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15).
 - AT-007 is PASS (composite accepted evidence packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15).
 - AT-008 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - AT-013 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
+- AT-009, AT-010, AT-011, and AT-012 are PASS (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16, DEC-053).
 - 3 ATs require deployment/environment verification: AT-001, AT-002, AT-014.
-- 5 ATs require capabilities that are not implemented: AT-009, AT-010, AT-011, AT-012, AT-015.
+- 1 AT requires capabilities that are not implemented: AT-015.
 
 **AT-006 and AT-007 are PASS** via the accepted composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049). These are Product Owner decisions based on accepted composite evidence, not inferences from inspection alone.
 
@@ -203,6 +199,9 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 - DEC-048 (WP-REC-05 external provider architecture and formal VFY pinning)
 - DEC-049 (WP-REC-05-VFY composite-evidence acceptance and AT-006/AT-007 PASS)
 - DEC-050 (bounded documentation-only Phase 4 closure package authorization)
+- DEC-051 (durable reconciliation-base snapshot convention)
+- DEC-052 (Phase 6 approval/audit/procurement contract and WP-REC-04-DEC decomposition)
+- DEC-053 (WP-REC-04-VFY evidence acceptance and Phase 6 closure)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**
@@ -252,8 +251,8 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 ## Next Milestone
 
-**Last Updated:** 2026-08-15
-**Reconciliation base snapshot:** main @ `5b7323dec414aba321fc6ca2284ca1de4aa17dd7` (PR #96 merge commit; snapshot semantics per DEC-051)
+**Last Updated:** 2026-08-16
+**Reconciliation base snapshot:** main @ `b651abdcca0ab634f99f10af1a22ce457bfefa58` (PR #110 merge commit; snapshot semantics per DEC-051)
 
 **Completed work:**
 1. WP-STRAT-01 is completed and merged via PR #67 (merge commit `77d359c`).
@@ -272,10 +271,10 @@ Agent-loop is a Runtime candidate for future extraction to `forgemind-agent-runt
 
 **Planning package status:**
 - WP-REC-05-DEC (RAG integration decomposition and planning) — COMPLETE and CLOSED (planning artifact delivered via PR #87, regular merge commit `e3a9a4572075840e8f1aa71b671ef0dd50dc2eb1`, post-merge verification passed; originally authorized by DEC-044, 2026-08-14).
-- WP-REC-04-DEC (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; completed and incorporated into main through PR #97 (regular merge commit `19d41f75cbaedfb652054fc11e5e46562f9581dc`); post-merge verification passed. WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. Phase 6 implementation is now COMPLETE (all five implementation packages incorporated via PRs #99, #102, #104, #106, #108); the next planned Phase 6 package is WP-REC-04-VFY (formal AT-009–AT-012 evidence, independent review, Product Owner acceptance, and Phase 6 closure), NOT STARTED.
+- WP-REC-04-DEC (Phase 6 contract and decomposition) — decision and planning package (DEC-052, Product Owner 2026-08-15); Phase 6 reconnaissance COMPLETE; decomposition `docs/planning/wp_rec_04_decomposition.md`. Documentation-only; completed and incorporated into main through PR #97 (regular merge commit `19d41f75cbaedfb652054fc11e5e46562f9581dc`); post-merge verification passed. WP-REC-04B (audit-event backend foundation) is COMPLETE and incorporated into main through PR #99 (regular merge commit `60574b65aec99bd7b33e24d8ff50cfc9299aad4f`); strict post-merge verification passed. WP-REC-04A (approval-request backend) is COMPLETE and incorporated into main through PR #102 (regular merge commit `6a8ab4447571c9a624a516e72f4a6930f1af3fa5`); strict post-merge verification passed. WP-REC-04C (procurement-task backend) is COMPLETE and incorporated into main through PR #104 (regular merge commit `d92a85a387b387ea0f1262c7f12f5dafb40941d8`); strict post-merge verification passed. WP-REC-04D (Approval Center frontend) is COMPLETE and incorporated into main through PR #106 (regular merge commit `03bea8d96fa48a2d51a1342dc93602a3a6f6ec83`); strict post-merge verification passed. WP-REC-04E (Audit Log frontend) is COMPLETE and incorporated into main through PR #108 (regular merge commit `b4c6fbc8beb96be8807d32e12b5236ce98e4ed38`); strict post-merge verification passed. Phase 6 implementation is now COMPLETE (all five implementation packages incorporated via PRs #99, #102, #104, #106, #108); WP-REC-04-VFY is ACCEPTED (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16, DEC-053); AT-009 PASS; AT-010 PASS; AT-011 PASS; AT-012 PASS; Phase 6 CLOSED / ACCEPTED.
 
 **Not authorized:**
-- Remaining Phase 6 package: WP-REC-04-VFY (formal AT-009–AT-012 evidence, independent review, Product Owner acceptance, and Phase 6 closure) — not yet authorized; all five Phase 6 implementation packages are incorporated (WP-REC-04B via PR #99; WP-REC-04A via PR #102; WP-REC-04C via PR #104; WP-REC-04D via PR #106; WP-REC-04E via PR #108); Phase 7 (public deployment)
+- Phase 7 (public deployment)
 - SP-0B and forgemind-agent-runtime creation
 - Agent automation activation (deferred)
 

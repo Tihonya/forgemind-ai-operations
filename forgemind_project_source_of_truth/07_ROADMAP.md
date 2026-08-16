@@ -98,6 +98,8 @@ Roadmap побудовано вертикально: кожна фаза зав�
 
 ## Phase 6 — Approval and audit
 
+**Status:** CLOSED / ACCEPTED — Phase 6 implementation packages WP-REC-04B, WP-REC-04A, WP-REC-04C, WP-REC-04D, and WP-REC-04E are all incorporated into main (PRs #99, #102, #104, #106, #108); formal Phase 6 acceptance declared by the Product Owner on 2026-08-16 (DEC-053). AT-009, AT-010, AT-011, and AT-012 are PASS, evidenced by accepted formal run `wp-rec-04-vfy-20260816-03` (see `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md`).
+
 ### Deliverables
 - approval center;
 - approve/reject;
@@ -105,7 +107,7 @@ Roadmap побудовано вертикально: кожна фаза зав�
 - immutable-style audit trail.
 
 ### Exit criteria
-- AT-009…AT-012 pass.
+- AT-009…AT-012 pass ✅ — AT-009 PASS, AT-010 PASS, AT-011 PASS, AT-012 PASS (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance date 2026-08-16);
 
 ## Phase 7 — Public deployment
 

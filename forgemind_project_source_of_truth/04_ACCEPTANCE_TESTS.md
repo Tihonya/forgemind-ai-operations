@@ -73,15 +73,33 @@
 **When:** approval ще pending  
 **Then:** procurement task відсутня.
 
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-04-vfy-20260816-03` (aggregate `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`)
+**Product Owner acceptance date:** 2026-08-16
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_04_vfy_20260816_03_independent_sealed_evidence_rereview.md` (independent re-review) and `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md` (Product Owner acceptance declaration).
+
 ## AT-010 — Approval executes controlled action
 
 **When:** уповноважений користувач підтверджує approval  
 **Then:** створено одну procurement task із посиланням на risk, run і approver.
 
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-04-vfy-20260816-03` (aggregate `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`)
+**Product Owner acceptance date:** 2026-08-16
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_04_vfy_20260816_03_independent_sealed_evidence_rereview.md` (independent re-review) and `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md` (Product Owner acceptance declaration).
+
 ## AT-011 — Reject path
 
 **When:** approval відхилено  
 **Then:** task не створюється, причина відмови збережена в audit log.
+
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-04-vfy-20260816-03` (aggregate `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`)
+**Product Owner acceptance date:** 2026-08-16
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_04_vfy_20260816_03_independent_sealed_evidence_rereview.md` (independent re-review) and `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md` (Product Owner acceptance declaration).
 
 ## AT-012 — Audit trace completeness
 
@@ -96,6 +114,12 @@
 7. approval request;
 8. human decision;
 9. write action або rejection.
+
+**Status:** PASS
+**Accepted evidence run:** `wp-rec-04-vfy-20260816-03` (aggregate `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`)
+**Product Owner acceptance date:** 2026-08-16
+**Acceptance authority:** Product Owner
+**Evidence:** `docs/reviews/wp_rec_04_vfy_20260816_03_independent_sealed_evidence_rereview.md` (independent re-review) and `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md` (Product Owner acceptance declaration).
 
 ## AT-013 — Model outage
 
