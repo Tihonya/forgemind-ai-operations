@@ -29,13 +29,13 @@ describe('Sidebar', () => {
   it('renders user summary with displayName and role', () => {
     const user: AuthUser = {
       id: '1',
-      username: 'admin',
-      display_name: 'Admin User',
-      roles: ['platform_admin'],
+      username: 'manager',
+      display_name: 'Manager User',
+      roles: ['production_manager'],
     }
     renderSidebar(user)
-    expect(screen.getByText('Admin User')).toBeInTheDocument()
-    expect(screen.getByText('Platform Administrator')).toBeInTheDocument()
+    expect(screen.getByText('Manager User')).toBeInTheDocument()
+    expect(screen.getByText('Production Manager')).toBeInTheDocument()
   })
 
   it('renders Dashboard for production_manager', () => {
@@ -68,14 +68,28 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('nav-disabled-workflows')).toBeInTheDocument()
   })
 
-  it('renders Approval Center for production_manager (disabled)', () => {
+  it('renders Approval Center link for production_manager (active)', () => {
     const user: AuthUser = {
       id: '1',
       username: 'pm',
       roles: ['production_manager'],
     }
     renderSidebar(user)
-    expect(screen.getByTestId('nav-disabled-approvals')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /approval center/i }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders Approval Center link for procurement_specialist (active)', () => {
+    const user: AuthUser = {
+      id: '1',
+      username: 'ps',
+      roles: ['procurement_specialist'],
+    }
+    renderSidebar(user)
+    expect(
+      screen.getByRole('link', { name: /approval center/i }),
+    ).toBeInTheDocument()
   })
 
   it('does NOT render Knowledge Sources for production_manager', () => {
@@ -95,7 +109,6 @@ describe('Sidebar', () => {
       roles: ['production_manager'],
     }
     renderSidebar(user)
-    // Audit log is a future module, should not be visible for production_manager
     expect(screen.queryByRole('link', { name: /audit log/i })).not.toBeInTheDocument()
     expect(screen.queryByTestId('nav-disabled-audit')).not.toBeInTheDocument()
   })
@@ -120,22 +133,17 @@ describe('Sidebar', () => {
     expect(screen.getByTestId('nav-disabled-audit')).toBeInTheDocument()
   })
 
-  it('renders all items for platform_admin', () => {
+  it('renders only Dashboard for engineer', () => {
     const user: AuthUser = {
       id: '1',
-      username: 'platform_admin',
-      roles: ['platform_admin'],
+      username: 'engineer',
+      roles: ['engineer'],
     }
     renderSidebar(user)
-    // Active routes (dashboard)
     expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /supply risk/i })).toBeInTheDocument()
-    // Future modules (disabled)
-    expect(screen.getByTestId('nav-disabled-knowledge')).toBeInTheDocument()
-    expect(screen.getByTestId('nav-disabled-workflows')).toBeInTheDocument()
-    expect(screen.getByTestId('nav-disabled-approvals')).toBeInTheDocument()
-    expect(screen.getByTestId('nav-disabled-audit')).toBeInTheDocument()
-    expect(screen.getByTestId('nav-disabled-admin')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /supply risk/i })).not.toBeInTheDocument()
+    expect(screen.queryByTestId('nav-disabled-approvals')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('nav-disabled-audit')).not.toBeInTheDocument()
   })
 
   it('renders only Dashboard for unknown role', () => {

@@ -10,19 +10,22 @@ import {
 } from 'lucide-react'
 
 /**
- * Canonical demo roles from DEC-028.
+ * Canonical backend roles (DEC-052 M1). The unsupported ``platform_admin``
+ * role has been removed from the Phase 6 authorization model; the union is
+ * exactly the five canonical roles: PRODUCTION_MANAGER, PROCUREMENT_SPECIALIST,
+ * ENGINEER, AI_ADMINISTRATOR, AUDITOR.
  */
 export type UserRole =
   | 'production_manager'
   | 'procurement_specialist'
+  | 'engineer'
   | 'ai_administrator'
   | 'auditor'
-  | 'platform_admin'
 
 /**
  * Navigation item definition.
  *
- * - `path` present for active routes (Phase 3 screens).
+ * - `path` present for active routes (Phase 3 / Phase 6 screens).
  * - `path` undefined for future-phase items (disable, show phase label).
  * - `phase` present → item belongs to a later phase, rendered disabled.
  * - `roles` → set of roles that can see this item.
@@ -39,14 +42,17 @@ export interface NavigationItem {
 /**
  * Complete navigation registry.
  *
- * Rules (per wp_3_3_app_shell_spec.md §2):
- * - Dashboard: all authenticated roles (Phase 3)
- * - Supply Risk Analysis: production_manager, procurement_specialist, platform_admin (Phase 3)
- * - Knowledge Sources: ai_administrator, platform_admin (Phase 4)
- * - Workflow Runs: production_manager, procurement_specialist, ai_administrator, platform_admin (Phase 5)
- * - Approval Center: production_manager, procurement_specialist, platform_admin (Phase 6)
- * - Audit Log: auditor, platform_admin (Phase 6)
- * - Admin / Model Status: ai_administrator, platform_admin (Phase 7)
+ * Rules (per wp_3_3_app_shell_spec.md §2, reconciled to DEC-052 M1):
+ * - Dashboard: all authenticated roles (production_manager,
+ *   procurement_specialist, engineer, ai_administrator, auditor)
+ * - Supply Risk Analysis: production_manager, procurement_specialist (Phase 3)
+ * - Knowledge Sources: ai_administrator (Phase 4)
+ * - Workflow Runs: production_manager, procurement_specialist,
+ *   ai_administrator (Phase 5)
+ * - Approval Center: production_manager, procurement_specialist,
+ *   ai_administrator (Phase 6 — active)
+ * - Audit Log: auditor (Phase 6)
+ * - Admin / Model Status: ai_administrator (Phase 7)
  * - Unknown or missing role: Dashboard only
  */
 export const NAVIGATION_ITEMS: NavigationItem[] = [
@@ -58,9 +64,9 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     roles: new Set<UserRole>([
       'production_manager',
       'procurement_specialist',
+      'engineer',
       'ai_administrator',
       'auditor',
-      'platform_admin',
     ]),
   },
   {
@@ -71,7 +77,6 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     roles: new Set<UserRole>([
       'production_manager',
       'procurement_specialist',
-      'platform_admin',
     ]),
   },
   {
@@ -79,7 +84,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     label: 'Knowledge Sources',
     phase: 4,
     icon: BookOpen,
-    roles: new Set<UserRole>(['ai_administrator', 'platform_admin']),
+    roles: new Set<UserRole>(['ai_administrator']),
   },
   {
     id: 'workflows',
@@ -90,18 +95,17 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
       'production_manager',
       'procurement_specialist',
       'ai_administrator',
-      'platform_admin',
     ]),
   },
   {
     id: 'approvals',
     label: 'Approval Center',
-    phase: 6,
+    path: '/approval-center',
     icon: CheckCircle2,
     roles: new Set<UserRole>([
       'production_manager',
       'procurement_specialist',
-      'platform_admin',
+      'ai_administrator',
     ]),
   },
   {
@@ -109,14 +113,14 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
     label: 'Audit Log',
     phase: 6,
     icon: FileText,
-    roles: new Set<UserRole>(['auditor', 'platform_admin']),
+    roles: new Set<UserRole>(['auditor']),
   },
   {
     id: 'admin',
     label: 'Admin / Model Status',
     phase: 7,
     icon: Settings,
-    roles: new Set<UserRole>(['ai_administrator', 'platform_admin']),
+    roles: new Set<UserRole>(['ai_administrator']),
   },
 ]
 
@@ -126,15 +130,10 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
 export const ALL_ROLES: UserRole[] = [
   'production_manager',
   'procurement_specialist',
+  'engineer',
   'ai_administrator',
   'auditor',
-  'platform_admin',
 ]
-
-/**
- * Platform admin role constant for clarity.
- */
-export const PLATFORM_ADMIN_ROLE: UserRole = 'platform_admin'
 
 /**
  * Human-readable role labels for display.
@@ -142,7 +141,7 @@ export const PLATFORM_ADMIN_ROLE: UserRole = 'platform_admin'
 export const ROLE_LABELS: Record<UserRole, string> = {
   production_manager: 'Production Manager',
   procurement_specialist: 'Procurement Specialist',
+  engineer: 'Engineer',
   ai_administrator: 'AI Administrator',
   auditor: 'Auditor',
-  platform_admin: 'Platform Administrator',
 }

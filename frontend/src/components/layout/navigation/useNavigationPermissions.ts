@@ -33,10 +33,11 @@ export function normalizeRoles(roles: string[] | undefined): Set<UserRole> {
 /**
  * Compute the set of navigation items visible to a given set of roles.
  *
- * Rules (per wp_3_3_app_shell_spec.md §2):
+ * Rules (per wp_3_3_app_shell_spec.md §2, reconciled to DEC-052 M1):
  * - Unknown or missing role: Dashboard only.
  * - Multiple roles: deduplicated union.
- * - platform_admin sees all items.
+ * - The five canonical roles determine visibility; ``platform_admin`` is
+ *   removed from the model and is filtered out as unknown.
  */
 export function filterNavigationForRoles(
   items: readonly NavigationItem[],
