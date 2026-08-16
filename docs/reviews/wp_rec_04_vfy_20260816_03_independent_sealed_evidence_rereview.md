@@ -6,10 +6,13 @@
 **Mode:** strictly read-only
 
 This document is the durable record of the independent sealed-evidence re-review of
-the formal WP-REC-04-VFY run -03 evidence. It records the independent PASS verdict
-that the Product Owner used as the basis for the separate acceptance decision. This
-review was supplied by the independent reviewer (a fresh, read-only session) and is
-not authored by the execution agent.
+the formal WP-REC-04-VFY run -03 evidence. The underlying review — its analysis,
+findings, and verdict — was produced by an independent reviewer in a fresh,
+read-only session. This repository document is a faithful condensed rendering of
+that independent source report, prepared by the lifecycle reconciliation
+implementation agent. It is not a verbatim reproduction of the source report and
+does not constitute a new independent review; no substantive conclusion, identity,
+verdict, finding, or observation was changed.
 
 The review itself did **not** constitute Product Owner acceptance and did **not**
 declare AT-009, AT-010, AT-011, or AT-012 PASS. Those declarations occurred only

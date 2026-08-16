@@ -11,7 +11,19 @@ non-authorization of Phase 7 and deployment.
 
 ---
 
-## 1. Product Owner acceptance statement (verbatim)
+## 1. Product Owner acceptance statement
+
+### Original declaration — verbatim Ukrainian
+
+> Я, як Product Owner, явно приймаю sealed evidence run
+> `wp-rec-04-vfy-20260816-03` з aggregate identity
+> `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`
+> як достатнє й прийнятне підтвердження виконання AT-009–AT-012.
+> Авторизую наступну окрему bounded lifecycle-дію: створення DEC-053,
+> документальне переведення AT-009–AT-012 у PASS та закриття Phase 6.
+> Phase 7 і deployment не авторизую.
+
+### Faithful English translation — non-authoritative convenience
 
 > I, as Product Owner, explicitly accept sealed evidence run
 > wp-rec-04-vfy-20260816-03 with aggregate identity
