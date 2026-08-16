@@ -6,8 +6,11 @@ import SupplyRisk from './routes/supply-risk'
 import SupplyRiskDetail from './routes/supply-risk-detail'
 import WorkflowRunDetail from './routes/workflow-run-detail'
 import ApprovalCenter from './routes/approval-center'
+import AuditLog from './routes/audit-log'
 import ProtectedRoute from './routes/protected'
+import RequireRole from './routes/require-role'
 import AuthenticatedLayout from './components/layout/AuthenticatedLayout'
+import { AUDIT_READ_ROLES } from './components/layout/navigation/navigation-config'
 import { AuthProvider } from './contexts/auth.context'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -38,6 +41,9 @@ function App() {
                 <Route path="supply-risk/:riskId" element={<SupplyRiskDetail />} />
                 <Route path="workflow-runs/:runId" element={<WorkflowRunDetail />} />
                 <Route path="approval-center" element={<ApprovalCenter />} />
+                <Route element={<RequireRole roles={AUDIT_READ_ROLES} />}>
+                  <Route path="audit-log" element={<AuditLog />} />
+                </Route>
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Route>

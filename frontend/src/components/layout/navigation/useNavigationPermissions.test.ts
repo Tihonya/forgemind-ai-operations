@@ -106,6 +106,17 @@ describe('NAVIGATION_ITEMS', () => {
     expect(approvals?.path).toBe('/approval-center')
     expect(approvals?.phase).toBeUndefined()
   })
+
+  it('Audit Log navigation item is active (has a path, no phase) for auditor and ai_administrator', () => {
+    const audit = NAVIGATION_ITEMS.find((item) => item.id === 'audit')
+    expect(audit).toBeDefined()
+    expect(audit?.path).toBe('/audit-log')
+    expect(audit?.phase).toBeUndefined()
+    expect(Array.from(audit?.roles ?? [])).toEqual(
+      expect.arrayContaining(['auditor', 'ai_administrator']),
+    )
+    expect(Array.from(audit?.roles ?? [])).toHaveLength(2)
+  })
 })
 
 describe('filterNavigationForRoles', () => {
@@ -157,7 +168,7 @@ describe('filterNavigationForRoles', () => {
     expect(new Set(ids).size).toBe(ids.length)
   })
 
-  it('ai_administrator sees Dashboard, Knowledge, Workflows, Approvals, Admin', () => {
+  it('ai_administrator sees Dashboard, Knowledge, Workflows, Approvals, Audit Log, Admin', () => {
     const roles = new Set<UserRole>(['ai_administrator'])
     const result = filterNavigationForRoles(NAVIGATION_ITEMS, roles)
     const ids = result.map((i: NavigationItem) => i.id)
@@ -165,9 +176,9 @@ describe('filterNavigationForRoles', () => {
     expect(ids).toContain('knowledge')
     expect(ids).toContain('workflows')
     expect(ids).toContain('approvals')
+    expect(ids).toContain('audit')
     expect(ids).toContain('admin')
     expect(ids).not.toContain('supply-risk')
-    expect(ids).not.toContain('audit')
   })
 
   it('procurement_specialist sees Dashboard, Supply Risk, Workflows, Approvals', () => {
@@ -262,15 +273,15 @@ describe('useNavigationPermissions hook', () => {
     expect(ids).toContain('audit')
   })
 
-  it('AI_ADMINISTRATOR sees Approvals (administrative read)', () => {
+  it('AI_ADMINISTRATOR sees Approvals and Audit Log (administrative read)', () => {
     const { result } = renderHook(() =>
       useNavigationPermissions(['AI_ADMINISTRATOR']),
     )
     expect(result.current.unknownRole).toBe(false)
     const ids = result.current.navigationItems.map((i: NavigationItem) => i.id)
     expect(ids).toContain('approvals')
+    expect(ids).toContain('audit')
     expect(ids).not.toContain('supply-risk')
-    expect(ids).not.toContain('audit')
   })
 
   it('AUDITOR does not see Supply Risk Analysis or Approvals', () => {

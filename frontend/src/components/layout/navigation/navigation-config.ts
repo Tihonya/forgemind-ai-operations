@@ -51,10 +51,24 @@ export interface NavigationItem {
  *   ai_administrator (Phase 5)
  * - Approval Center: production_manager, procurement_specialist,
  *   ai_administrator (Phase 6 — active)
- * - Audit Log: auditor (Phase 6)
+ * - Audit Log: auditor, ai_administrator (Phase 6 — active)
  * - Admin / Model Status: ai_administrator (Phase 7)
  * - Unknown or missing role: Dashboard only
  */
+
+/**
+ * Roles permitted to open the Audit Log route (DEC-052 M1).
+ *
+ * This is the single source of truth for the client-side route boundary: the
+ * Audit Log navigation item and the ``RequireRole`` route guard both derive
+ * from it, so visibility and access cannot drift apart. The backend
+ * ``_AUDIT_READ_ROLES`` remains the authoritative enforcement.
+ */
+export const AUDIT_READ_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
+  'auditor',
+  'ai_administrator',
+])
+
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     id: 'dashboard',
@@ -111,9 +125,9 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     id: 'audit',
     label: 'Audit Log',
-    phase: 6,
+    path: '/audit-log',
     icon: FileText,
-    roles: new Set<UserRole>(['auditor']),
+    roles: new Set(AUDIT_READ_ROLES),
   },
   {
     id: 'admin',
