@@ -969,6 +969,47 @@ The Phase 6 acceptance tests AT-009 through AT-012 require a defined approval au
 
 ---
 
+## DEC-053 — WP-REC-04-VFY evidence acceptance and Phase 6 closure
+
+**Date:** 2026-08-16
+
+**Status:** Accepted
+
+**Context:**
+
+- WP-REC-04-VFY formal verification run -01 (`wp-rec-04-vfy-20260816-01`) was a truthful formal verification failure.
+- Run -02 (`wp-rec-04-vfy-20260816-02`) was a technical PASS whose independent sealed-evidence review FAILED (`INDEPENDENT SEALED-EVIDENCE REVIEW FAILED — RUN wp-rec-04-vfy-20260816-02 IS NOT ACCEPTABLE FOR PRODUCT OWNER DECISION`).
+- Run -03 (`wp-rec-04-vfy-20260816-03`) corrected the three evidence-boundary defects (E-1 binding-hash fields, E-2 demo-credential literals, E-3 hygiene scope split) without changing repository product code, and produced candidate evidence.
+- The independent sealed-evidence re-review of run -03 returned `INDEPENDENT SEALED-EVIDENCE RE-REVIEW PASSED — RUN wp-rec-04-vfy-20260816-03 IS ACCEPTABLE FOR PRODUCT OWNER DECISION`.
+- On 2026-08-16 the Product Owner explicitly accepted run -03 as sufficient and acceptable evidence of AT-009–AT-012.
+
+**Decision:**
+
+The Product Owner accepts sealed evidence run `wp-rec-04-vfy-20260816-03` (aggregate identity `d8c6e666f32fdd6da21b5020a3f7cd703475520d2ac1f0794380cbb579b0b35d`) as sufficient and acceptable evidence of AT-009–AT-012. The following documentary lifecycle transition is authorized as a separate bounded documentation-only action:
+
+- AT-009, AT-010, AT-011, and AT-012 → **PASS**;
+- WP-REC-04-VFY → **ACCEPTED**;
+- Phase 6 → **CLOSED / ACCEPTED**.
+
+Run -01 and run -02 remain immutable historical evidence with their truthful outcomes (formal verification failure, and technical PASS with failed sealed-evidence review respectively); neither is described as accepted.
+
+**Reason:**
+
+The accepted evidence proved 109/109 selected integration tests passed (0 failed, 0 skipped), with AT-009, AT-010, AT-011, and the complete nine-category AT-012 trace satisfied. The verification used an isolated local environment and an in-process deterministic fake provider with zero external provider/vendor/payment/procurement calls. The independent re-review passed on integrity, sensitive-material, and AT-evidence grounds.
+
+**Consequences:**
+
+- Phase 7 and deployment remain NOT STARTED / NOT AUTHORIZED.
+- Release 1 remains NOT READY / NOT DEPLOYED.
+- No implementation package is authorized; no application code, test, migration, schema, dependency, CI, or infrastructure change is authorized by this decision.
+- The non-blocking observations H-1–H-4 and R-3/R-4 remain unresolved; this decision does not resolve them.
+
+**Affected documents/tests:** `docs/reviews/wp_rec_04_vfy_20260816_03_independent_sealed_evidence_rereview.md`, `docs/reviews/wp_rec_04_phase_6_product_owner_acceptance.md`, `forgemind_project_source_of_truth/04_ACCEPTANCE_TESTS.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`
+
+**Approved by:** Product Owner (2026-08-16)
+
+---
+
 ## Template for new decisions
 
 ```markdown
