@@ -1010,6 +1010,56 @@ The accepted evidence proved 109/109 selected integration tests passed (0 failed
 
 ---
 
+## DEC-054 — Phase 7 deployment contract and Release 1 controlled decomposition
+
+**Date:** 2026-08-17
+
+**Status:** Accepted
+
+**Context:**
+
+Phase 6 is CLOSED / ACCEPTED (DEC-053). AT-003 through AT-013 are PASS. AT-001, AT-002, AT-014 require deployment verification. AT-015 is NOT IMPLEMENTED. Phase 7 and deployment remain NOT STARTED / NOT AUTHORIZED. Release 1 remains NOT READY / NOT DEPLOYED.
+
+The Product Owner has authorized proceeding toward Release 1 and has selected the following deployment direction: deploy Release 1 initially in English; add Ukrainian localization after deployment stabilization; make the repository documentation polished and portfolio-ready; Apache-2.0 is the selected repository license; Phase 7 planning may begin; actual implementation and deployment must remain separated into bounded lifecycle actions.
+
+An independent readiness-design review returned: INDEPENDENT PHASE 7 READINESS DESIGN REVIEW PASSED WITH REQUIRED CORRECTIONS — WP-P7-01 MUST INCORPORATE THE CORRECTED DECISIONS AND LIFECYCLE DECOMPOSITION. A bounded PD-3a embedding-path technical spike was completed and independently reviewed (verdict: INDEPENDENT PD-3A REVIEW PASSED — FINAL EMBEDDING DECISION MAY BE RECORDED IN WP-P7-01).
+
+This decision authorizes WP-P7-01 documentation only. It does not authorize application implementation, provider calls, VPS access, staging, production deployment, GitHub Release publication, or Release 1 acceptance.
+
+**Decision:**
+
+The Product Owner accepts the Phase 7 deployment contract (`docs/planning/phase_7_deployment_contract.md`) as the authoritative Release 1 / Phase 7 deployment contract and controlled decomposition. The contract records accepted deployment decisions PD-1 through PD-11 with the following corrections incorporated from the independent readiness-design review and the independent PD-3a review:
+
+- PD-3 (chat provider): OpenRouter-only `qwen/qwen3.7-flash` with `json_object` response mode and automatic fallback disabled. This reflects the accepted DEC-049 evidence (`no_fallback=true`, `no_groq_request=true`). A Groq-first chain is NOT recorded as the initial production configuration.
+- PD-3a (embedding provider): OpenRouter embeddings routing to OpenAI `text-embedding-3-small` at 1536 dimensions via the existing `OpenAIEmbeddingProvider` (Option C). `EMBEDDING_PROVIDER=openai`, `OPENAI_API_BASE=https://openrouter.ai/api/v1`, `OPENAI_EMBEDDING_MODEL=openai/text-embedding-3-small`, `EMBEDDING_DIMENSIONS=1536`. The config field `OPENAI_API_KEY` contains an OpenRouter key for the primary path. Seed-time and query-time embeddings use the same endpoint, model, and dimension. The existing 1536-dimensional database contract remains unchanged. No migration or re-index is planned. Fake embeddings remain forbidden in staging/production. Live RAG remains required. Direct OpenAI `text-embedding-3-small` (Option A) is the documented configuration-only fallback. The original "pre-seed embeddings and remove the key" recommendation is technically invalid and is NOT recorded. A bounded live embedding smoke is required in WP-P7-02 before staging; it is NOT executed in WP-P7-01.
+- PD-6 (displayed demo roles): `manager.demo` + `procurement.demo` + `auditor.demo`. `admin.demo` is NOT displayed. All three roles are needed because the manager initiates the workflow, the procurement specialist performs the independent approval (self-decision is forbidden), and the auditor inspects the audit trail. No plaintext demo passwords are placed in this Decision Log.
+
+The contract defines: Release 1 scope and non-scope; deployment architecture and safety boundaries; a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12) that keeps implementation, review, remediation, merge, deployment, evidence review, Product Owner acceptance, GitHub Release publication, and lifecycle reconciliation as separate bounded actions; staging, production, and release gates; a VPS security-hardening contract; a Hostinger and domain input contract; and a truthfully listed implementation-gap inventory.
+
+Deferred items: Ukrainian localization; CI/CD deployment automation; full observability platform; local embedding service (Option B); degraded mode without live RAG (Option D); bilingual CV/portfolio presentation.
+
+**Reason:**
+
+The independent readiness-design review identified five material corrections (PD-3, PD-3a, PD-6, WP decomposition, and the "only missing code artifact" internal contradiction). The bounded PD-3a technical spike and its independent review confirmed that the embedding architecture is technically determined. The corrected decisions and decomposition are substantively sound and compatible with the existing repository without code changes. Recording the contract as a documentation-only package is the prerequisite for any future Phase 7 implementation authorization.
+
+**Consequences:**
+
+- Phase 7: IN PROGRESS — PLANNING/IMPLEMENTATION AUTHORIZED (prospective, upon merge and post-merge verification of this PR). Until this PR is merged and post-merge verified, GitHub main remains authoritative with Phase 7 NOT STARTED.
+- Deployment execution: NOT STARTED.
+- Staging: NOT STARTED.
+- Production: NOT STARTED.
+- Release 1: NOT READY / NOT DEPLOYED.
+- No deployment-gated acceptance test is marked PASS. Phase 7 is not closed. No GitHub Release or tag is created.
+- No application code, test, migration, schema, dependency, CI, infrastructure, or evidence-package change is authorized by this decision.
+- No provider call, VPS access, DNS mutation, TLS configuration, container start/stop, or GitHub Release publication is authorized.
+- Phase 6 and DEC-053 remain intact.
+
+**Affected documents/tests:** `docs/planning/phase_7_deployment_contract.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`
+
+**Approved by:** Product Owner (2026-08-17)
+
+---
+
 ## Template for new decisions
 
 ```markdown
