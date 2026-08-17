@@ -141,7 +141,12 @@ class OpenAIChatProvider(ChatProvider):
     workflow-level outage handler (WP-REC-03D) and is not used here to
     avoid double retry.
 
-    Rate limiting is process-local (see :class:`_SlidingWindowRateLimiter`).
+    Rate limiting is process-local (see :class:`_SlidingWindowRateLimiter`)
+    unless the caller supplies ``shared_rate_limiter`` — a Redis-backed
+    :class:`app.core.rate_limit.RedisRateLimiter` (WP-P7-02) that shares
+    one budget across every backend/worker process. When present, the
+    shared limiter is checked BEFORE the process-local one and rejects
+    with :class:`app.core.rate_limit.RateLimitError`.
     """
 
     def __init__(
@@ -154,6 +159,7 @@ class OpenAIChatProvider(ChatProvider):
         rate_limit_per_minute: int = 10,
         client: AsyncOpenAI | None = None,
         rate_limiter: _SlidingWindowRateLimiter | None = None,
+        shared_rate_limiter: Any | None = None,
         clock: Any = None,
         provider_name: str = "openai",
         structured_output_mode: str = _STRUCTURED_OUTPUT_MODE_JSON_SCHEMA,
@@ -189,6 +195,8 @@ class OpenAIChatProvider(ChatProvider):
         self._provider_name = provider_name
         self._structured_output_mode = structured_output_mode
 
+        self._shared_rate_limiter = shared_rate_limiter
+
         if rate_limiter is not None:
             self._rate_limiter = rate_limiter
         else:
@@ -223,6 +231,12 @@ class OpenAIChatProvider(ChatProvider):
         if context is not None:
             correlation_id = str(context.get("correlation_id", ""))
             run_id = str(context.get("run_id", ""))
+
+        # Shared cross-process budget first (WP-P7-02): the Redis-backed
+        # limiter rejects with RateLimitError without calling the API.
+        # Then the process-local window, which remains the safety net.
+        if self._shared_rate_limiter is not None:
+            await self._shared_rate_limiter.check_and_increment()
 
         # Rate-limit before any API call. Cancellation here propagates
         # without consuming a slot.

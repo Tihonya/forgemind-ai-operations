@@ -1,4 +1,4 @@
-.PHONY: help dev test lint seed reset deploy clean
+.PHONY: help dev test lint seed reset deploy clean compose-validate config-validate backup-smoke smoke-prepare caddy-validate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -69,3 +69,28 @@ acceptance-formal: ## Run acceptance harness in formal-evidence mode (Phase C â€
 	@echo "Running acceptance harness (formal-evidence mode)..."
 	python scripts/acceptance_harness.py --mode=formal
 	@echo "Formal evidence collected. See evidence/ directory."
+
+compose-validate: ## Validate production Compose resolves with the template env (WP-P7-02)
+	@echo "Validating production compose with non-secret template env..."
+	cp infra/prod.env.example /tmp/forgemind-prod.env.template
+	docker compose --env-file /tmp/forgemind-prod.env.template \
+		-f docker-compose.prod.yml config --quiet
+	@echo "Production compose configuration valid."
+
+caddy-validate: ## Validate the production Caddyfile with safe placeholder env (WP-P7-02)
+	@echo "Validating production Caddyfile with safe placeholder env..."
+	docker run --rm -e CADDY_DOMAIN=example.com -e CADDY_EMAIL=ops@example.com \
+		-v "$(CURDIR)/infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+		caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+	@echo "Caddyfile valid."
+
+config-validate: ## Fail-closed production configuration validation (WP-P7-02)
+	cd backend && ../.venv/bin/python3.12 -m app.ops.validate_config
+
+backup-smoke: ## Run repo-owned backup/healthcheck shell test suites (WP-P7-02)
+	bash scripts/tests/test_backup.sh
+	bash scripts/tests/test_backup_cycle.sh
+	bash scripts/tests/test_worker_healthcheck.sh
+
+smoke-prepare: ## Offline embedding smoke preparation (NO live provider call)
+	cd backend && ../.venv/bin/python3.12 -m app.ops.embedding_smoke

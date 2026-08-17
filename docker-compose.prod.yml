@@ -1,0 +1,270 @@
+# ForgeMind AI Operations — Release 1 production topology (WP-P7-02)
+#
+# Caddy (automatic HTTPS) -> nginx (frontend) -> FastAPI backend
+#                                           -> ARQ worker
+# PostgreSQL (pgvector), Redis stay on private networks only.
+#
+# SECURITY CONTRACT:
+# - PostgreSQL and Redis are NEVER published to host ports.
+# - Only Caddy publishes ports (80/443/443-udp).
+# - Backend is reachable from outside ONLY through Caddy.
+# - No docker socket mounts; containers run as non-root users where the
+#   image provides one (backend/worker run as appuser).
+# - No secrets in this file — all values come from the deployment .env
+#   (see docs/infra-production.md), which is never committed.
+# - All services publish log rotation settings via per-service logging
+#   options so container logs cannot fill the VPS disk.
+#
+# The intended host: single VPS, 16 GB RAM, 200 GB storage (Phase 7
+# contract, PD-1). This file MUST NOT be used to access that VPS from
+# this repository task.
+
+name: forgemind
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: &logging-defaults
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    # F-9 hardening: the password is NOT placed on the redis-server
+    # process command line (visible via `ps`/docker inspect Cmd).
+    # A short-lived shell writes it into a container-local /run file
+    # (mode 0600, removed with the container; /run inside this image
+    # is NOT guaranteed to be a tmpfs mount) and `exec`s redis-server
+    # with that file. The value reaches the container through compose's
+    # environment channel (same channel the healthcheck/REDIS_URL
+    # already use), never as a process argument.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        umask 077
+        && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis-auth.conf
+        && exec redis-server /run/redis-auth.conf
+        --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: *logging-defaults
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.dockerfile
+      target: production
+    environment: &backend-environment
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required (OpenRouter key)}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://openrouter.ai/api/v1}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required (no implicit reuse of OPENAI_API_KEY)}
+      OPENROUTER_API_BASE: ${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-qwen/qwen3.7-flash}
+      OPENROUTER_STRUCTURED_OUTPUT_MODE: ${OPENROUTER_STRUCTURED_OUTPUT_MODE:-json_object}
+      CHAT_PROVIDER_MODE: ${CHAT_PROVIDER_MODE:-openrouter}
+      DISTRIBUTED_RATE_LIMIT_ENABLED: ${DISTRIBUTED_RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_DEGRADED_MODE: ${RATE_LIMIT_DEGRADED_MODE:-fail_closed}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      AI_RATE_LIMIT_PER_MINUTE: ${AI_RATE_LIMIT_PER_MINUTE:-10}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${CADDY_DOMAIN}}
+      # Deployment identity passed into the backend too (F-6A channel
+      # consistency): the production validator reads the typed
+      # Settings fields (caddy_domain / caddy_email), so the documented
+      # in-container validation workflow always has the same values the
+      # compose environment provides.
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - backend
+      - frontend
+    logging: *logging-defaults
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.dockerfile
+      target: production
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # Copied into the image at build time (infra/docker/worker-healthcheck.sh)
+      test: ["CMD", "/usr/local/bin/worker-healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: *logging-defaults
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/frontend.dockerfile
+      target: production
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - frontend
+    logging: *logging-defaults
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN is required (production FQDN)}
+      CADDY_EMAIL: ${CADDY_EMAIL:?CADDY_EMAIL is required (TLS contact email)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - frontend
+    logging: *logging-defaults
+
+  # ------------------------------------------------------------------
+  # Backup profile — opt-in daily pg_dump + 7-day retention.
+  # Enabled with: docker compose -f docker-compose.prod.yml --profile backup up -d
+  # Backup files land in ./backups on the HOST (bind mount), so the
+  # operator owns off-host replication. See docs/infra-production.md.
+  #
+  # The scheduled cycle runs scripts/backup-cycle.sh — the ONE
+  # authoritative scheduled-backup implementation (shared with
+  # scripts/backup.sh retention via scripts/backup-prune.sh):
+  #   - pg_dump failure stops the cycle (retention NOT run);
+  #   - partial dumps are written `.part` and removed on failure;
+  #   - success dumps are chmod 600;
+  #   - /backups/last_backup_state carries ok/failed for the
+  #     healthcheck, so a failed cycle is visible to docker/compose
+  #     monitoring instead of silently sleeping 24h.
+  #   - success sleeps SLEEP_SECONDS (86400 s) and failure retries
+  #     after RETRY_SLEEP (3600 s) INSIDE the container, so the
+  #     service's `restart: unless-stopped` (which restarts after
+  #     BOTH exit 0 and exit non-zero) does not control ordinary
+  #     daily scheduling.
+  #   - CYCLE_ONCE MUST remain unset for the long-running Compose
+  #     backup daemon. It is reserved for tests / manual one-shot
+  #     invocation / controlled external execution; combined with
+  #     `restart: unless-stopped` a bounded clean exit-0 cycle would
+  #     restart and re-dump in a tight loop (backup storm).
+  # ------------------------------------------------------------------
+  backup:
+    image: postgres:16-alpine
+    profiles: ["backup"]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    entrypoint:
+      - /bin/sh
+      - /usr/local/bin/backup-cycle.sh
+    volumes:
+      - ./backups:/backups
+      - ./scripts/backup-cycle.sh:/usr/local/bin/backup-cycle.sh:ro
+      - ./scripts/backup-prune.sh:/usr/local/bin/backup-prune.sh:ro
+    healthcheck:
+      # Visible failure: a cycle failure writes "failed <epoch>" into
+      # the state marker. This probe reflects that state, so a backup
+      # service whose last dump failed is reported unhealthy instead
+      # of looking alive for 24 hours.
+      test:
+        -
+          CMD-SHELL
+        - |
+          [ -f /backups/last_backup_state ] \
+            && grep -q '^ok ' /backups/last_backup_state
+      interval: 6h
+      timeout: 60s
+      retries: 3
+      start_period: 5m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: *logging-defaults
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge

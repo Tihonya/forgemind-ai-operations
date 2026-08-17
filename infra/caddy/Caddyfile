@@ -1,41 +1,67 @@
-# ForgeMind AI Operations - Caddy Configuration
-# This Caddyfile configures reverse proxy for the ForgeMind application.
+# ForgeMind AI Operations — Release 1 production Caddy configuration.
 #
-# In production, replace {$CADDY_DOMAIN} with your actual domain.
-# Caddy will automatically provision HTTPS certificates via Let's Encrypt.
+# CADDY_DOMAIN and CADDY_EMAIL are deployment-time inputs supplied via
+# the production environment file (see infra/prod.env.example). This
+# file contains NO fabricated FQDN, configures NO real DNS, and obtains
+# NO certificates by itself — automatic HTTPS provisioning happens on
+# the actual deployment host once real inputs exist.
+#
+# Topology (Phase 7 contract, PD-1):
+#   Caddy (TLS termination) -> nginx (frontend, /api under same origin)
+#                           -> FastAPI backend (/health only)
 
-{$CADDY_DOMAIN:localhost} {
-    # Global options
-    encode gzip zstd
-    log {
-        output stdout
-        format json
-    }
+{
+	# Let's Encrypt production endpoint with a deploy-time contact email
+	email {$CADDY_EMAIL}
+	admin off
+}
 
-    # API requests → backend
-    handle /api/* {
-        reverse_proxy backend:8000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Request-ID {req_id}
-        }
-    }
+{$CADDY_DOMAIN} {
+	encode gzip zstd
 
-    # Backend docs and health
-    handle /docs* {
-        reverse_proxy backend:8000
-    }
-    handle /redoc* {
-        reverse_proxy backend:8000
-    }
-    handle /openapi.json {
-        reverse_proxy backend:8000
-    }
-    handle /health {
-        reverse_proxy backend:8000
-    }
+	log {
+		output stdout
+		format json
+	}
 
-    # Everything else → frontend
-    handle {
-        reverse_proxy frontend:{$FRONTEND_PORT:80}
-    }
+	# Backend API — exposed only through this proxy path under the
+	# same public origin (Phase 7 contract, §8 naming model).
+	# /health is forwarded here too (flat status payload, no secrets).
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Backend health endpoint — the only other backend route exposed
+	# voluntarily. No provider secrets are ever present in this payload
+	# (flat dependency statuses only).
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# Interactive API docs are intentionally NOT exposed on the public
+	# origin (Release 1 hardening): /docs, /redoc, /openapi.json are not
+	# routed. They remain available on the private backend network if
+	# operators need them.
+
+	# Everything else goes to nginx (SPA + static assets).
+	# Caddy passes X-Forwarded-Proto/Host/For to the upstream by default
+	# (spoofed values dropped), so no explicit header_up is needed.
+	handle {
+		reverse_proxy frontend:{$FRONTEND_PORT:80}
+	}
+
+	# Security headers (defaults tightened at the edge; nginx also sets
+	# headers for static content). CSP is set here (edge) AND in the
+	# nginx container so direct static asset access is covered too; the
+	# SPA loads no cross-origin resources and uses no inline
+	# scripts/styles, so this strict policy is compatible with the
+	# frontend build (verified against frontend source).
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+	}
 }

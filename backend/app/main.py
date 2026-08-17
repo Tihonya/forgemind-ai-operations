@@ -17,6 +17,7 @@ from app.api.ingestion import router as ingestion_router
 from app.api.inventory import router as inventory_router
 from app.api.inventory_reservations import router as inventory_reservations_router
 from app.api.middleware.correlation import CorrelationIdMiddleware
+from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.procurement import router as procurement_router
 from app.api.production_orders import router as production_orders_router
 from app.api.production_plans import router as production_plans_router
@@ -70,6 +71,11 @@ app = FastAPI(
 
 # Correlation ID middleware (outermost — runs first on every request)
 app.add_middleware(CorrelationIdMiddleware)
+
+# Shared Redis-backed rate limiting (WP-P7-02).
+# Enforcement is active only in staging/production — development and
+# test requests are unaffected.
+app.add_middleware(RateLimitMiddleware)
 
 # CORS middleware
 app.add_middleware(
