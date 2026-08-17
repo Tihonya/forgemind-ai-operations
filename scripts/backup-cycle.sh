@@ -25,6 +25,9 @@
 #      ($STATE_FILE, default /backups/last_backup_state) containing
 #      "ok <epoch>" or "failed <epoch>", and logs the failure to
 #      stderr. The backup service healthcheck reads the state marker.
+#      The marker is non-secret (ok|failed + epoch only); its file
+#      mode follows the container umask by design (no 0600 requirement
+#      — it is not a secret-bearing artifact).
 #   6. after a failure the cycle retries after RETRY_SLEEP (default
 #      3600s) so a transient outage recovers without ever deleting
 #      good backups; retention runs only on a successful cycle.
@@ -38,10 +41,21 @@
 #   SLEEP_SECONDS (default 86400) — interval between successful cycles.
 #   RETRY_SLEEP (default 3600) — wait before retrying a failed cycle.
 #   RETENTION_DAYS (default 7).
-#   CYCLE_ONCE=1 — run exactly one cycle and exit (intentional restart
-#     and test semantics: with the default loop the container restarts
-#     only via restart policy; with CYCLE_ONCE the container performs
-#     one bounded job and exits 0/non-zero).
+#   CYCLE_ONCE=1 — run exactly one cycle and exit 0 (success) or
+#     non-zero (failure). Reserved for TESTS, manual one-shot
+#     invocation, and controlled external execution ONLY. Docker's
+#     `restart: unless-stopped` restarts the container after BOTH
+#     exit 0 and exit non-zero, so CYCLE_ONCE=1 MUST NOT be enabled
+#     on the long-running Compose backup daemon while that restart
+#     policy remains configured: a clean bounded-cycle exit would
+#     restart the container and re-dump in a tight loop (backup
+#     storm), and a failing cycle would churn restarts.
+#   Committed production mode intentionally leaves CYCLE_ONCE UNSET:
+#     the scheduling loop is internal to this script — success sleeps
+#     SLEEP_SECONDS (default 86400), failure sleeps RETRY_SLEEP
+#     (default 3600) and retries. Because the process remains running,
+#     the restart policy does not control ordinary daily scheduling;
+#     it engages only if the process dies unexpectedly.
 #
 # No secrets are printed: pg_dump errors pass through without echoing
 # credentials (PGPASSWORD is never interpolated into log lines).

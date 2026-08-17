@@ -15,7 +15,9 @@
 #      - retention runs after success (a >RETENTION_DAYS dump is pruned);
 #      - state marker records "ok";
 #      - success is logged only after actual success.
-#   3. intentional restart semantics (CYCLE_ONCE) exit codes.
+#   3. bounded single-cycle exit codes (CYCLE_ONCE=1 — reserved for
+#      tests/manual one-shot use, NOT for the Compose daemon under
+#      `restart: unless-stopped`).
 #
 # Uses a mocked pg_dump on PATH; no real database is touched.
 
@@ -202,8 +204,11 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Test 10: intentional restart semantics (CYCLE_ONCE=1) — exit codes are
-# proven by tests 1 and 5 above (non-zero on failure, zero on success).
+# Test 10: bounded single-cycle exit codes (CYCLE_ONCE=1): non-zero on
+# failure (proven above), zero on success. The harness runs every cycle
+# with CYCLE_ONCE=1 only to force a deterministic exit for assertions;
+# Docker restart behavior is NOT asserted here, and CYCLE_ONCE=1 is not
+# part of the production daemon configuration.
 # ---------------------------------------------------------------------------
 # Partial staging files must be gone.
 PARTIALS_AFTER_OK="$(find "${BACKUP_DIR}" -maxdepth 1 -name '*.dump.part' -type f | wc -l | tr -d ' ')"

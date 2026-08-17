@@ -50,11 +50,12 @@ services:
     image: redis:7-alpine
     # F-9 hardening: the password is NOT placed on the redis-server
     # process command line (visible via `ps`/docker inspect Cmd).
-    # A short-lived shell writes it into a 0600 auth config file in
-    # /run (tmpfs) and `exec`s redis-server with that file. The value
-    # reaches the container through compose's environment channel
-    # (same channel the healthcheck/REDIS_URL already use), never as a
-    # process argument.
+    # A short-lived shell writes it into a container-local /run file
+    # (mode 0600, removed with the container; /run inside this image
+    # is NOT guaranteed to be a tmpfs mount) and `exec`s redis-server
+    # with that file. The value reaches the container through compose's
+    # environment channel (same channel the healthcheck/REDIS_URL
+    # already use), never as a process argument.
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command:
@@ -208,6 +209,16 @@ services:
   #   - /backups/last_backup_state carries ok/failed for the
   #     healthcheck, so a failed cycle is visible to docker/compose
   #     monitoring instead of silently sleeping 24h.
+  #   - success sleeps SLEEP_SECONDS (86400 s) and failure retries
+  #     after RETRY_SLEEP (3600 s) INSIDE the container, so the
+  #     service's `restart: unless-stopped` (which restarts after
+  #     BOTH exit 0 and exit non-zero) does not control ordinary
+  #     daily scheduling.
+  #   - CYCLE_ONCE MUST remain unset for the long-running Compose
+  #     backup daemon. It is reserved for tests / manual one-shot
+  #     invocation / controlled external execution; combined with
+  #     `restart: unless-stopped` a bounded clean exit-0 cycle would
+  #     restart and re-dump in a tight loop (backup storm).
   # ------------------------------------------------------------------
   backup:
     image: postgres:16-alpine

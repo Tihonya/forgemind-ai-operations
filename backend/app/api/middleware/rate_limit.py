@@ -16,7 +16,7 @@ Client identification (WP-P7-02 remediation F-1):
 - With no usable forwarded value the ``scope["client"]`` peer address
   (the reverse proxy's address in the production topology) is used.
 - With no client information at all the request lands in a single
-  shared ``client:unknown`` bucket — never a per-request identity, so
+  shared ``client:anonymous`` bucket — never a per-request identity, so
   an untrusted source can never mint unbounded budgets.
 - Every candidate is passed through
   :func:`app.core.rate_limit.canonicalize_client_identifier` before
@@ -151,8 +151,9 @@ def client_identifier_from_scope(scope: Scope) -> str:
 
     Preference order: parsed ``X-Forwarded-For`` client address, then
     the transport peer (``scope["client"]``), then the single shared
-    unknown bucket. Every candidate is canonicalized before use, so the
-    result is always bounded, Redis-safe, and stable across processes.
+    ``client:anonymous`` bucket. Every candidate is canonicalized
+    before use, so the result is always bounded, Redis-safe, and
+    stable across processes.
     """
     forwarded = parse_forwarded_for(_forwarded_candidates(scope))
     if forwarded:

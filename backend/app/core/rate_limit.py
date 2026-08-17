@@ -64,8 +64,8 @@ def canonicalize_client_identifier(raw_identifier: str) -> str:
 
     - IPv4/IPv6 addresses are parsed strictly (``ipaddress``); canonical
       form is ``ip:v4:<address>`` / ``ip:v6:<address>``.
-    - Empty/whitespace-only input yields ``client:unknown`` — callers
-      must treat ``unknown`` clients as one shared bucket, never as
+    - Empty/whitespace-only input yields ``client:anonymous`` — callers
+      must treat ``anonymous`` clients as one shared bucket, never as
       trusted identities.
     - All other inputs yield ``client:<base64url(sha256(input))>`` — a
       stable 43-character digest token (50 characters with the prefix)
@@ -74,11 +74,11 @@ def canonicalize_client_identifier(raw_identifier: str) -> str:
 
     The output is at most 50 characters, contains only URL-safe base64
     or IPv6 address characters (no colon-free hash format, no spaces),
-    and can never collide for distinct inputs because unknown and
+    and can never collide for distinct inputs because anonymous and
     non-IP values are namespaced by prefix.
 
     Collision properties (desired): distinct inputs map to distinct
-    identifiers (namespaced prefixes make the unknown/ip families
+    identifiers (namespaced prefixes make the anonymous/ip families
     disjoint from each other and from derived hashes), so distinct
     clients always consume distinct budgets. The hash prevents
     unbounded attacker text from becoming Redis key material while

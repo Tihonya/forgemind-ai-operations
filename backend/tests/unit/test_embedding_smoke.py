@@ -241,6 +241,90 @@ class TestVerdictSemantics:
 
 
 # ---------------------------------------------------------------------------
+# CLI exit-code contract (remediation R-3): PASS=0 FAIL=1
+# PREPARATION_INCOMPLETE=2 REFUSED=3 — including the authorized-`--live`
+# path, which performs NO live provider execution and therefore exits by
+# the same evidence verdict (2), never 0.
+# ---------------------------------------------------------------------------
+
+
+class TestCliExitCodes:
+    def test_offline_fail_exits_fail(self, monkeypatch: Any) -> None:
+        from app.ops import embedding_smoke
+
+        monkeypatch.setattr(
+            embedding_smoke, "application_settings", _config(openai_api_key="")
+        )
+        assert embedding_smoke.main(["offline"]) == 1
+
+    def test_offline_incomplete_exits_preparation_incomplete(
+        self, monkeypatch: Any
+    ) -> None:
+        from app.ops import embedding_smoke
+
+        monkeypatch.setattr(embedding_smoke, "application_settings", _config())
+        # Canonical offline evidence (key present, live items not_run) is
+        # PREPARATION_INCOMPLETE -> exit 2.
+        assert (
+            embedding_smoke.main(["offline"])
+            == embedding_smoke.EXIT_CODES["PREPARATION_INCOMPLETE"]
+        )
+
+    def test_synthetic_pass_evidence_exits_pass(self, monkeypatch: Any) -> None:
+        import app.ops.embedding_smoke as embedding_smoke
+
+        monkeypatch.setattr(
+            embedding_smoke,
+            "build_offline_evidence",
+            lambda config: _all_required_pass(),
+        )
+        assert (
+            embedding_smoke.main(["offline"])
+            == embedding_smoke.EXIT_CODES["PASS"]
+        )
+
+    def test_authorized_live_without_execution_exits_preparation_incomplete(
+        self, monkeypatch: Any, capsys: Any
+    ) -> None:
+        """Both authorization barriers satisfied + no live provider
+        execution still implemented -> evidence stays PREPARATION_INCOMPLETE
+        and the CLI exits 2 (never 0)."""
+        import app.ops.embedding_smoke as embedding_smoke
+
+        monkeypatch.setenv("FORGEMIND_EMBEDDING_SMOKE_LIVE_CONFIRM", "yes")
+        monkeypatch.setattr(embedding_smoke, "application_settings", _config())
+        captured_evidence: dict[str, EmbeddingSmokeEvidence] = {}
+        real_build = embedding_smoke.build_offline_evidence
+
+        def spying_build(config: Settings) -> EmbeddingSmokeEvidence:
+            evidence = real_build(config)
+            captured_evidence["evidence"] = evidence
+            return evidence
+
+        monkeypatch.setattr(embedding_smoke, "build_offline_evidence", spying_build)
+
+        rc = embedding_smoke.main(["--live"])
+        out = capsys.readouterr().out
+
+        assert rc == embedding_smoke.EXIT_CODES["PREPARATION_INCOMPLETE"]
+        assert rc == 2
+        assert "LIVE MODE: authorized externally" in out
+        assert "not executed by WP-P7-02" in out
+        assert "OVERALL: PREPARATION_INCOMPLETE" in out
+        # The authorized path appended nothing on top of the pure offline
+        # evidence — proving no live provider execution code path ran.
+        assert captured_evidence["evidence"].overall == "PREPARATION_INCOMPLETE"
+
+    def test_unauthorized_live_exits_refused(self, monkeypatch: Any) -> None:
+        import app.ops.embedding_smoke as embedding_smoke
+
+        monkeypatch.delenv("FORGEMIND_EMBEDDING_SMOKE_LIVE_CONFIRM", raising=False)
+        monkeypatch.setattr(embedding_smoke, "application_settings", _config())
+        assert embedding_smoke.main(["--live"]) == embedding_smoke.EXIT_CODES["REFUSED"]
+        assert embedding_smoke.main(["--live"]) == 3
+
+
+# ---------------------------------------------------------------------------
 # Live-authorization barrier
 # ---------------------------------------------------------------------------
 

@@ -118,7 +118,7 @@ state across ALL backend/worker processes:
 
   Client identification: trusted `X-Forwarded-For` from Caddy (sole
   public client; spoofed values dropped), then the transport peer,
-  then a shared `client:unknown` bucket. Every identifier is
+  then a shared `client:anonymous` bucket. Every identifier is
   canonicalized into a bounded Redis-safe token (strict IP normalize;
   otherwise a truncated SHA-256 digest). Distinct clients consume
   distinct budgets; the same client shares ONE budget across every
@@ -182,6 +182,23 @@ authoritative scheduled-backup implementation. Hard guarantees:
   reports unhealthy while the last cycle failed (no silent 24-hour
   healthy-looking sleep); after a failure the cycle retries after
   RETRY_SLEEP (1 hour) without touching retention.
+- Scheduling is INTERNAL to `scripts/backup-cycle.sh`: a successful
+  cycle sleeps SLEEP_SECONDS (86400 s) and a failed cycle sleeps
+  RETRY_SLEEP (3600 s) inside the same container process. Because the
+  process remains running, ordinary daily scheduling does NOT depend
+  on the Docker restart policy.
+- The committed production service leaves `CYCLE_ONCE` UNSET.
+  Docker's `restart: unless-stopped` restarts the container after
+  BOTH a zero and a non-zero exit; therefore `CYCLE_ONCE=1` is
+  reserved for tests, manual one-shot invocation, and controlled
+  external execution ONLY, and MUST NOT be enabled on the Compose
+  backup daemon while `restart: unless-stopped` remains configured
+  (a bounded cycle that exits cleanly would otherwise restart and
+  re-dump in a tight backup-storm loop). The restart policy engages
+  only when the daemon process dies unexpectedly (e.g. kill/OOM).
+- The state marker contains `ok`/`failed` + an epoch timestamp only —
+  non-secret. Its file mode intentionally follows the container umask
+  (no 0600 requirement; it carries no secrets).
 
 Backups run as the postgres image user (root inside that container);
 dumps land root-owned with mode 0600 on the host `./backups`
@@ -255,7 +272,13 @@ Evidence verdicts (strict gate semantics):
 CLI exit codes: 0 = PASS, 1 = FAIL, 2 = PREPARATION_INCOMPLETE,
 3 = live authorization refused. Offline runs in their normal state
 exit 2 (non-zero), so a strict verification gate can never mistake an
-incomplete offline bundle for a passed live gate.
+incomplete offline bundle for a passed live gate. The same contract
+applies to an authorized `--live` run: WP-P7-02 performs no live
+provider execution, so even with both authorization barriers
+satisfied the evidence remains PREPARATION_INCOMPLETE and the CLI
+exits 2 (never 0) — exit 0 is reachable only from a genuinely
+complete PASS, which only the separately authorized live gate can
+produce.
 
 The future live gate must additionally verify (contract, PD-3a):
 authenticated request, exact model

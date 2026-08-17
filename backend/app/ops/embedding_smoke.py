@@ -391,7 +391,9 @@ def main(argv: list[str] | None = None) -> int:
 
     Strict exit semantics (remediation F-4): PASS -> 0, FAIL -> 1,
     PREPARATION_INCOMPLETE -> 2 (non-zero for a strict verification
-    gate), live-authorization refusal -> 3.
+    gate), live-authorization refusal -> 3. An authorized ``--live``
+    run that performs no live provider execution exits by the same
+    evidence verdict (2 while the bundle is PREPARATION_INCOMPLETE).
     """
     args = list(sys.argv[1:] if argv is None else argv)
     live = "--live" in args
@@ -407,10 +409,13 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_CODES["REFUSED"]
         print("LIVE MODE: authorized externally — not executed by WP-P7-02.")
         # Live execution itself remains a separately authorized gate;
-        # this harness performs no provider call. The strict code for
-        # an authorized live invocation is PASS-equivalent only if the
-        # evidence bundle is complete.
-        return 0
+        # this harness performs no provider call. The strict exit-code
+        # contract applies unchanged: 0 = PASS only when the evidence
+        # bundle is actually complete. Since no live provider execution
+        # occurs here, the evidence stays PREPARATION_INCOMPLETE and
+        # the exit code is 2 (never 0) — a strict gate cannot mistake
+        # an authorized-but-not-executed live run for a passed gate.
+        return EXIT_CODES[evidence.overall]
 
     print("MODE: offline preparation (no live provider call performed)")
     return EXIT_CODES[evidence.overall]
