@@ -24,10 +24,12 @@ FROM python:3.12-slim AS development
 
 WORKDIR /app
 
-# Install runtime system dependencies
+# Install runtime system dependencies (redis-tools provides redis-cli,
+# used by the worker healthcheck liveness probe)
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     libpq5 \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -37,6 +39,10 @@ COPY --from=builder /usr/local/bin/arq /usr/local/bin/arq
 # Copy application code
 COPY backend/app/ ./backend/app/
 COPY backend/pyproject.toml ./backend/
+
+# Worker healthcheck liveness probe (WP-P7-02)
+COPY infra/docker/worker-healthcheck.sh /usr/local/bin/worker-healthcheck
+RUN chmod +x /usr/local/bin/worker-healthcheck
 
 # Set Python path
 ENV PYTHONPATH=/app/backend
@@ -51,10 +57,12 @@ FROM python:3.12-slim AS production
 
 WORKDIR /app
 
-# Install runtime system dependencies
+# Install runtime system dependencies (redis-tools provides redis-cli,
+# used by the worker healthcheck liveness probe)
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     libpq5 \
+    redis-tools \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder
@@ -63,6 +71,10 @@ COPY --from=builder /usr/local/bin/arq /usr/local/bin/arq
 
 # Copy application code
 COPY backend/app/ ./app/
+
+# Worker healthcheck liveness probe (WP-P7-02)
+COPY infra/docker/worker-healthcheck.sh /usr/local/bin/worker-healthcheck
+RUN chmod +x /usr/local/bin/worker-healthcheck
 
 # Set Python path
 ENV PYTHONPATH=/app

@@ -79,10 +79,14 @@ class Settings(BaseSettings):
     # provider chain). Previously chat-provider selection reused the
     # ``embedding_provider`` field as a stopgap; this decouples the two.
     #
-    # ``fake`` is the offline/CI default. ``chain`` selects the ordered
-    # external fallback chain. Production/staging never silently select
-    # fake: the factory rejects fake outside development.
-    chat_provider_mode: Literal["fake", "openai", "chain"] = "fake"
+    # ``fake`` is the offline/CI default. ``openai`` selects the
+    # OpenAI-compatible provider. ``chain`` selects the ordered
+    # external fallback chain. ``openrouter`` (WP-P7-02) selects the
+    # OpenRouter provider ONLY, with no fallback chain — the Release 1
+    # production mode (PD-3: automatic provider fallback disabled).
+    # Production/staging never silently select fake: the factory
+    # rejects fake outside development.
+    chat_provider_mode: Literal["fake", "openai", "chain", "openrouter"] = "fake"
     chat_provider_chain: str = "groq,openrouter"
     openai_structured_output_mode: Literal[
         "json_schema", "json_object", "prompt_json"
@@ -112,6 +116,23 @@ class Settings(BaseSettings):
     # Rate Limiting
     rate_limit_per_minute: int = Field(default=60, ge=1)
     ai_rate_limit_per_minute: int = Field(default=10, ge=1)
+
+    # Distributed rate limiting (WP-P7-02). When enabled, AI/application
+    # rate limits are shared across all backend/worker processes through
+    # Redis using a fixed-window counter. When disabled, callers fall back
+    # to their existing per-process window (used only for tests/benchmarks
+    # and never for production limiting).
+    distributed_rate_limit_enabled: bool = True
+    # Behavior when the Redis limiter itself fails: "fail_closed" (default)
+    # -> reject the request; "fail_open" -> proceed without limiting.
+    # Intentionally required to be an explicit Literal so deployments cannot
+    # silently drift into a permissive mode.
+    rate_limit_degraded_mode: Literal["fail_closed", "fail_open"] = "fail_closed"
+    rate_limit_window_seconds: int = Field(default=60, ge=1)
+    rate_limit_redis_key_prefix: str = "forgemind-rate-limit"
+    # Optional dedicated Redis URL for the shared limiter. When empty, the
+    # limiter derives its endpoint from ``redis_url``.
+    rate_limit_redis_url: str = ""
 
     # Demo Data
     seed_golden_dataset: bool = True

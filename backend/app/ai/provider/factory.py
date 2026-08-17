@@ -11,6 +11,7 @@ Follows the same pattern as embedding_provider_factory.py.
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from app.ai.workflow.outage_handler import RetryingChatProvider
@@ -19,7 +20,9 @@ from app.config import Settings
 from app.config import settings as application_settings
 
 from .chat_provider import ChatProvider
-from .exceptions import ChatProviderConfigurationError
+from .exceptions import (
+    ChatProviderConfigurationError,
+)
 from .fake_chat_provider import FakeChatProvider
 from .fallback_chain import FallbackChatProvider
 from .openai_chat_provider import OpenAIChatProvider
@@ -113,6 +116,46 @@ def _is_official_endpoint(base_url: str) -> bool:
     return not (parts.username or parts.password)
 
 
+_SHARED_LIMITER_CACHE: dict[tuple[Any, ...], Any] = {}
+
+
+def _build_shared_rate_limiter(cfg: Settings) -> Any | None:
+    """Create (or reuse) the Redis-backed shared limiter for the AI boundary.
+
+    Returns ``None`` when distributed limiting is disabled, in which
+    case providers retain their process-local windows. Builds are cached
+    per effective configuration so long-running workers reuse one client
+    pool instead of accumulating one per workflow job.
+
+    Enabling in a shared deployment is the production-safe path required
+    by the Phase 7 contract.
+    """
+    if not cfg.distributed_rate_limit_enabled:
+        return None
+    if cfg.environment not in ("staging", "production"):
+        # Development/tests keep baseline process-local behavior.
+        return None
+    from app.core.rate_limit import RedisRateLimiter
+
+    cache_key = (
+        "ai-provider",
+        cfg.ai_rate_limit_per_minute,
+        cfg.rate_limit_window_seconds,
+        cfg.rate_limit_redis_url or cfg.redis_url,
+        cfg.rate_limit_degraded_mode,
+    )
+    limiter = _SHARED_LIMITER_CACHE.get(cache_key)
+    if limiter is None:
+        limiter = RedisRateLimiter(
+            scope="ai-provider",
+            max_calls=cfg.ai_rate_limit_per_minute,
+            window_seconds=cfg.rate_limit_window_seconds,
+            fail_closed=(cfg.rate_limit_degraded_mode == "fail_closed"),
+        )
+        _SHARED_LIMITER_CACHE[cache_key] = limiter
+    return limiter
+
+
 def create_chat_provider(
     config: Settings | None = None,
     *,
@@ -179,6 +222,11 @@ def create_chat_provider(
 
     if name == "openai":
         delegate = _create_openai_provider(effective_config)
+        return _wrap_with_retry(delegate, effective_config)
+
+    if name == "openrouter":
+        # OpenRouter only, no fallback chain (WP-P7-02 / PD-3).
+        delegate = _create_openrouter_provider(effective_config)
         return _wrap_with_retry(delegate, effective_config)
 
     if name == "chain":
@@ -250,6 +298,7 @@ def _create_openai_provider(
         rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
         provider_name="openai",
         structured_output_mode=cfg.openai_structured_output_mode,
+        shared_rate_limiter=_build_shared_rate_limiter(cfg),
     )
 
 
@@ -274,6 +323,7 @@ def _create_groq_provider(
         rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
         provider_name=_CHAIN_PROVIDER_GROQ,
         structured_output_mode=cfg.groq_structured_output_mode,
+        shared_rate_limiter=_build_shared_rate_limiter(cfg),
     )
 
 
@@ -304,6 +354,7 @@ def _create_openrouter_provider(
         rate_limit_per_minute=cfg.ai_rate_limit_per_minute,
         provider_name=_CHAIN_PROVIDER_OPENROUTER,
         structured_output_mode=cfg.openrouter_structured_output_mode,
+        shared_rate_limiter=_build_shared_rate_limiter(cfg),
     )
 
 

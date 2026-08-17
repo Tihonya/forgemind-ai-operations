@@ -94,6 +94,7 @@ ignore = [
 "backend/tests/**/*.py" = ["S101", "S105", "S106"]
 "tests/seed/test_loader.py" = ["E402", "S608"]  # Import after skipif guard; hardcoded table names in dynamic SQL
 "app/api/**/*.py" = ["B008"]  # FastAPI Depends pattern
+"app/ops/**/*.py" = ["T201"]  # CLI entry points: print is the intended output mechanism
 
 [tool.mypy]
 python_version = "3.12"

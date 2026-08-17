@@ -1,0 +1,40 @@
+name: Deployment Config CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose*.yml'
+      - 'infra/**'
+      - '.github/workflows/deployment-config-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docker-compose*.yml'
+      - 'infra/**'
+      - '.github/workflows/deployment-config-ci.yml'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate production Compose (template env, no secrets)
+        run: |
+          cp infra/prod.env.example /tmp/forgemind-prod.env.template
+          docker compose --env-file /tmp/forgemind-prod.env.template \
+            -f docker-compose.prod.yml config --quiet
+
+      - name: Lint deploy shell scripts
+        run: |
+          bash -n scripts/backup.sh
+          bash -n infra/docker/worker-healthcheck.sh
+          bash -n scripts/tests/test_backup.sh
+          bash -n scripts/tests/test_worker_healthcheck.sh
+
+      - name: Run repo-owned deploy shell test suites
+        run: |
+          bash scripts/tests/test_backup.sh
+          bash scripts/tests/test_worker_healthcheck.sh
