@@ -48,7 +48,23 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --requirepass "${REDIS_PASSWORD:?REDIS_PASSWORD is required}" --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    # F-9 hardening: the password is NOT placed on the redis-server
+    # process command line (visible via `ps`/docker inspect Cmd).
+    # A short-lived shell writes it into a 0600 auth config file in
+    # /run (tmpfs) and `exec`s redis-server with that file. The value
+    # reaches the container through compose's environment channel
+    # (same channel the healthcheck/REDIS_URL already use), never as a
+    # process argument.
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        umask 077
+        && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis-auth.conf
+        && exec redis-server /run/redis-auth.conf
+        --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     healthcheck:
@@ -78,7 +94,7 @@ services:
       OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-openai/text-embedding-3-small}
       EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required (no implicit reuse of OPENAI_API_KEY)}
       OPENROUTER_API_BASE: ${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
       OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-qwen/qwen3.7-flash}
       OPENROUTER_STRUCTURED_OUTPUT_MODE: ${OPENROUTER_STRUCTURED_OUTPUT_MODE:-json_object}
@@ -86,8 +102,16 @@ services:
       DISTRIBUTED_RATE_LIMIT_ENABLED: ${DISTRIBUTED_RATE_LIMIT_ENABLED:-true}
       RATE_LIMIT_DEGRADED_MODE: ${RATE_LIMIT_DEGRADED_MODE:-fail_closed}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       AI_RATE_LIMIT_PER_MINUTE: ${AI_RATE_LIMIT_PER_MINUTE:-10}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://${CADDY_DOMAIN}}
+      # Deployment identity passed into the backend too (F-6A channel
+      # consistency): the production validator reads the typed
+      # Settings fields (caddy_domain / caddy_email), so the documented
+      # in-container validation workflow always has the same values the
+      # compose environment provides.
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
       LOG_LEVEL: INFO
     depends_on:
       postgres:
@@ -174,6 +198,16 @@ services:
   # Enabled with: docker compose -f docker-compose.prod.yml --profile backup up -d
   # Backup files land in ./backups on the HOST (bind mount), so the
   # operator owns off-host replication. See docs/infra-production.md.
+  #
+  # The scheduled cycle runs scripts/backup-cycle.sh — the ONE
+  # authoritative scheduled-backup implementation (shared with
+  # scripts/backup.sh retention via scripts/backup-prune.sh):
+  #   - pg_dump failure stops the cycle (retention NOT run);
+  #   - partial dumps are written `.part` and removed on failure;
+  #   - success dumps are chmod 600;
+  #   - /backups/last_backup_state carries ok/failed for the
+  #     healthcheck, so a failed cycle is visible to docker/compose
+  #     monitoring instead of silently sleeping 24h.
   # ------------------------------------------------------------------
   backup:
     image: postgres:16-alpine
@@ -184,18 +218,26 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD}
     entrypoint:
       - /bin/sh
-      - -c
-      - >
-        while true; do
-          echo "[backup] starting pg_dump at $$(date -u +%Y-%m-%dT%H:%M:%SZ)";
-          pg_dump -h postgres -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}" -Fc
-            -f "/backups/forgemind-$$(date -u +%Y%m%d_%H%M%S).dump";
-          find /backups -name 'forgemind-*.dump' -type f -mtime +7 -delete;
-          echo "[backup] retention cleanup done";
-          sleep 86400;
-        done
+      - /usr/local/bin/backup-cycle.sh
     volumes:
       - ./backups:/backups
+      - ./scripts/backup-cycle.sh:/usr/local/bin/backup-cycle.sh:ro
+      - ./scripts/backup-prune.sh:/usr/local/bin/backup-prune.sh:ro
+    healthcheck:
+      # Visible failure: a cycle failure writes "failed <epoch>" into
+      # the state marker. This probe reflects that state, so a backup
+      # service whose last dump failed is reported unhealthy instead
+      # of looking alive for 24 hours.
+      test:
+        -
+          CMD-SHELL
+        - |
+          [ -f /backups/last_backup_state ] \
+            && grep -q '^ok ' /backups/last_backup_state
+      interval: 6h
+      timeout: 60s
+      retries: 3
+      start_period: 5m
     depends_on:
       postgres:
         condition: service_healthy

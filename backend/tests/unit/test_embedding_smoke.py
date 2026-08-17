@@ -18,6 +18,8 @@ from app.ops.embedding_smoke import (
     EXPECTED_DIMENSIONS,
     EXPECTED_MODEL,
     EmbeddingSmokeError,
+    EmbeddingSmokeEvidence,
+    SmokeCheck,
     assert_live_authorized,
     build_offline_evidence,
     checks_for_vector,
@@ -156,6 +158,86 @@ class TestOfflineEvidence:
             c for c in evidence.checks if c.name == "config.provider_not_fake"
         )
         assert check.status == "fail"
+
+
+# ---------------------------------------------------------------------------
+# Remediation F-4: verdict semantics (synthetic evidence, offline)
+# ---------------------------------------------------------------------------
+# Synthetic bundles are built directly from the dataclass — no live
+# provider call, no network I/O. They prove the verdict algebra.
+
+_REQUIRED_LABELS = EmbeddingSmokeEvidence._live_labels()  # noqa: SLF001
+
+
+def _all_required_pass() -> EmbeddingSmokeEvidence:
+    evidence = EmbeddingSmokeEvidence()
+    evidence.checks = [SmokeCheck(name, "pass", "synthetic") for name in _REQUIRED_LABELS]
+    return evidence
+
+
+class TestVerdictSemantics:
+    def test_all_mandatory_passed_yields_pass(self) -> None:
+        evidence = _all_required_pass()
+        assert evidence.overall == "PASS"
+
+    def test_pass_stays_reachable_with_supplementary_checks(self) -> None:
+        """Extra supplementary PASS checks must NOT break PASS."""
+        evidence = _all_required_pass()
+        evidence.checks.append(SmokeCheck("config.provider_not_fake", "pass", "x"))
+        evidence.checks.append(SmokeCheck("provider.construction", "pass", "x"))
+        assert evidence.overall == "PASS"
+
+    def test_offline_evidence_without_live_checks_is_preparation_incomplete(
+        self,
+    ) -> None:
+        """Offline-only evidence (live items not_run) → PREPARATION_INCOMPLETE."""
+        evidence = build_offline_evidence(_config())
+        assert evidence.overall == "PREPARATION_INCOMPLETE"
+        # And the failing-key offline case is FAIL (already covered in
+        # TestOfflineEvidence.test_missing_key_fails_closed).
+
+    def test_one_mandatory_failed_yields_fail(self) -> None:
+        evidence = _all_required_pass()
+        # Flip one mandatory check to fail.
+        flipped: list[SmokeCheck] = []
+        for check in evidence.checks:
+            if check.name == "vector.dimension":
+                flipped.append(SmokeCheck(check.name, "fail", "wrong dimension"))
+            else:
+                flipped.append(check)
+        evidence.checks = flipped
+        assert evidence.overall == "FAIL"
+
+    def test_one_mandatory_missing_yields_preparation_incomplete(self) -> None:
+        evidence = _all_required_pass()
+        # Remove one mandatory label entirely (not executed).
+        evidence.checks = [
+            c for c in evidence.checks if c.name != "retrieval.citations"
+        ]
+        assert evidence.overall == "PREPARATION_INCOMPLETE"
+
+    def test_failure_of_supplementary_check_yields_fail(self) -> None:
+        """A failed supplementary (non-required) check is still a failure."""
+        evidence = _all_required_pass()
+        evidence.checks.append(SmokeCheck("config.provider_not_fake", "fail", "fake"))
+        assert evidence.overall == "FAIL"
+
+    def test_exit_codes_strict(self, monkeypatch: Any) -> None:
+        from app.ops import embedding_smoke
+
+        assert embedding_smoke.EXIT_CODES["PASS"] == 0
+        assert embedding_smoke.EXIT_CODES["FAIL"] == 1
+        assert embedding_smoke.EXIT_CODES["PREPARATION_INCOMPLETE"] == 2
+        assert embedding_smoke.EXIT_CODES["REFUSED"] == 3
+        # The offline default evidence is PREPARATION_INCOMPLETE under a
+        # canonical (key-present, live-items-not-run) configuration — a
+        # strict gate must treat that state as non-zero (exit 2).
+        canonical = _config()
+        monkeypatch.setattr(embedding_smoke, "application_settings", canonical)
+        assert (
+            embedding_smoke.main(["offline"])
+            == embedding_smoke.EXIT_CODES["PREPARATION_INCOMPLETE"]
+        )
 
 
 # ---------------------------------------------------------------------------

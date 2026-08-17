@@ -82,10 +82,31 @@ class EmbeddingSmokeEvidence:
         return [c for c in self.checks if c.status == "fail"]
 
     @property
+    def required_labels(self) -> frozenset[str]:
+        """Labels of the mandatory checks (the live-gate contract)."""
+        return self._live_labels()
+
+    @property
     def overall(self) -> str:
+        """Authoritative evidence verdict (remediation F-4).
+
+        Semantics:
+
+        - ``PASS`` — every mandatory required check executed and passed.
+          Supplementary checks (e.g. offline construction probes) run
+          on TOP of the required set; a supplementary PASS can never
+          make PASS unreachable, and required labels are the only
+          labels that count toward completeness.
+        - ``FAIL`` — any executed check failed (mandatory or
+          supplementary; a failed construction probe is a genuine
+          failure, never silently incomplete).
+        - ``PREPARATION_INCOMPLETE`` — no failure, but one or more
+          mandatory required checks have not executed.
+        """
         if self.failed_checks:
             return "FAIL"
-        if self.checked_labels() == self._live_labels():
+        executed_required = self.checked_labels() & self._live_labels()
+        if executed_required == self._live_labels():
             return "PASS"
         return "PREPARATION_INCOMPLETE"
 
@@ -357,8 +378,21 @@ def assert_live_authorized() -> None:
         )
 
 
+# Exit codes (remediation F-4 — strict gate semantics):
+#   0 — PASS
+#   1 — FAIL
+#   2 — PREPARATION_INCOMPLETE (mandatory checks missing/not executed)
+#   3 — live authorization refused
+EXIT_CODES = {"PASS": 0, "FAIL": 1, "PREPARATION_INCOMPLETE": 2, "REFUSED": 3}
+
+
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry point. Offline preparation by default."""
+    """CLI entry point. Offline preparation by default.
+
+    Strict exit semantics (remediation F-4): PASS -> 0, FAIL -> 1,
+    PREPARATION_INCOMPLETE -> 2 (non-zero for a strict verification
+    gate), live-authorization refusal -> 3.
+    """
     args = list(sys.argv[1:] if argv is None else argv)
     live = "--live" in args
 
@@ -370,12 +404,16 @@ def main(argv: list[str] | None = None) -> int:
             assert_live_authorized()
         except EmbeddingSmokeError as exc:
             print(f"REFUSED: {exc}")
-            return 2
+            return EXIT_CODES["REFUSED"]
         print("LIVE MODE: authorized externally — not executed by WP-P7-02.")
+        # Live execution itself remains a separately authorized gate;
+        # this harness performs no provider call. The strict code for
+        # an authorized live invocation is PASS-equivalent only if the
+        # evidence bundle is complete.
         return 0
 
     print("MODE: offline preparation (no live provider call performed)")
-    return 0 if evidence.overall != "FAIL" else 1
+    return EXIT_CODES[evidence.overall]
 
 
 if __name__ == "__main__":  # pragma: no cover

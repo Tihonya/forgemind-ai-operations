@@ -43,21 +43,25 @@
 	# routed. They remain available on the private backend network if
 	# operators need them.
 
-	# Everything else goes to nginx (SPA + static assets)
+	# Everything else goes to nginx (SPA + static assets).
+	# Caddy passes X-Forwarded-Proto/Host/For to the upstream by default
+	# (spoofed values dropped), so no explicit header_up is needed.
 	handle {
-		reverse_proxy frontend:{$FRONTEND_PORT:80} {
-			header_up X-Forwarded-Proto {scheme}
-			header_up X-Forwarded-Host {host}
-		}
+		reverse_proxy frontend:{$FRONTEND_PORT:80}
 	}
 
 	# Security headers (defaults tightened at the edge; nginx also sets
-	# headers for static content)
+	# headers for static content). CSP is set here (edge) AND in the
+	# nginx container so direct static asset access is covered too; the
+	# SPA loads no cross-origin resources and uses no inline
+	# scripts/styles, so this strict policy is compatible with the
+	# frontend build (verified against frontend source).
 	header {
 		-Server
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
 	}
 }

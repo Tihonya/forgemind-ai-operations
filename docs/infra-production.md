@@ -16,7 +16,7 @@ Host: single VPS (16 GB RAM, 200 GB storage) + Docker Compose.
 Internet
   │  HTTP/HTTPS only
   ▼
-Caddy (automatic HTTPS, {:CADDY_DOMAIN}, TLS contact {:CADDY_EMAIL})
+Caddy (automatic HTTPS, {$CADDY_DOMAIN}, TLS contact {$CADDY_EMAIL})
   ├── /health        → backend:8000  (flat status payload, no secrets)
   ├── /api/*         → backend:8000  (auth required; JWT from login)
   └── everything else → nginx (SPA)
@@ -25,10 +25,10 @@ Backend (uvicorn, `production` Dockerfile target, non-root appuser)
   ├── PostgreSQL + pgvector   (private `backend` network only)
   ├── Redis                   (private `backend` network only)
   └── ARQ worker              (heartbeat healthcheck in Redis)
+```
 
 Externally reachable: ONLY Caddy (80, 443, 443/udp).
 No Docker socket mounts. No secrets inside any image or Compose file.
-```
 
 Interactive API docs (`/docs`, `/redoc`, `/openapi.json`) are not
 routed on the public origin (Caddy) — they remain reachable only on
@@ -43,6 +43,20 @@ the private backend network.
 3. Required FQDN/email are deployment-time Product Owner inputs; no
    FQDN is fabricated by the repository.
 
+### 2.1 Credential password policy (URL-safe alphabet)
+
+`POSTGRES_PASSWORD` and `REDIS_PASSWORD` are interpolated verbatim
+into `DATABASE_URL` / `REDIS_URL`. Release 1 therefore requires the
+password alphabet `A-Z a-z 0-9 . _ ~ -` (unreserved URL characters
+only). Characters such as `@ : / # %` or spaces silently corrupt the
+composed URL and are REJECTED by the production config validator
+(exit non-zero). Generate with e.g.:
+
+    openssl rand -base64 24 | tr -d '/+=' | cut -c1-32
+
+The identifier part of the URL host/path must also avoid URL-reserved
+characters; the fixed hostnames (`postgres`, `redis`) are safe.
+
 ## 3. Fail-closed configuration validation (REQUIRED before deploy)
 
 ```bash
@@ -54,30 +68,82 @@ Exit code 0 = every Release 1 rule passes. Any single error → non-zero
 and the deployment must not proceed. The report never prints secret
 values (set/not-set only).
 
+The backend container environment includes CADDY_DOMAIN/CADDY_EMAIL,
+so the documented in-container invocation in the deploy directory
+works as written (no extra host-side variables needed):
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend python -m app.ops.validate_config
+```
+
+The same command runs identically in the production and staging
+containers (settings/validator read the same typed environment).
+
 Enforced rules include:
-- ENVIRONMENT=production, strong SECRET_KEY;
-- explicit DATABASE_URL / REDIS_URL (no placeholders);
+- ENVIRONMENT=production; SECRET_KEY at least 32 chars and NOT the
+  development default and NOT any template placeholder;
+- explicit DATABASE_URL / REDIS_URL (no placeholders; URL-safe
+  credential alphabet per §2.1);
 - DISTRIBUTED_RATE_LIMIT_ENABLED=true + RATE_LIMIT_DEGRADED_MODE=fail_closed;
 - chat = OpenRouter only (`CHAT_PROVIDER_MODE=openrouter`,
-  `OPENROUTER_CHAT_MODEL=qwen/qwen3.7-flash`, json_object, no fallback);
+  `OPENROUTER_CHAT_MODEL=qwen/qwen3.7-flash`, json_object, no
+  fallback), OPENROUTER_API_KEY explicitly set (no implicit reuse);
 - embeddings = `EMBEDDING_PROVIDER=openai`,
   `OPENAI_API_BASE=https://openrouter.ai/api/v1`,
   `OPENAI_EMBEDDING_MODEL=openai/text-embedding-3-small`,
   `EMBEDDING_DIMENSIONS=1536`, OPENAI_API_KEY = OpenRouter key (PD-3a);
-- CADDY_DOMAIN + CADDY_EMAIL explicitly supplied.
+- CADDY_DOMAIN + CADDY_EMAIL explicitly supplied through the typed
+  settings channel (template placeholders rejected);
+- CORS_ORIGINS must not contain template placeholders.
+
+### 3.1 Placeholder rejection (templates and validator share one vocabulary)
+
+The validator rejects any value matching the repository's own template
+conventions: `REPLACE_WITH_*`, `replace-with-*`, `REPLACE_*`,
+`REPLACE`-family case variants, `changeme`/`change_me`,
+`your-*` attribution tokens, `example.com`-class FQDNs, and
+`localhost`. Filling only part of the template and running the
+validator CANNOT pass: un-filled placeholders produce findings, a
+VERDICT: FAIL, and a non-zero exit. Unit tests load the template file
+literally, so validator and template cannot drift.
 
 ## 4. Distributed rate limiting (production-safe)
 
 The Redis-backed limiter (`backend/app/core/rate_limit.py`) shares one
-budget across ALL backend/worker processes:
+state across ALL backend/worker processes:
 
-- HTTP request budget: `RATE_LIMIT_PER_MINUTE` per client, enforced by
-  the ASGI middleware in staging/production; 429 with correlation ID on
-  rejection.
+- HTTP request budget: `RATE_LIMIT_PER_MINUTE` **per client address**,
+  enforced by the ASGI middleware in staging/production; 429 with
+  correlation ID on rejection.
+
+  Client identification: trusted `X-Forwarded-For` from Caddy (sole
+  public client; spoofed values dropped), then the transport peer,
+  then a shared `client:unknown` bucket. Every identifier is
+  canonicalized into a bounded Redis-safe token (strict IP normalize;
+  otherwise a truncated SHA-256 digest). Distinct clients consume
+  distinct budgets; the same client shares ONE budget across every
+  worker process. There is NO global HTTP ceiling — the per-client
+  budget is the whole story.
+
 - AI provider budget: `AI_RATE_LIMIT_PER_MINUTE` shared across
-  processes at the provider boundary.
-- Redis outage → `fail_closed` rejects requests (never silently
-  unlimited). `fail_open` exists only as an explicit operator choice.
+  processes at the provider boundary (scope `ai-provider`) — a
+  SEPARATE budget from the HTTP per-client budget.
+
+- Redis outage → `fail_closed` rejects ordinary requests with 429
+  (never silently unlimited). `fail_open` exists only as an explicit
+  operator choice.
+
+- `/health` exemption: `/health` (exact match) never consumes a
+  client budget and stays reachable during limiter Redis outages, so
+  monitoring remains observable during exactly the incidents that
+  matter. During an outage, /health reports `redis: error: …` in its
+  payload (its own dependency check) while ordinary routes return 429.
+  The exemption cannot be abused on other routes (exact `/health`
+  path only).
+
+Known behavior (fixed window): at a window boundary a client can
+consume up to ~2× the configured budget in a single straddling burst.
+This is a standard fixed-window property and accepted for Release 1.
 
 ## 5. Deploy (manual, checklist-driven — PD-9)
 
@@ -101,11 +167,31 @@ Daily pg_dump with 7-day retention via the compose `backup` profile:
 docker compose -f docker-compose.prod.yml --profile backup up -d
 ```
 
-Dumps are written to `./backups` on the host (custom format, chmod 600).
-Off-host replication is an operator responsibility (documented
-integration point: `backups/` directory; no credentials are fabricated).
+The scheduled cycle runs `scripts/backup-cycle.sh` — the ONE
+authoritative scheduled-backup implementation. Hard guarantees:
 
-Manual operations wrapper (`scripts/backup.sh`):
+- failed `pg_dump` STOPS the cycle: retention never runs after a
+  failed dump (so a string of failure days can never prune the last
+  good backups);
+- dumps are staged as `*.dump.part` and atomically renamed only on
+  success — a partial dump can never be mistaken for a valid backup;
+- successful dumps are mode `0600`;
+- success is logged only after actual success;
+- failures are VISIBLE: `./backups/last_backup_state` records
+  `ok <epoch>` / `failed <epoch>`, and the backup service healthcheck
+  reports unhealthy while the last cycle failed (no silent 24-hour
+  healthy-looking sleep); after a failure the cycle retries after
+  RETRY_SLEEP (1 hour) without touching retention.
+
+Backups run as the postgres image user (root inside that container);
+dumps land root-owned with mode 0600 on the host `./backups`
+directory. If the operator wants non-root ownership, apply the
+documented `user:` override inside a locally modified compose file —
+never in the committed template. Off-host replication is an operator
+responsibility.
+
+Manual operations wrapper (`scripts/backup.sh`), sharing the same
+retention primitive (`scripts/backup-prune.sh`):
 
 ```bash
 bash scripts/backup.sh backup   ./backups
@@ -126,6 +212,7 @@ production (Phase 7 staging-entry gates).
   YAML anchor in docker-compose.prod.yml).
 - Structured JSON logs from backend/worker to stdout/stderr.
 - Monitoring remains intentionally bounded: Docker logs, `/health`,
+  the backup state marker `/backups/last_backup_state` (ok/failed),
   and the checklist-driven deployment verification.
 
 ## 8. Health behavior
@@ -133,12 +220,21 @@ production (Phase 7 staging-entry gates).
 - backend → `curl http://localhost:8000/health` (real dependency
   checks; HTTP 200 with a degraded summary even when a dependency is
   down — the payload distinguishes healthy/degraded/unhealthy and never
-  exposes secrets or URLs).
+  exposes secrets or URLs). `/health` is exempt from the per-client
+  rate-limit budget (§4), so it stays observable while the limiter's
+  Redis is unavailable.
 - worker → `/usr/local/bin/worker-healthcheck` reads the ARQ heartbeat
   key from Redis (well-formed value = alive; absent/malformed = start
-  or stopped; redis failure = unhealthy).
+  or stopped; redis failure = unhealthy). Staleness note: ARQ 0.28.0
+  writes the heartbeat at most once per hour (TTL ≈ 3601 s), so a
+  worker that dies immediately after a heartbeat write can appear
+  healthy for up to ~1 hour. This is inherent ARQ semantics and an
+  accepted Release 1 monitoring window; if stricter freshness is
+  needed later, lower the ARQ `health_check_interval` in WorkerSettings.
 - frontend → nginx static health.
 - postgres/redis → native `pg_isready` / `redis-cli ping` probes.
+- backup → state-marker healthcheck (§6: unhealthy while the last
+  cycle failed).
 
 ## 9. Embedding smoke — preparation + boundaries
 
@@ -149,6 +245,17 @@ provider. A live call requires a separately authorized gate — the
 harness itself refuses unless both the `--live` flag AND
 `FORGEMIND_EMBEDDING_SMOKE_LIVE_CONFIRM=yes` are present (double
 barrier against accidental credit consumption).
+
+Evidence verdicts (strict gate semantics):
+- PASS — every mandatory check executed and passed;
+- FAIL — any executed check failed;
+- PREPARATION_INCOMPLETE — one or more mandatory checks not executed
+  (the normal offline state).
+
+CLI exit codes: 0 = PASS, 1 = FAIL, 2 = PREPARATION_INCOMPLETE,
+3 = live authorization refused. Offline runs in their normal state
+exit 2 (non-zero), so a strict verification gate can never mistake an
+incomplete offline bundle for a passed live gate.
 
 The future live gate must additionally verify (contract, PD-3a):
 authenticated request, exact model
@@ -162,6 +269,8 @@ secrets in evidence.
 
 - VPS hardening (separate bounded action; host controls listed in the
   Phase 7 contract section 7 are not claimed operational here).
+- Rollback and emergency-access procedures — owed before the staging
+  action (WP-P7-06), not part of this configuration WP.
 - DNS mutation, real TLS/Let's Encrypt interaction on a real host.
 - Staging/production deployment execution.
 - Live OpenRouter/OpenAI/Groq calls.

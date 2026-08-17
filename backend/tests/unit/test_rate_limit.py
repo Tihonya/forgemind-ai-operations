@@ -10,7 +10,11 @@ from unittest.mock import patch
 
 import pytest
 
-from app.core.rate_limit import RateLimitError, RedisRateLimiter
+from app.core.rate_limit import (
+    RateLimitError,
+    RedisRateLimiter,
+    canonicalize_client_identifier,
+)
 
 
 class _FakeRedis:
@@ -211,3 +215,83 @@ def test_constructor_rejects_invalid_arguments() -> None:
         RedisRateLimiter(scope="x", max_calls=0, client=_FakeRedis())
     with pytest.raises(ValueError, match="window_seconds"):
         RedisRateLimiter(scope="x", max_calls=1, window_seconds=0, client=_FakeRedis())
+
+
+# ---------------------------------------------------------------------------
+# Per-client scope namespacing (WP-P7-02 remediation F-1)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_per_client_scope_namespaces_redis_keys() -> None:
+    """Distinct canonical clients resolve to distinct Redis key namespaces."""
+    fake = _FakeRedis()
+    client_a = RedisRateLimiter(
+        scope="http-requests",
+        max_calls=5,
+        client=fake,
+        key_prefix="pfx",
+        clock=lambda: 1000.0,
+        client_identifier=canonicalize_client_identifier("203.0.113.7"),
+        scope_format="{scope}:{client}",
+    )
+    client_b = RedisRateLimiter(
+        scope="http-requests",
+        max_calls=5,
+        client=fake,
+        key_prefix="pfx",
+        clock=lambda: 1000.0,
+        client_identifier=canonicalize_client_identifier("198.51.100.9"),
+        scope_format="{scope}:{client}",
+    )
+    await client_a.check_and_increment()
+    await client_b.check_and_increment()
+    assert any("pfx:http-requests:ip:v4:203.0.113.7:" in k for k in fake.counters)
+    assert any("pfx:http-requests:ip:v4:198.51.100.9:" in k for k in fake.counters)
+
+
+@pytest.mark.asyncio
+async def test_two_limiter_instances_share_one_client_budget() -> None:
+    """Two limiter instances for the same client share one Redis counter."""
+    fake = _FakeRedis()
+    instance_one = RedisRateLimiter(
+        scope="http-requests",
+        max_calls=2,
+        client=fake,
+        clock=lambda: 1000.0,
+        client_identifier=canonicalize_client_identifier("203.0.113.7"),
+        scope_format="{scope}:{client}",
+    )
+    instance_two = RedisRateLimiter(
+        scope="http-requests",
+        max_calls=2,
+        client=fake,
+        clock=lambda: 1000.0,
+        client_identifier=canonicalize_client_identifier("203.0.113.7"),
+        scope_format="{scope}:{client}",
+    )
+    await instance_one.check_and_increment()
+    await instance_two.check_and_increment()
+    with pytest.raises(RateLimitError):
+        await instance_one.check_and_increment()
+
+
+def test_client_identifier_requires_scope_format_template() -> None:
+    """Supplying a client identifier without a {client} format fails fast."""
+    with pytest.raises(ValueError, match="client_identifier"):
+        RedisRateLimiter(
+            scope="http-requests",
+            max_calls=5,
+            client=_FakeRedis(),
+            client_identifier="ip:v4:203.0.113.7",
+        )
+
+
+def test_legacy_scope_layout_still_works_without_client() -> None:
+    """Omitting the client identifier preserves the flat legacy key layout."""
+    fake = _FakeRedis()
+    limiter = RedisRateLimiter(
+        scope="unit", max_calls=5, client=fake, key_prefix="pfx",
+        clock=lambda: 1000.0,
+    )
+    assert limiter._window_key(1000.0) == "pfx:unit:16"  # noqa: SLF001

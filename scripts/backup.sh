@@ -27,6 +27,8 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 usage() {
     echo "Usage: $0 {backup|prune|restore|rehearse} ..." >&2
     exit 2
@@ -50,9 +52,9 @@ case "${cmd}" in
     prune)
         bakdir="${1:?usage: prune <bakdir> <days>}"
         days="${2:?usage: prune <bakdir> <days>}"
-        echo "deleting backups older than ${days} days in ${bakdir}"
-        find "${bakdir}" -maxdepth 1 -name 'forgemind-*.dump' -type f \
-            -mtime "+${days}" -print -delete
+        # Delegates to the single authoritative retention primitive
+        # shared with the compose scheduled cycle (scripts/backup-prune.sh).
+        sh "${SCRIPT_DIR}/backup-prune.sh" "${bakdir}" "${days}"
         ;;
 
     restore)

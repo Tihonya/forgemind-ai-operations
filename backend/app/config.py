@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173", "http://localhost:3000"]
 
+    # Deployment identity (WP-P7-02). Supplied via the deployment
+    # environment (CADDY_DOMAIN / CADDY_EMAIL); the production config
+    # validator reads these typed fields (not raw os.environ), so the
+    # documented in-container validation workflow sees exactly what the
+    # Compose backend environment provides.
+    caddy_domain: str = ""
+    caddy_email: str = ""
+
     # Database
     database_url: str = Field(
         default="postgresql+asyncpg://forgemind:forgemind@localhost:5432/forgemind"
