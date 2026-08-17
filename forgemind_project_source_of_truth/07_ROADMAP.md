@@ -111,6 +111,9 @@ Roadmap побудовано вертикально: кожна фаза зав�
 
 ## Phase 7 — Public deployment
 
+### Status
+PROPOSED — PLANNING/IMPLEMENTATION AUTHORIZED (prospective, upon merge and post-merge verification of WP-P7-01, DEC-054). Until WP-P7-01 is merged and post-merge verified, Phase 7 remains NOT STARTED. Deployment execution, staging, and production remain NOT STARTED. Release 1 remains NOT READY / NOT DEPLOYED.
+
 ### Deliverables
 - VPS deployment;
 - domain/subdomain;
@@ -123,6 +126,9 @@ Roadmap побудовано вертикально: кожна фаза зав�
 
 ### Exit criteria
 - AT-001, AT-002, AT-014, AT-015 pass on public environment.
+
+### Authoritative contract
+The Release 1 / Phase 7 deployment contract and controlled decomposition are defined in `docs/planning/phase_7_deployment_contract.md` (WP-P7-01, DEC-054). The contract records Product Owner deployment decisions PD-1 through PD-11, a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12), staging/production/release gates, a VPS security-hardening contract, and a Hostinger and domain input contract. No deployment-gated acceptance test is marked PASS until deployment evidence exists.
 
 ## Phase 8 — Portfolio release
 
