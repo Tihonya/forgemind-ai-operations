@@ -150,8 +150,8 @@ This is a standard fixed-window property and accepted for Release 1.
 ```bash
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
-docker compose -f docker-compose.prod.yml exec backend python -m seed.generator.main
+docker compose -f docker-compose.prod.yml exec backend python -m alembic upgrade head
+docker compose -f docker-compose.prod.yml exec backend python -m app.seed.generator.main
 curl -f https://<FQDN>/health   # expect JSON, status healthy/degraded
 ```
 
