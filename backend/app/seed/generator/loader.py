@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
 from app.models.component import BomItem, Component, ComponentAlternative
-from app.models.document import DocumentVersion
+from app.models.document import Document, DocumentPermission, DocumentVersion
 from app.models.product import Product, ProductVersion
 from app.models.production import (
     ProductionOrder,
@@ -38,6 +38,8 @@ from app.seed.generator.golden_dataset import (
     DATASET_VERSION,
     SEED,
     generate_golden_dataset,
+    generate_golden_rag_corpus,
+    get_golden_rag_corpus_document_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -354,6 +356,58 @@ def _insert_user_roles(
         session.add(user_role)
 
 
+def _delete_golden_rag_corpus(session: Session) -> int:
+    """Delete previously seeded Golden RAG corpus rows (canonical IDs only).
+
+    Deletes ONLY documents whose IDs belong to the deterministic
+    ``generator.get_golden_rag_corpus_document_ids()`` canonical set.
+    All FK relationships (document_versions, document_permissions,
+    knowledge_chunks) cascade from documents, so the bounded delete
+    removes exactly the corpus footprint without touching any other
+    operator/test document.
+
+    Returns:
+        Number of deleted documents (0 on first run).
+    """
+    canonical_ids = list(get_golden_rag_corpus_document_ids().values())
+    deleted = (
+        session.query(Document)
+        .filter(Document.id.in_(canonical_ids))
+        .delete(synchronize_session=False)
+    )
+    if deleted:
+        logger.info(f"Deleted {deleted} existing Golden RAG corpus document(s)")
+    return deleted
+
+
+def _insert_golden_rag_corpus(session: Session) -> dict[str, int]:
+    """Insert the deterministic Golden RAG corpus (documents, versions,
+    permissions) into the current transaction.
+
+    No KnowledgeChunk and no embedding rows are created here: chunking and
+    embedding remain owned by the ingestion phase (IngestionOrchestrator)
+    via the authoritative seed bridge.
+
+    Returns:
+        Counts for documents / document_versions / document_permissions.
+    """
+    corpus = generate_golden_rag_corpus()
+
+    for doc_data in corpus["documents"]:
+        session.add(Document(**doc_data))
+    for version_data in corpus["document_versions"]:
+        session.add(DocumentVersion(**version_data))
+    for permission_data in corpus["document_permissions"]:
+        session.add(DocumentPermission(**permission_data))
+
+    logger.info("Golden RAG corpus staged: 3 documents, 3 versions, 7 permissions")
+    return {
+        "documents": len(corpus["documents"]),
+        "document_versions": len(corpus["document_versions"]),
+        "document_permissions": len(corpus["document_permissions"]),
+    }
+
+
 def load_golden_dataset() -> dict[str, int]:
     """Load the Golden Dataset into PostgreSQL with transaction safety.
 
@@ -391,6 +445,15 @@ def load_golden_dataset() -> dict[str, int]:
         # Delete existing auth data
         _delete_existing_auth_data(session)
 
+        # Replace previously seeded Golden RAG corpus rows FIRST: they are
+        # deterministic canonical rows owned by this seed.  Doing this ahead
+        # of the auth delete would violate the corpus-permission role FKs,
+        # and doing it after the auth insert risks uniqueness conflicts on
+        # re-run.  The corpus deletion cascades document_versions,
+        # document_permissions and knowledge_chunks rows for the canonical
+        # documents only; unrelated documents are never touched.
+        _delete_golden_rag_corpus(session)
+
         # Delete existing business data
         deleted_count = _delete_existing_business_data(session)
 
@@ -398,6 +461,11 @@ def load_golden_dataset() -> dict[str, int]:
         _insert_roles(session, auth_data["roles"])
         _insert_users(session, auth_data["users"])
         _insert_user_roles(session, auth_data["user_roles"])
+
+        # Insert the deterministic Golden RAG corpus (documents ->
+        # versions -> permissions).  Chunk/embedding creation stays with
+        # the async ingestion phase below.
+        corpus_counts = _insert_golden_rag_corpus(session)
 
         # Insert business data in dependency order
         _insert_products(session, dataset["products"])
@@ -444,6 +512,9 @@ def load_golden_dataset() -> dict[str, int]:
             "production_order_requirements": len(
                 dataset["production_order_requirements"]
             ),
+            "documents": corpus_counts["documents"],
+            "document_versions": corpus_counts["document_versions"],
+            "document_permissions": corpus_counts["document_permissions"],
             "deleted": deleted_count,
         }
 

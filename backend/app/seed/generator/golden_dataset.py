@@ -38,6 +38,7 @@ Risk-scenario design:
     → SENSOR-L9 shortage=5 with proposed alternative → RISK-003 MEDIUM
 """
 
+import hashlib
 import uuid
 from collections import OrderedDict
 from datetime import date, datetime, timedelta, timezone
@@ -476,6 +477,167 @@ def generate_golden_dataset() -> dict[str, Any]:
     return dataset
 
 
+GOLDEN_RAG_1_CONTENT = """\
+Supply Risk Reference — WO-2026-0142 / CTRL-X4
+Document: Operational coverage and mitigation status for component CTRL-X4.
+
+Context
+This reference covers production order WO-2026-0142 within production plan
+PLAN-2026-W31. The order is released and its material need date is 2026-08-03.
+
+Material requirement
+The order calls for 20 units of component CTRL-X4 (Control Unit X4, unit PCS).
+The main warehouse WH-MAIN currently holds 12 units of CTRL-X4. The available
+stock therefore covers 12 of the 20 required units, leaving a production
+coverage gap of 8 units for WO-2026-0142.
+
+Supply status
+No confirmed inbound supply for CTRL-X4 exists for this order. The only
+purchase-order line that references CTRL-X4 is attached to purchase order
+PO-2026-0423, whose line status is CANCELLED. Cancelled lines are excluded
+from supply availability, so they do not close the 8-unit gap.
+
+Current disposition
+The CTRL-X4 coverage gap is tracked by the production management scenario and
+remains OPEN. Additional stock, expedited supply, or an approved component
+substitution is required before the 2026-08-03 material need date.
+
+Operational notes
+- Order: WO-2026-0142 (released).
+- Component: CTRL-X4, PCS.
+- Required: 20 units; on hand: 12 units; shortage: 8 units.
+- Relevant purchase line for CTRL-X4: CANCELLED (PO-2026-0423).
+- No supply is currently counted against the CTRL-X4 requirement.
+
+This document records the deterministic dataset fact basis for the CTRL-X4
+shortage. It is approved as a retrieval source for the production management
+scenario; it does not by itself authorize any mitigation action.
+"""
+
+GOLDEN_RAG_2_CONTENT = """\
+Procurement Reference — WO-2026-0150 / MOTOR-M2
+Document: Supply and procurement mitigation status for component MOTOR-M2.
+
+Context
+This reference covers production order WO-2026-0150 within production plan
+PLAN-2026-W31. The order is released and its material need date is 2026-08-03.
+
+Material requirement
+The order calls for 16 units of component MOTOR-M2 (Motor M2, unit PCS). The
+main warehouse WH-MAIN currently holds 10 units of MOTOR-M2. Available stock
+therefore leaves a 6-unit gap against the WO-2026-0150 requirement.
+
+Supply status
+Purchase order PO-2026-0421 (supplier SUP-ACME, status CONFIRMED) contains a
+line for MOTOR-M2 with ordered quantity 10 units. That line is IN_TRANSIT,
+and its expected delivery date is 2026-08-09. Because 2026-08-09 is after the
+2026-08-03 material need date, the confirmed supply of 10 units is classified
+as late: it cannot close the gap before the order needs the material.
+
+Procurement posture
+The confirmed late supply of 10 units eventually covers the 6-unit shortage
+after the need date, but the window between 2026-08-03 and 2026-08-09 remains
+exposed. The procurement-relevant action is therefore to expedite the
+PO-2026-0421 line or to source 6 units before 2026-08-03.
+
+Operational notes
+- Order: WO-2026-0150 (released).
+- Component: MOTOR-M2, PCS.
+- Required: 16 units; on hand: 10 units; shortage: 6 units.
+- Confirmed late supply: 10 units, expected 2026-08-09.
+
+This document records the deterministic dataset fact basis for the MOTOR-M2
+shortage and its late confirmed supply. It is approved as a retrieval source
+for the procurement scenario; it does not by itself authorize any procurement
+action.
+"""
+
+GOLDEN_RAG_3_CONTENT = """\
+Engineering Reference — WO-2026-0156 / SENSOR-L9
+Document: Shortage status and proposed VALVE-V3 alternative for component
+SENSOR-L9 on production order WO-2026-0156.
+
+Context
+This reference covers production order WO-2026-0156 within production plan
+PLAN-2026-W31. The order is released and its material need date is 2026-08-05.
+
+Material requirement
+The order calls for 12 units of component SENSOR-L9 (Sensor L9, unit PCS).
+The main warehouse WH-MAIN currently holds 7 units of SENSOR-L9. Available
+stock therefore leaves a 5-unit gap against the WO-2026-0156 requirement.
+
+Alternative component status
+The component-alternatives record pairs component SENSOR-L9 with alternative
+component VALVE-V3 and carries the business status PROPOSED. The stored
+rationale states that VALVE-V3 can substitute for SENSOR-L9 pending
+engineering review. WH-MAIN holds 50 units of VALVE-V3, which would be
+sufficient for this order.
+
+Important distinction
+VALVE-V3 is a PROPOSED alternative only. The alternative has NOT been
+approved for business use on this order: the substitution remains pending the
+engineering review referenced by the component-alternatives record. Until
+that review concludes with an approved decision recorded in the business
+data, the 5-unit SENSOR-L9 gap stays open for supply planning purposes.
+
+Operational notes
+- Order: WO-2026-0156 (released).
+- Component: SENSOR-L9, PCS.
+- Required: 12 units; on hand: 7 units; shortage: 5 units.
+- Proposed alternative: VALVE-V3 (PROPOSED, pending engineering review).
+
+This document records the deterministic dataset fact basis for the SENSOR-L9
+shortage and the proposed VALVE-V3 alternative. The document itself is
+approved as a retrieval source for the production management and engineering
+scenarios; this document approval does NOT change the PROPOSED business
+status of the component alternative.
+"""
+
+
+class _CorpusRoleIds:
+    """Canonical deterministic role UUIDs resolved once for the Golden RAG corpus.
+
+    Imported from the auth seed family (module-level singleton pattern) to keep the
+    corpus generator importable without importing Hashlib-adjacent auth internals.
+    The returned UUIDs equal :func:`app.seed.generator.auth_dataset.get_role_id_by_code`.
+    """
+
+    _ids: dict[str, uuid.UUID] | None = None
+
+    @classmethod
+    def get(cls) -> dict[str, uuid.UUID]:
+        """Return (and cache) the corpus role-code -> UUID map."""
+        if cls._ids is None:
+            from app.seed.generator.auth_dataset import get_role_id_by_code
+
+            cls._ids = {
+                role_code: get_role_id_by_code(role_code)
+                for role_code in (
+                    "PRODUCTION_MANAGER",
+                    "PROCUREMENT_SPECIALIST",
+                    "ENGINEER",
+                    "AI_ADMINISTRATOR",
+                )
+            }
+        return cls._ids
+
+
+def get_golden_rag_corpus_document_ids() -> dict[str, uuid.UUID]:
+    """Return the canonical document-name -> deterministic UUID map.
+
+    Returns:
+        One entry per Release 1 Golden document keyed by its corpus name
+        (``"G-RAG-1"``, ``"G-RAG-2"``, ``"G-RAG-3"``).
+    """
+    return {
+        name: generate_deterministic_uuid(f"golden-rag-corpus:document:{name}")
+        for name in ("G-RAG-1", "G-RAG-2", "G-RAG-3")
+    }
+
+
+_GOLDEN_RAG_CORPUS_NAMES = ("G-RAG-1", "G-RAG-2", "G-RAG-3")
+
+
 def get_golden_scenario_facts() -> dict[str, Any]:
     """Return the expected Golden Scenario facts for validation.
 
@@ -515,3 +677,139 @@ def get_golden_scenario_facts() -> dict[str, Any]:
             "has_proposed_alternative": True,
         },
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN RAG CORPUS (Release 1 — bounded WP-P7-02 remediation)
+# ═══════════════════════════════════════════════════════════════════
+#
+# Three deterministic source documents derived exclusively from the
+# business facts already declared above (WO identifiers, component
+# shortage/supply quantities, and the PROPOSED component-alternative
+# status).  New here are the DOCUMENT entities, their authoritative
+# versions, and the role-based document permissions — not the business
+# truth.  Keep generate_golden_dataset() itself untouched: the corpus
+# is additive and lives outside both the 14-key business payload and
+# the dataset-integrity checksum.
+
+GOLDEN_RAG_CORPUS_DOCUMENTS: tuple[dict[str, Any], ...] = (
+    {
+        "id": generate_deterministic_uuid("golden-rag-corpus:document:G-RAG-1"),
+        "title": "WO-2026-0142 — CTRL-X4 Production Coverage and Mitigation Status",
+        "description": (
+            "Operational reference for the shortage situation of component "
+            "CTRL-X4 on production order WO-2026-0142 (PLAN-2026-W31)."
+        ),
+        "version_number": "1.0",
+        "version_status": "APPROVED",
+        "rotation_status": "checked_in",
+        "content": GOLDEN_RAG_1_CONTENT,
+        "role_codes": ("PRODUCTION_MANAGER", "AI_ADMINISTRATOR"),
+    },
+    {
+        "id": generate_deterministic_uuid("golden-rag-corpus:document:G-RAG-2"),
+        "title": "WO-2026-0150 — MOTOR-M2 Supply and Procurement Mitigation Status",
+        "description": (
+            "Procurement reference for the shortage situation of component "
+            "MOTOR-M2 on production order WO-2026-0150 (PLAN-2026-W31)."
+        ),
+        "version_number": "1.0",
+        "version_status": "APPROVED",
+        "rotation_status": "checked_in",
+        "content": GOLDEN_RAG_2_CONTENT,
+        "role_codes": ("PROCUREMENT_SPECIALIST", "AI_ADMINISTRATOR"),
+    },
+    {
+        "id": generate_deterministic_uuid("golden-rag-corpus:document:G-RAG-3"),
+        "title": "WO-2026-0156 — SENSOR-L9 Shortage and Proposed VALVE-V3 Alternative",
+        "description": (
+            "Engineering reference for the shortage situation of component "
+            "SENSOR-L9 on production order WO-2026-0156 (PLAN-2026-W31) and "
+            "the PROPOSED component-alternative status of VALVE-V3."
+        ),
+        "version_number": "1.0",
+        "version_status": "APPROVED",
+        "rotation_status": "checked_in",
+        "content": GOLDEN_RAG_3_CONTENT,
+        "role_codes": ("PRODUCTION_MANAGER", "ENGINEER", "AI_ADMINISTRATOR"),
+    },
+)
+
+
+def generate_golden_rag_corpus() -> dict[str, Any]:
+    """Generate the deterministic Release 1 Golden RAG corpus.
+
+    Returns a dictionary with three keys (document ORDER is fixed):
+
+    - ``documents``: 3 records (``id``, ``title``, ``description``).
+    - ``document_versions``: exactly ONE authoritative record per document
+      (``id``, ``document_id``, ``version_number``, ``status``, ``content``).
+      Every version carries ``status == "APPROVED"`` — the document is
+      approved as a retrieval source.  This is distinct from the business
+      lifecycle status of the PROPOSED SENSOR-L9 -> VALVE-V3 alternative,
+      which this corpus does NOT change.
+    - ``document_permissions``: deterministic role-scoped access rows based
+      on the Golden Dataset M1 role model (role UUIDs resolved from the
+      seeded auth data, never synthetic fixture IDs).
+
+    All identifiers are stable uuid5 values derived through the standard
+    Golden Dataset namespace; ``content_hash`` is computed only from
+    ``version_number`` + ``content`` so a version ID can never point at a
+    different text.  No KnowledgeChunk rows and no embedding vectors are
+    produced here — chunking and embedding remain owned by the
+    IngestionOrchestrator through the authoritative seed ingestion bridge.
+
+    Returns:
+        Ordered dict with the three documented collections.
+    """
+    corpus: OrderedDict[str, Any] = OrderedDict()
+    corpus["documents"] = [
+        {
+            "id": definition["id"],
+            "title": definition["title"],
+            "description": definition["description"],
+        }
+        for definition in GOLDEN_RAG_CORPUS_DOCUMENTS
+    ]
+
+    versions: list[dict[str, Any]] = []
+    permissions: list[dict[str, Any]] = []
+    for definition in GOLDEN_RAG_CORPUS_DOCUMENTS:
+        doc_name = next(
+            name
+            for name in _GOLDEN_RAG_CORPUS_NAMES
+            if definition["id"]
+            == generate_deterministic_uuid(f"golden-rag-corpus:document:{name}")
+        )
+        document_id = definition["id"]
+        version_number = str(definition["version_number"])
+        content = str(definition["content"])
+
+        versions.append(
+            {
+                "id": generate_deterministic_uuid(
+                    f"golden-rag-corpus:version:{doc_name}"
+                ),
+                "document_id": document_id,
+                "version_number": version_number,
+                "status": str(definition["version_status"]),
+                "content": content,
+                "content_hash": hashlib.sha256(
+                    f"{version_number}\u0000{content}".encode()
+                ).hexdigest(),
+            }
+        )
+
+        for role_code in definition["role_codes"]:
+            permissions.append(
+                {
+                    "id": generate_deterministic_uuid(
+                        f"golden-rag-corpus:permission:{doc_name}:{role_code}"
+                    ),
+                    "document_id": document_id,
+                    "role_id": _CorpusRoleIds.get()[str(role_code)],
+                }
+            )
+    corpus["document_versions"] = versions
+    corpus["document_permissions"] = permissions
+    return dict(corpus)

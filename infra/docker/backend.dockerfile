@@ -38,11 +38,22 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 # Copy application code
 COPY backend/app/ ./backend/app/
 COPY backend/pyproject.toml ./backend/
+# Alembic packaging (develop/compose parity): seed head verification
+# (loader._find_alembic_ini) expects backend/alembic.ini alongside the
+# backend package, and alembic's script_location resolves relative to it.
+COPY backend/alembic.ini ./backend/alembic.ini
+COPY backend/alembic/ ./backend/alembic/
 
 # Set Python path
 ENV PYTHONPATH=/app/backend
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+
+# Development/CI image default: deterministic offline embeddings for the
+# seeded Golden RAG corpus (never used in production). The production
+# stage enforces EMBEDDING_PROVIDER=openai through the deployment
+# environment and rejects fakes fail-closed (provider factory).
+ENV EMBEDDING_PROVIDER=fake
 
 # Expose port
 EXPOSE 8000
@@ -72,6 +83,12 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/uvicorn
 
 # Copy application code
 COPY backend/app/ ./app/
+# Alembic packaging (production seed path): loader._find_alembic_ini
+# resolves <module_root>/alembic.ini where module_root = /app in this
+# stage, and alembic's script_location %(here)s/alembic resolves the
+# migration tree at /app/alembic.
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic/ ./alembic/
 
 # Set Python path
 ENV PYTHONPATH=/app

@@ -11,6 +11,8 @@ Live PostgreSQL tests are in test_loader.py.
 """
 
 
+from typing import Any
+
 import pytest
 
 from app.seed.generator.golden_dataset import (
@@ -337,3 +339,176 @@ class TestGoldenScenarioFacts:
     def test_inventory_reservations_are_zero(self, dataset):
         """Verify no reservations exist (clean state for risk calculation)."""
         assert len(dataset["inventory_reservations"]) == 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Golden RAG Corpus Tests (WP-P7-02 bounded remediation)
+# ─────────────────────────────────────────────────────────────────────────────
+
+from app.seed.generator.auth_dataset import get_role_id_by_code  # noqa: E402
+from app.seed.generator.golden_dataset import (  # noqa: E402
+    GOLDEN_RAG_1_CONTENT,
+    GOLDEN_RAG_2_CONTENT,
+    GOLDEN_RAG_3_CONTENT,
+    generate_golden_rag_corpus,
+    get_golden_rag_corpus_document_ids,
+)
+
+
+@pytest.fixture(scope="module")
+def rag_corpus():
+    return generate_golden_rag_corpus()
+
+
+class TestGoldenRagCorpusInventory:
+    def test_business_dataset_keys_unchanged(self, dataset):
+        """The corpus lives OUTSIDE the 14-key business payload contract."""
+        assert set(dataset.keys()) == {
+            "products",
+            "product_versions",
+            "components",
+            "bom_items",
+            "component_alternatives",
+            "warehouses",
+            "inventory_balances",
+            "inventory_reservations",
+            "suppliers",
+            "production_plans",
+            "production_orders",
+            "purchase_orders",
+            "purchase_order_lines",
+            "production_order_requirements",
+        }
+        assert "documents" not in dataset
+
+    def test_corpus_has_exactly_three_collections(self, rag_corpus):
+        assert set(rag_corpus.keys()) == {
+            "documents",
+            "document_versions",
+            "document_permissions",
+        }
+
+    def test_three_documents(self, rag_corpus):
+        assert len(rag_corpus["documents"]) == 3
+
+    def test_one_authoritative_version_per_document(self, rag_corpus):
+        assert len(rag_corpus["document_versions"]) == 3
+        version_doc_ids = [v["document_id"] for v in rag_corpus["document_versions"]]
+        assert len(set(version_doc_ids)) == 3
+
+    def test_permission_rows_match_required_role_spread(self, rag_corpus):
+        assert len(rag_corpus["document_permissions"]) == 7
+
+
+class TestGoldenRagCorpusDeterminism:
+    def test_all_ids_are_version_5(self, rag_corpus):
+        for collection in ("documents", "document_versions", "document_permissions"):
+            for row in rag_corpus[collection]:
+                assert row["id"].version == 5
+
+    def test_role_ids_resolve_from_seeded_auth_roles(self, rag_corpus):
+        assert {p["role_id"] for p in rag_corpus["document_permissions"]} == {
+            get_role_id_by_code(code)
+            for code in (
+                "PRODUCTION_MANAGER",
+                "PROCUREMENT_SPECIALIST",
+                "ENGINEER",
+                "AI_ADMINISTRATOR",
+            )
+        }
+
+    def test_canonical_document_ids_are_stable(self, rag_corpus):
+        ids = get_golden_rag_corpus_document_ids()
+        assert {d["id"] for d in rag_corpus["documents"]} == set(ids.values())
+        assert rag_corpus == generate_golden_rag_corpus()
+
+    def test_content_hash_is_deterministic_and_binds_content(self, rag_corpus):
+        fresh = generate_golden_rag_corpus()
+        for v, fresh_v in zip(
+            rag_corpus["document_versions"],
+            fresh["document_versions"],
+            strict=True,
+        ):
+            assert len(v["content_hash"]) == 64
+            assert v["id"] == fresh_v["id"]
+            assert v["content_hash"] == fresh_v["content_hash"]
+
+
+class TestGoldenRagCorpusTruthfulness:
+    def test_version_statuses_are_approved(self, rag_corpus):
+        for v in rag_corpus["document_versions"]:
+            assert v["status"] == "APPROVED"
+
+    def test_documents_do_not_carry_chunks_or_embeddings(self, rag_corpus):
+        for collection in rag_corpus.values():
+            for row in collection:
+                assert not any(
+                    key in row for key in ("chunk_index", "chunk_text", "embedding")
+                )
+
+    def test_g_rag_1_ctrl_x4_facts(self, rag_corpus):
+        doc = rag_corpus["documents"][0]
+        version = next(
+            v for v in rag_corpus["document_versions"] if v["document_id"] == doc["id"]
+        )
+        assert version["version_number"] == "1.0"
+        assert "WO-2026-0142" in GOLDEN_RAG_1_CONTENT
+        assert "CTRL-X4" in GOLDEN_RAG_1_CONTENT
+        assert "shortage: 8" in GOLDEN_RAG_1_CONTENT
+        assert "12" in GOLDEN_RAG_1_CONTENT and "20" in GOLDEN_RAG_1_CONTENT
+
+    def test_g_rag_2_motor_m2_facts(self, rag_corpus):
+        doc = rag_corpus["documents"][1]
+        version = next(
+            v for v in rag_corpus["document_versions"] if v["document_id"] == doc["id"]
+        )
+        assert version["version_number"] == "1.0"
+        assert "WO-2026-0150" in GOLDEN_RAG_2_CONTENT
+        assert "MOTOR-M2" in GOLDEN_RAG_2_CONTENT
+        assert "shortage: 6" in GOLDEN_RAG_2_CONTENT
+        assert "supply: 10" in GOLDEN_RAG_2_CONTENT
+
+    def test_g_rag_3_sensor_l9_valve_v3_facts(self, rag_corpus):
+        doc = rag_corpus["documents"][2]
+        version = next(
+            v for v in rag_corpus["document_versions"] if v["document_id"] == doc["id"]
+        )
+        assert version["version_number"] == "1.0"
+        assert "WO-2026-0156" in GOLDEN_RAG_3_CONTENT
+        assert "SENSOR-L9" in GOLDEN_RAG_3_CONTENT
+        assert "shortage: 5" in GOLDEN_RAG_3_CONTENT
+        assert "VALVE-V3" in GOLDEN_RAG_3_CONTENT
+        assert "PROPOSED" in GOLDEN_RAG_3_CONTENT
+        # The document is APPROVED; the alternative stays PROPOSED (pending
+        # engineering review) — never "APPROVED for business use".
+        assert "The alternative has NOT been" in GOLDEN_RAG_3_CONTENT
+        assert "approved for business use on this order" in GOLDEN_RAG_3_CONTENT
+        assert "remains pending the" in GOLDEN_RAG_3_CONTENT
+        assert "approved" in GOLDEN_RAG_3_CONTENT.lower()
+
+    def test_permission_mapping_matches_po_contract(self, rag_corpus):
+        doc_ids = get_golden_rag_corpus_document_ids()
+        perms = rag_corpus["document_permissions"]
+        role = get_role_id_by_code
+
+        def allowed(document_name: str) -> set[Any]:
+            doc_id = doc_ids[document_name]
+            return {
+                p["role_id"]
+                for p in perms
+                if p["document_id"] == doc_id
+            }
+
+        # G-RAG-1: PRODUCTION_MANAGER + AI_ADMINISTRATOR
+        assert allowed("G-RAG-1") == {role("PRODUCTION_MANAGER"), role("AI_ADMINISTRATOR")}
+        # G-RAG-2: PROCUREMENT_SPECIALIST + AI_ADMINISTRATOR
+        assert allowed("G-RAG-2") == {
+            role("PROCUREMENT_SPECIALIST"),
+            role("AI_ADMINISTRATOR"),
+        }
+        # G-RAG-3: PRODUCTION_MANAGER + ENGINEER + AI_ADMINISTRATOR
+        assert allowed("G-RAG-3") == {
+            role("PRODUCTION_MANAGER"),
+            role("ENGINEER"),
+            role("AI_ADMINISTRATOR"),
+        }

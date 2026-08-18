@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Seed the database with golden dataset
-# This script creates synthetic data for the ForgeMind application
+# Seed the database with the Golden Dataset (business entities + Golden RAG corpus).
+# This script creates synthetic deterministic data for the ForgeMind application.
 
 echo "🌱 Seeding database with golden dataset..."
 
-# Guard: seed module not yet implemented in Phase 0
-if [ ! -d "seed/generator" ]; then
-    echo "⚠️  Seed module not yet implemented (deferred to Phase 1)"
-    exit 0
+# Guard: authoritative seed package path (backend/app/seed).
+if [ ! -d "backend/app/seed" ]; then
+    echo "❌ Seed module not found at backend/app/seed"
+    exit 1
 fi
 
 # Check if backend container is running
@@ -19,8 +19,9 @@ if ! docker compose ps backend 2>/dev/null | grep -q "running"; then
     exit 1
 fi
 
-# Run seed command
-if docker compose exec -T backend python -m seed.generator.main; then
+# Run seed command (authoritative module path; triggers business seeding and
+# the deterministic Golden RAG corpus ingestion via the existing bridge)
+if docker compose exec -T backend python -m app.seed.generator.main; then
     echo "✅ Seed completed successfully"
 else
     echo "❌ Seed failed"
