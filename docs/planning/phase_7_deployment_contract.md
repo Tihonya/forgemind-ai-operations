@@ -2,7 +2,7 @@
 
 **Work package:** WP-P7-01
 **Type:** Documentation-only contract (no application, deployment, infrastructure, or localization changes)
-**Status:** PROPOSED — AWAITING INDEPENDENT DOCUMENTATION REVIEW
+**Status:** ACCEPTED under DEC-054 (2026-08-17); WP-P7-01 COMPLETE (incorporated via PR #111); WP-P7-02 COMPLETE / ACCEPTED (DEC-055, 2026-08-18); Phase 7 remains OPEN / IN PROGRESS
 **Baseline:** origin/main @ `8e018b2080917c50b5641abbdbd7be0407493677` (PR #111 merge commit)
 **Date:** 2026-08-17
 **Decision:** DEC-054 (Product Owner, 2026-08-17)

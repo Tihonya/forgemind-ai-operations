@@ -112,7 +112,7 @@ Roadmap побудовано вертикально: кожна фаза зав�
 ## Phase 7 — Public deployment
 
 ### Status
-PROPOSED — PLANNING/IMPLEMENTATION AUTHORIZED (prospective, upon merge and post-merge verification of WP-P7-01, DEC-054). Until WP-P7-01 is merged and post-merge verified, Phase 7 remains NOT STARTED. Deployment execution, staging, and production remain NOT STARTED. Release 1 remains NOT READY / NOT DEPLOYED.
+OPEN / IN PROGRESS — WP-P7-01 (deployment contract, DEC-054) is COMPLETE (incorporated via PR #111); WP-P7-02 (deployment/security configuration + Golden RAG / production seed remediation + live embedding gate) is COMPLETE / ACCEPTED (PR #113 + PR #114 merged and post-merge verified; live embedding smoke -03 PASSED; independent evidence review PASSED; Product Owner acceptance 2026-08-18, DEC-055); WP-P7-03 (demo reset) is the next implementation package (NOT IMPLEMENTED). Deployment execution, staging, and production remain NOT STARTED. Release 1 remains NOT READY / NOT DEPLOYED.
 
 ### Deliverables
 - VPS deployment;

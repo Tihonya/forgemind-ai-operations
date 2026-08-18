@@ -1060,6 +1060,89 @@ The independent readiness-design review identified five material corrections (PD
 
 ---
 
+## DEC-055 — WP-P7-02 live embedding evidence acceptance and work-package completion
+
+**Date:** 2026-08-18
+
+**Status:** Accepted
+
+**Context:**
+
+WP-P7-02 deployment/security implementation was incorporated via PR #113 (merge commit `728bb107be88e48974ac401e50c26405570a81c3`); Golden RAG / production seed remediation was incorporated via PR #114 (merge commit `c30a06194beda6dc7f36b441e27afd7534b8a947`). Both PRs passed their required review/merge/post-merge lifecycle; PR #114 was independently post-merge verified (verdict: POST-MERGE VERIFICATION PASSED — PR #114 GOLDEN RAG / PRODUCTION SEED REMEDIATION IS INCORPORATED ON MAIN; WP-P7-02 LIVE EMBEDDING GATE REMAINS SEPARATE).
+
+Live embedding smoke -01 and -02 were truthfully blocked by OpenRouter provider/model-access configuration (external "All providers have been ignored" 404). After the Product Owner corrected OpenRouter Model & Provider Access, the bounded live smoke -03 succeeded (final verdict: LIVE EMBEDDING SMOKE -03 PASSED — ALL WP-P7-02 LIVE EMBEDDING GATES SATISFIED; SEALED EVIDENCE READY FOR INDEPENDENT REVIEW). The sealed -03 aggregate identity is `a755d37077fa77bd6f688c3551c3dec03c76b00ede3fec46fb7de63acbc5f0ba`. The independent sealed-evidence review PASSED (verdict: INDEPENDENT LIVE EVIDENCE REVIEW PASSED — WP-P7-02 LIVE EMBEDDING GATE EVIDENCE IS ACCEPTABLE FOR PRODUCT OWNER ACCEPTANCE).
+
+The Product Owner rotated the old OpenRouter credential after the disclosed pre-smoke terminal echo (outside the sealed package); the sealed package and report contain zero secret.
+
+**Decision:**
+
+The Product Owner accepts the -03 sealed evidence and the independent evidence review. The authoritative live gates are declared satisfied:
+
+- L1 authenticated_openrouter_request — PASS
+- L2 exact_model — PASS
+- L3 1536_numeric_finite — PASS
+- L4 determinism — PASS
+- L5 db_insertion_compatibility — PASS
+- L6 golden_dataset_seeding — PASS
+- L7 runtime_retrieval_with_citations — PASS
+- L8 seed_query_provider_consistency — PASS
+- L9 invalid_credentials_fail_closed — PASS
+- L10 provider_failure_fail_closed — PASS
+- L11 no_secrets_in_evidence — PASS
+
+Verified live facts (concise):
+
+- OpenRouter endpoint: `https://openrouter.ai/api/v1`
+- embedding model: `openai/text-embedding-3-small`
+- dimensions: 1536
+- Golden corpus: 3 documents / 3 APPROVED versions / 7 permissions / 9 chunks
+- ingestion: 3 attempted / 3 succeeded / 0 failed
+- runtime retrieval/citations: PASS
+- unauthorized role denial: PASS
+- business checksum: `sha256:840c235cb9a431b2906471270b2d1b8c7e487b9912c64d72a5fff773039172dc`
+- exact provider request accounting: 10 outbound HTTP attempts; 8 real successes; 1 real transient rate-limit; 1 intentionally-invalid credential request; 0 SDK retries; 14 embedded input items.
+
+Request count (10) and embedded-item count (14) are distinct.
+
+Security:
+
+- the old credential terminal disclosure was OUTSIDE the sealed evidence;
+- the sealed package/report contained zero secret;
+- the old credential was rotated by the Product Owner after the smoke;
+- the issue is closed as operational security mitigation;
+- no smoke rerun is required solely for rotation.
+
+Rate limiting:
+
+- the distributed application/AI rate-limiting contract (§6) is implemented — Redis-backed `RedisRateLimiter` (`backend/app/core/rate_limit.py`), distributed per-client HTTP middleware (`backend/app/api/middleware/rate_limit.py`), and Redis-backed shared `ai-provider` limiter (`backend/app/ai/provider/factory.py`), with `distributed_rate_limit_enabled=true` default and production Compose wiring;
+- transient embedding-provider throttling remains a non-blocking staging observation;
+- embedding-specific pacing/retry is NOT claimed to exist.
+
+**Reason:**
+
+The independent evidence review established, from the sealed artifacts, that every mandatory L1-L11 live embedding gate is satisfied, the aggregate identity is exact, request accounting reconciles exactly, and no secret entered the evidence. The Product Owner accepts this evidence and the external credential-rotation mitigation as sufficient to close the WP-P7-02 live embedding gate.
+
+**Consequences:**
+
+- WP-P7-02 = COMPLETE / ACCEPTED.
+- WP-P7-02 live embedding gate = ACCEPTED.
+- WP-P7-01 remains COMPLETE.
+- Phase 7 remains OPEN / IN PROGRESS.
+- deployment = NOT STARTED.
+- staging = NOT STARTED.
+- production = NOT STARTED.
+- Release 1 = NOT READY / NOT DEPLOYED.
+- no deployment-gated AT status is changed by this decision.
+- WP-P7-03 becomes the next repository implementation package.
+- WP-P7-04 / WP-P7-05 remain later dependent packages.
+- no staging/production authorization is implied.
+
+**Affected documents/tests:** `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `docs/reviews/wp_p7_02_live_embedding_smoke_03_independent_evidence_review.md`, `docs/reviews/wp_p7_02_live_embedding_product_owner_acceptance.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/planning/requirements_traceability_matrix.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`, `docs/planning/phase_7_deployment_contract.md` (header status metadata only)
+
+**Approved by:** Product Owner (2026-08-18)
+
+---
+
 ## Template for new decisions
 
 ```markdown
