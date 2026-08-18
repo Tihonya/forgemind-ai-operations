@@ -638,6 +638,24 @@ def get_golden_rag_corpus_document_ids() -> dict[str, uuid.UUID]:
 _GOLDEN_RAG_CORPUS_NAMES = ("G-RAG-1", "G-RAG-2", "G-RAG-3")
 
 
+def get_golden_rag_corpus_version_ids() -> dict[str, uuid.UUID]:
+    """Return the canonical corpus-name -> deterministic version UUID map.
+
+    One entry per Release 1 Golden document version (``"G-RAG-1"``,
+    ``"G-RAG-2"``, ``"G-RAG-3"``), derived from the same
+    ``golden-rag-corpus:version:<name>`` uuid5 names used by
+    :func:`generate_golden_rag_corpus`.  This map is the authoritative
+    expected set for the bounded seed ingestion collector.
+
+    Returns:
+        Ordered dict mapping each corpus name to its canonical version UUID.
+    """
+    return {
+        name: generate_deterministic_uuid(f"golden-rag-corpus:version:{name}")
+        for name in _GOLDEN_RAG_CORPUS_NAMES
+    }
+
+
 def get_golden_scenario_facts() -> dict[str, Any]:
     """Return the expected Golden Scenario facts for validation.
 
@@ -753,9 +771,12 @@ def generate_golden_rag_corpus() -> dict[str, Any]:
       seeded auth data, never synthetic fixture IDs).
 
     All identifiers are stable uuid5 values derived through the standard
-    Golden Dataset namespace; ``content_hash`` is computed only from
-    ``version_number`` + ``content`` so a version ID can never point at a
-    different text.  No KnowledgeChunk rows and no embedding vectors are
+    Golden Dataset namespace, so each canonical version ID is bound to its
+    corpus layer name independently of the content it points at.
+    ``content_hash`` records deterministic integrity metadata for
+    ``version_number`` + ``content``: it documents that binding, but it is
+    not the enforcement mechanism for version-ID stability.  No
+    KnowledgeChunk rows and no embedding vectors are
     produced here — chunking and embedding remain owned by the
     IngestionOrchestrator through the authoritative seed ingestion bridge.
 

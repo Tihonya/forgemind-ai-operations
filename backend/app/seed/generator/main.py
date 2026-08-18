@@ -1,7 +1,7 @@
 """Main entry point for seed generator.
 
 Usage:
-    python -m seed.generator.main
+    python -m app.seed.generator.main
 """
 
 from app.seed.generator.loader import main

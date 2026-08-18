@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Engine, create_engine, select, text
+from sqlalchemy import Engine, create_engine, insert, or_, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
@@ -32,7 +32,11 @@ from app.models.production import (
 from app.models.supplier import PurchaseOrder, PurchaseOrderLine, Supplier
 from app.models.user import Role, User, UserRole
 from app.models.warehouse import InventoryBalance, InventoryReservation, Warehouse
-from app.seed.generator.auth_dataset import generate_auth_dataset
+from app.seed.generator.auth_dataset import (
+    DEMO_USERS,
+    USER_ROLE_MAPPINGS,
+    generate_auth_dataset,
+)
 from app.seed.generator.golden_dataset import (
     ANCHOR_DATE,
     DATASET_VERSION,
@@ -40,6 +44,7 @@ from app.seed.generator.golden_dataset import (
     generate_golden_dataset,
     generate_golden_rag_corpus,
     get_golden_rag_corpus_document_ids,
+    get_golden_rag_corpus_version_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,23 +199,115 @@ def _delete_existing_business_data(session: Session) -> int:
 
 
 def _delete_existing_auth_data(session: Session) -> int:
-    """Delete existing auth data in correct dependency order.
+    """Reset seed-owned demo auth rows while preserving unrelated identities.
+
+    Scope (F-1 remediation semantics):
+    - seed-owned demo users and their seed-owned user-role mappings are
+      deleted and recreated on every seed (mapping rows are selected by
+      canonical seed-normal ID or by demo-user ownership);
+    - canonical Role rows (the 5 deterministic DEC-009 role UUIDs) are NEVER
+      deleted — deleting them cascades ``document_permissions.role_id``
+      (document.py: role FK ON DELETE CASCADE) and silently destroyed the
+      authorization binding of surviving non-Golden documents.  Canonical
+      role ``code`` / ``name`` fields are updated in place by the caller's
+      canonical-role sync;
+    - unrelated users, unrelated roles, and unrelated user-role mappings
+      are preserved.
 
     Returns:
-        Number of records deleted
-
-    Raises:
-        Exception: If deletion fails
+        Number of records deleted (demo users + user-role mappings).
     """
-    total_deleted = 0
+    demo_user_ids = [UUID(str(user["id"])) for user in DEMO_USERS]
+    seed_mapping_ids = [UUID(str(mapping["id"])) for mapping in USER_ROLE_MAPPINGS]
 
-    # Delete user_roles first (depends on users and roles)
-    total_deleted += session.query(UserRole).delete()
-    total_deleted += session.query(User).delete()
-    total_deleted += session.query(Role).delete()
+    # Delete only seed-owned rows: user-role mappings whose canonical ID is
+    # seed-declared or whose user is a seed-declared demo user (FK order:
+    # mappings first, then demo users).  Unrelated users, unrelated mappings
+    # and ALL role rows are untouched; canonical role identity is synced in
+    # place by _sync_roles_to_canonical().
+    total_deleted = (
+        session.query(UserRole)
+        .filter(
+            or_(
+                UserRole.id.in_(seed_mapping_ids),
+                UserRole.user_id.in_(demo_user_ids),
+            )
+        )
+        .delete(synchronize_session=False)
+        + session.query(User)
+        .filter(User.id.in_(demo_user_ids))
+        .delete(synchronize_session=False)
+    )
 
     logger.info(f"Deleted {total_deleted} existing auth records")
     return total_deleted
+
+
+def _sync_roles_to_canonical(session: Session, roles: list[dict[str, Any]]) -> None:
+    """Fail-closed canonical-role upsert for the seeded auth dataset.
+
+    The five deterministic DEC-009 Role rows keep their primary-key identity
+    across seeds.  Behavior:
+    - identify the deterministic seeded Role IDs;
+    - insert them on a clean database;
+    - update their canonical ``code`` / ``name`` fields in place on reseed;
+    - NEVER delete any Role row;
+    - fail closed on identity conflicts — if a canonical role code is
+      already owned by a different UUID, raise instead of rewriting
+      unrelated identity.
+
+    Args:
+        session: Active SQLAlchemy session (transaction owned by caller).
+        roles: Canonical role definitions from generate_auth_dataset().
+
+    Raises:
+        RuntimeError: If a canonical role code is owned by a non-canonical
+            UUID (identity conflict) or if a canonical ID points at a row
+            whose code differs with no insert-match (integrity conflict).
+    """
+    canonical_by_id: dict[UUID, dict[str, Any]] = {
+        UUID(str(role["id"])): role for role in roles
+    }
+
+    # Single query: all existing rows for canonical IDs in one round-trip.
+    existing_rows = (
+        session.query(Role)
+        .filter(Role.id.in_(list(canonical_by_id.keys())))
+        .all()
+    )
+    existing_by_id: dict[UUID, Role] = {row.id: row for row in existing_rows}
+
+    for role_id, role_data in canonical_by_id.items():
+        code = str(role_data["code"])
+        name = str(role_data["name"])
+
+        # Fail closed on code-ownership conflicts.
+        owner_row = (
+            session.query(Role)
+            .filter(Role.code == code, Role.id != role_id)
+            .first()
+        )
+        if owner_row is not None:
+            raise RuntimeError(
+                f"Canonical role code '{code}' is already owned by role "
+                f"{owner_row.id}; refusing to rewrite unrelated identity"
+            )
+
+        row = existing_by_id.get(role_id)
+        if row is None:
+            session.execute(
+                insert(Role).values(id=role_id, code=code, name=name)
+            )
+        else:
+            # In-place update preserves primary-key identity.
+            if row.code != code:
+                # Canonical ID must keep its canonical code.
+                raise RuntimeError(
+                    f"Canonical role id {role_id} holds code '{row.code}', "
+                    f"expected '{code}'; refusing to mutate unrelated identity"
+                )
+            if row.name != name:
+                row.name = name
 
 
 def _insert_products(session: Session, products: list[dict[str, Any]]) -> None:
@@ -330,7 +427,14 @@ def _insert_production_order_requirements(
 
 
 def _insert_roles(session: Session, roles: list[dict[str, Any]]) -> None:
-    """Insert roles into database."""
+    """Insert canonical role rows into the database.
+
+    The main seed flow uses the identity-preserving
+    ``_sync_roles_to_canonical()`` upsert instead.  This plain-insert form
+    remains as the seed-family insertion primitive (used directly by
+    established auth-integration tests to exercise unique-constraint
+    behavior on conflicting codes).
+    """
     for role_data in roles:
         role = Role(**role_data)
         session.add(role)
@@ -442,23 +546,31 @@ def load_golden_dataset() -> dict[str, int]:
     session = _SessionFactory()
 
     try:
-        # Delete existing auth data
+        # Reset seed-owned auth rows while preserving canonical role
+        # primary-key identity.  Replacing the demo users and their join
+        # rows here CANNOT cascade into document_permissions: the
+        # deterministic canonical Role rows are never deleted, so the
+        # role-side FK (ON DELETE CASCADE) of surviving non-Golden
+        # document permissions stays valid across seeds.
         _delete_existing_auth_data(session)
 
-        # Replace previously seeded Golden RAG corpus rows FIRST: they are
-        # deterministic canonical rows owned by this seed.  Doing this ahead
-        # of the auth delete would violate the corpus-permission role FKs,
-        # and doing it after the auth insert risks uniqueness conflicts on
-        # re-run.  The corpus deletion cascades document_versions,
-        # document_permissions and knowledge_chunks rows for the canonical
-        # documents only; unrelated documents are never touched.
+        # Replace previously seeded Golden RAG corpus rows: deterministic
+        # canonical rows owned by this seed, deleted by canonical document
+        # ID only.  Both orderings relative to the auth reset are
+        # FK-legal now (canonical roles survive the reset), so the delete
+        # runs BEFORE the corpus re-insert below.  The cascade clears
+        # document_versions, document_permissions and knowledge_chunks
+        # rows for the canonical documents only; unrelated documents,
+        # versions, permissions and chunks are never touched.
         _delete_golden_rag_corpus(session)
 
         # Delete existing business data
         deleted_count = _delete_existing_business_data(session)
 
-        # Insert auth data first (roles needed before user_roles FK)
-        _insert_roles(session, auth_data["roles"])
+        # Insert/refresh canonical roles in place (identity-preserving
+        # upsert; unrelated roles are preserved by construction), then
+        # recreate the seed-owned demo users and their mappings.
+        _sync_roles_to_canonical(session, auth_data["roles"])
         _insert_users(session, auth_data["users"])
         _insert_user_roles(session, auth_data["user_roles"])
 
@@ -639,16 +751,57 @@ async def _ingest_seed_documents(version_ids: list[UUID]) -> IngestionResult:
 
 
 def _collect_version_ids_sync() -> list[UUID]:
-    """Collect all DocumentVersion IDs synchronously after seed commit.
+    """Collect exactly the canonical Golden RAG version IDs after seed commit.
+
+    F-2 remediation semantics: the seed bridge ingests ONLY the
+    deterministic Release 1 Golden RAG corpus versions.  The name is
+    retained for symbol stability (established callers patch this symbol),
+    but the collection is no longer database-wide: the expected canonical
+    set is derived from the authoritative
+    :func:`generate_golden_rag_corpus`-consistent ID helper
+    (``get_golden_rag_corpus_version_ids()``), and the database is queried
+    for those exact IDs — never for every DocumentVersion row.
+
+    Fail-closed: the returned rows must exactly match the expected canonical
+    set AND each must carry the retrieval-valid ``APPROVED`` status.  If the
+    canonical set is incomplete or inconsistent, a RuntimeError is raised;
+    the seed must never proceed on a partial Golden state at the risk of
+    ingesting (or re-embedding) unrelated versions.
 
     Uses the existing synchronous engine to avoid a second asyncio.run call.
 
     Returns:
-        List of UUIDs for all document versions in the database
+        The canonical Golden RAG version UUIDs, ordered by canonical name.
+
+    Raises:
+        RuntimeError: If any expected canonical version row is missing from
+            the database or does not carry status ``APPROVED``.
     """
+    expected_ids: list[UUID] = list(get_golden_rag_corpus_version_ids().values())
+
     with _sync_engine.connect() as conn:
-        result = conn.execute(select(DocumentVersion.id))
-        return list(result.scalars().all())
+        rows = conn.execute(
+            select(DocumentVersion.id, DocumentVersion.status).where(
+                DocumentVersion.id.in_(expected_ids)
+            )
+        ).all()
+
+    found: dict[UUID, str] = {row[0]: str(row[1]) for row in rows}
+    missing = [vid for vid in expected_ids if vid not in found]
+    if missing:
+        raise RuntimeError(
+            "Golden RAG version set incomplete: "
+            f"{len(missing)} canonical version(s) missing from the database"
+        )
+    not_approved = [vid for vid in expected_ids if found[vid] != "APPROVED"]
+    if not_approved:
+        raise RuntimeError(
+            "Golden RAG version set inconsistent: "
+            f"{len(not_approved)} canonical version(s) not in APPROVED "
+            "retrieval-valid state"
+        )
+
+    return expected_ids
 
 
 def main() -> None:
@@ -673,9 +826,13 @@ def main() -> None:
         for k, v in counts.items():
             logger.info(f"  {k}: {v}")
 
-        # Collect version IDs after sync commit
+        # Collect the canonical Golden RAG version IDs after sync commit.
+        # Bounded (F-2): unrelated document versions are never ingested.
         version_ids = _collect_version_ids_sync()
-        logger.info(f"Collected {len(version_ids)} document versions for ingestion")
+        logger.info(
+            f"Collected {len(version_ids)} canonical Golden RAG document "
+            "versions for ingestion"
+        )
 
         # Phase 2: Asynchronous ingestion
         if version_ids:

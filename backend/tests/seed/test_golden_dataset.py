@@ -352,6 +352,7 @@ from app.seed.generator.golden_dataset import (  # noqa: E402
     GOLDEN_RAG_3_CONTENT,
     generate_golden_rag_corpus,
     get_golden_rag_corpus_document_ids,
+    get_golden_rag_corpus_version_ids,
 )
 
 
@@ -512,3 +513,17 @@ class TestGoldenRagCorpusTruthfulness:
             role("ENGINEER"),
             role("AI_ADMINISTRATOR"),
         }
+
+    def test_version_id_map_matches_generated_versions(self, rag_corpus):
+        """The canonical version-ID map must be the authoritative expected
+        set for the bounded seed collector (F-2): identical to the IDs
+        produced by generate_golden_rag_corpus()."""
+        version_id_map = get_golden_rag_corpus_version_ids()
+        assert set(version_id_map.keys()) == {"G-RAG-1", "G-RAG-2", "G-RAG-3"}
+        generated = {v["id"] for v in rag_corpus["document_versions"]}
+        assert set(version_id_map.values()) == generated, (
+            "get_golden_rag_corpus_version_ids() drifted from the generated "
+            "corpus version IDs"
+        )
+        for version_id in version_id_map.values():
+            assert version_id.version == 5
