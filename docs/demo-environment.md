@@ -22,8 +22,15 @@ its Compose file and project identity, never by weakening the app.
 | Docker socket mount | none | none |
 | Secrets | `infra/prod.env.example` → operator `.env` | `infra/demo.env.example` → operator `infra/demo.env` |
 
-Demo and production never share a database, Redis state, Compose project, or
-secrets. A future production stack can coexist with the demo without overlap.
+Demo and production never share a database, Redis state, Compose project,
+volume, or secrets: their data/volume/network namespaces are isolated. Note
+that both current public stacks publish ports 80/443/443-udp, so they cannot
+simultaneously bind those ports on the SAME host. The Release 1 Demo is
+expected to be the sole public ForgeMind stack on its host; a future
+production stack can coexist on a SEPARATE host. Same-host simultaneous
+public Demo + Production would require an explicit
+front-door/reverse-proxy/port architecture that is NOT implemented in
+Release 1.
 
 ## Configuration
 
@@ -69,7 +76,10 @@ make demo-reset
 1. validates the demo identity (compose file, project `forgemind-demo`,
    database `forgemind_demo`, no host ports, no Docker socket, demo env);
 2. acquires a `flock` reset lock (a concurrent reset fails fast);
-3. `docker compose … down -v` — destroys ONLY the demo containers/volumes;
+3. `docker compose … down` (containers + networks), then removes ONLY the
+   Demo PostgreSQL + Redis volumes (Compose labels verified) — Caddy
+   TLS/ACME state is preserved, so a reset does not force fresh certificate
+   issuance;
 4. starts PostgreSQL + Redis and waits healthy;
 5. starts the backend and runs `python -m alembic upgrade head` (empty DB);
 6. runs the canonical Golden seed (`python -m app.seed.generator.main`);
@@ -85,8 +95,11 @@ demo generation; a reset starts a new clean generation.
 The reset refuses to run unless every identity guard passes. It has NO
 authority over the production stack: it pins `-f docker-compose.demo.yml`,
 `-p forgemind-demo`, and the demo env file, and never accepts a database or
-project name from the operator. There is no `docker compose down -v` against
-an unqualified/default project.
+project name from the operator. Volume destruction is bounded to the Demo
+PostgreSQL + Redis volumes, and only after their `com.docker.compose.project`
+and `com.docker.compose.volume` labels are verified to match the demo
+identity exactly (any disagreement fails closed). Caddy TLS/ACME volumes are
+never removed.
 
 ### Failure and recovery
 

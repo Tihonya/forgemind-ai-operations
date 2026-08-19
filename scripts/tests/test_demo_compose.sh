@@ -88,12 +88,25 @@ for var in SECRET_KEY POSTGRES_PASSWORD REDIS_PASSWORD OPENAI_API_KEY OPENROUTER
         fail "demo env template missing ${var}"
         continue
     fi
-    if printf '%s' "${line}" | grep -qE 'REPLACE_WITH|replace-with'; then
+    if printf '%s' "${line}" | grep -qE 'REPLACE_WITH|replace-with|REPLACE_ME'; then
         ok "demo env ${var} is a placeholder"
     else
         fail "demo env ${var} looks like a real value: ${line}"
     fi
 done
+
+# ---------------------------------------------------------------------------
+# 9. F3 — the committed SECRET_KEY placeholder must NOT satisfy the production
+#    Settings min_length=32 guard (so an unchanged template fails closed and
+#    cannot run with a repository-known JWT signing secret).
+# ---------------------------------------------------------------------------
+secret_line="$(grep -E '^SECRET_KEY=' "${DEMO_ENV_EXAMPLE}" || true)"
+secret_value="${secret_line#SECRET_KEY=}"
+if [ -n "${secret_value}" ] && [ "${#secret_value}" -lt 32 ]; then
+    ok "F3 SECRET_KEY placeholder is shorter than 32 chars (fails closed)"
+else
+    fail "F3 SECRET_KEY placeholder is ${#secret_value} chars (>= 32); it would satisfy the production secret guard"
+fi
 
 # ---------------------------------------------------------------------------
 # Summary

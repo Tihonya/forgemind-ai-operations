@@ -8,14 +8,21 @@
 # identity is confirmed by multiple independent fail-closed guards.
 #
 # Reset sequence (deterministic, disposable):
-#   validate demo identity  ->  acquire reset lock  ->  stop + destroy demo
-#   containers/volumes  ->  start infra  ->  alembic upgrade head (empty DB)
+#   validate demo identity  ->  acquire reset lock  ->  stop demo stack
+#   ->  destroy ONLY Demo PostgreSQL + Redis volumes (Caddy TLS/ACME state is
+#   preserved)  ->  start infra  ->  alembic upgrade head (empty DB)
 #   ->  canonical Golden seed  ->  start full stack  ->  health/baseline
 #   verify  ->  report  ->  release lock.
 #
 # There is NO in-app reset API and NO selective row-deletion: the demo
 # database and Redis state are destroyed and rebuilt from scratch. Old demo
 # workflow/audit/session history is intentionally discarded across a reset.
+#
+# Caddy TLS/ACME state (demo_caddy_data / demo_caddy_config) is infrastructure
+# identity, NOT disposable demo business data, and is deliberately PRESERVED
+# across a business reset so a reset does not force a fresh certificate
+# issuance (DEC-056: demo BUSINESS/RUNTIME data is disposable; TLS identity
+# may persist across business resets).
 #
 # No secrets are printed. The demo identity constants below are hard-coded
 # and MUST NOT be overridden by the caller.
@@ -92,15 +99,47 @@ guard_db_name() {
     log "guard: database name = ${DEMO_DB_NAME}"
 }
 
-guard_no_host_ports() {
-    local compose="${DEMO_COMPOSE_PATH}"
-    # PostgreSQL/Redis must never be published to host ports. Detect a
-    # published-port mapping ("5432:5432" / "6379:6379") anywhere in the
-    # postgres/redis service blocks.
-    if grep -E '"5[0-9]{3}:5[0-9]{3}"' "${compose}" >/dev/null 2>&1; then
-        fail "demo compose publishes a database/redis host port; refusing"
+guard_env_file() {
+    if [ ! -f "${DEMO_ENV_FILE}" ]; then
+        fail "demo env file not found: ${DEMO_ENV_FILE} (copy infra/demo.env.example and fill real values)"
     fi
-    log "guard: no host-published postgres/redis ports"
+    log "guard: env file = ${DEMO_ENV_FILE}"
+}
+
+# Host-port guard — resolved Compose state (NOT textual grep). A textual
+# grep misses host-IP syntax ("127.0.0.1:5432:5432") and long syntax
+# ("- target: 5432\n  published: 5432"). Resolving the Compose config into
+# JSON and inspecting the resolved postgres/redis services catches every
+# published-port form. Requires python3 (part of the deployment host
+# tooling assumption). Fails closed on any resolution/parse error.
+guard_no_host_ports() {
+    local json tmp
+    json="$(docker compose --env-file "${DEMO_ENV_FILE}" \
+        -f "${DEMO_COMPOSE_PATH}" \
+        -p "${DEMO_PROJECT_NAME}" \
+        config --format json 2>/dev/null)" \
+        || fail "failed to resolve demo compose config for host-port validation"
+
+    [ -n "${json}" ] || fail "resolved demo compose config is empty; refusing"
+
+    tmp="$(mktemp)"
+    printf '%s\n' "${json}" > "${tmp}"
+
+    python3 -c '
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+services = data.get("services", {})
+bad = [s for s in ("postgres", "redis") if (services.get(s, {}).get("ports") or [])]
+if bad:
+    raise SystemExit("resolved demo compose publishes host ports on: " + ", ".join(bad))
+' "${tmp}"
+    local rc=$?
+    rm -f "${tmp}"
+    if [ "${rc}" -ne 0 ]; then
+        fail "resolved demo compose publishes host ports on postgres/redis; refusing"
+    fi
+    log "guard: no host-published postgres/redis ports (resolved compose)"
 }
 
 guard_no_docker_socket() {
@@ -111,20 +150,13 @@ guard_no_docker_socket() {
     log "guard: no Docker socket mount"
 }
 
-guard_env_file() {
-    if [ ! -f "${DEMO_ENV_FILE}" ]; then
-        fail "demo env file not found: ${DEMO_ENV_FILE} (copy infra/demo.env.example and fill real values)"
-    fi
-    log "guard: env file = ${DEMO_ENV_FILE}"
-}
-
 assert_demo_identity() {
     guard_compose_file
     guard_project_name
     guard_db_name
+    guard_env_file
     guard_no_host_ports
     guard_no_docker_socket
-    guard_env_file
 }
 
 # ---------------------------------------------------------------------------
@@ -135,6 +167,40 @@ compose() {
     docker compose --env-file "${DEMO_ENV_FILE}" \
         -f "${DEMO_COMPOSE_PATH}" \
         -p "${DEMO_PROJECT_NAME}" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# Bounded data-volume destruction (F2). Removes ONLY the named demo business
+# data volume (PostgreSQL or Redis). The Caddy TLS/ACME volumes are NEVER
+# touched. Safety boundary: the volume's Docker Compose labels must BOTH match
+# the expected demo identity exactly before removal — project label == the
+# hard-coded demo project, and the compose-volume label == the exact logical
+# volume name. Any disagreement (missing/wrong labels, production-labelled
+# volume, unexpected volume) FAILS CLOSED. An absent volume is treated as an
+# already-fresh state and skipped.
+# ---------------------------------------------------------------------------
+remove_demo_data_volume() {
+    local logical="$1"
+    local full="${DEMO_PROJECT_NAME}_${logical}"
+
+    if ! docker volume inspect "${full}" >/dev/null 2>&1; then
+        log "demo data volume '${full}' not present (fresh state); nothing to remove"
+        return 0
+    fi
+
+    local project_label volume_label
+    project_label="$(docker volume inspect "${full}" --format '{{index .Labels "com.docker.compose.project"}}' 2>/dev/null || true)"
+    volume_label="$(docker volume inspect "${full}" --format '{{index .Labels "com.docker.compose.volume"}}' 2>/dev/null || true)"
+
+    if [ "${project_label}" != "${DEMO_PROJECT_NAME}" ]; then
+        fail "volume '${full}' project label '${project_label}' != '${DEMO_PROJECT_NAME}'; refusing to remove"
+    fi
+    if [ "${volume_label}" != "${logical}" ]; then
+        fail "volume '${full}' compose-volume label '${volume_label}' != '${logical}'; refusing to remove"
+    fi
+
+    log "removing demo data volume '${full}' (labels verified)"
+    docker volume rm "${full}"
 }
 
 wait_for_healthy() {
@@ -157,12 +223,19 @@ wait_for_healthy() {
 }
 
 # ---------------------------------------------------------------------------
-# Reset orchestration
+# Reset orchestration. Runs with `set -e` ACTIVE (called directly from main,
+# NOT as an `if` condition), so any failing load-bearing command terminates
+# non-zero and the EXIT trap releases the lock. No false success is possible.
 # ---------------------------------------------------------------------------
 run_reset() {
     log "reset started (demo identity confirmed)"
-    log "destroying demo containers + volumes (project ${DEMO_PROJECT_NAME})"
-    compose down -v
+
+    log "stopping demo stack (containers + networks; volumes preserved)"
+    compose down
+
+    log "destroying demo business data volumes (PostgreSQL + Redis only; Caddy TLS preserved)"
+    remove_demo_data_volume demo_postgres_data
+    remove_demo_data_volume demo_redis_data
 
     log "starting demo infrastructure (postgres + redis)"
     compose up -d postgres redis
@@ -202,19 +275,17 @@ main() {
         fail "another demo reset is already in progress (lock ${LOCK_FILE})"
     fi
 
+    # Release the lock on ANY exit path (success, failure, signal).
+    trap 'flock -u 9 2>/dev/null || true' EXIT
+
     log "reset lock acquired (${LOCK_FILE})"
-    if run_reset; then
-        log "reset generation complete"
-        flock -u 9
-        exit 0
-    else
-        local rc=$?
-        # Never claim success on failure. The demo is disposable: the
-        # documented recovery is to run the deterministic reset again.
-        log "reset FAILED (exit ${rc}); the demo environment is disposable — rerun the reset to converge"
-        flock -u 9
-        exit "${rc}"
-    fi
+
+    # run_reset is invoked DIRECTLY (not as an `if` condition) so `set -e`
+    # remains active: any failure inside aborts non-zero before the success
+    # message below is reached.
+    run_reset
+
+    log "reset generation complete"
 }
 
 main "$@"
