@@ -29,6 +29,12 @@ jobs:
           docker compose --env-file /tmp/forgemind-prod.env.template \
             -f docker-compose.prod.yml config --quiet
 
+      - name: Validate Demo Compose (template env, no secrets)
+        run: |
+          cp infra/demo.env.example /tmp/forgemind-demo.env.template
+          docker compose --env-file /tmp/forgemind-demo.env.template \
+            -f docker-compose.demo.yml config --quiet
+
       - name: Validate Caddyfile with safe placeholder env
         run: |
           docker run --rm -e CADDY_DOMAIN=example.com -e CADDY_EMAIL=ops@example.com \
@@ -41,12 +47,17 @@ jobs:
           bash -n scripts/backup-cycle.sh
           bash -n scripts/backup-prune.sh
           bash -n infra/docker/worker-healthcheck.sh
+          bash -n scripts/demo-reset.sh
           bash -n scripts/tests/test_backup.sh
           bash -n scripts/tests/test_backup_cycle.sh
           bash -n scripts/tests/test_worker_healthcheck.sh
+          bash -n scripts/tests/test_demo_compose.sh
+          bash -n scripts/tests/test_demo_reset.sh
 
       - name: Run repo-owned deploy shell test suites
         run: |
           bash scripts/tests/test_backup.sh
           bash scripts/tests/test_backup_cycle.sh
           bash scripts/tests/test_worker_healthcheck.sh
+          bash scripts/tests/test_demo_compose.sh
+          bash scripts/tests/test_demo_reset.sh
