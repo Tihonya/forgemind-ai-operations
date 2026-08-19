@@ -207,14 +207,26 @@ Why all three roles are needed:
 - the auditor cannot approve;
 - self-decision is forbidden (the approver must be a different identity from the requester; `manager.demo` cannot approve its own request).
 
-### PD-7 — Demo reset: ACCEPTED
+### PD-7 — Demo reset: ACCEPTED (SUPERSEDED by DEC-056, 2026-08-19)
 
-- manually triggered administrative reset for Release 1;
+The original PD-7 semantics (in-place reset, preserve audit history across
+reset, emit a reset audit record, `reset_service.py`, browser/backend
+destructive reset) are SUPERSEDED by DEC-056. The Demo is an isolated
+disposable environment; "reset" is operator-level destruction and
+recreation of the whole demo runtime, not an application-domain operation.
+
+New PD-7 semantics:
+
+- manually/operator-triggered Release 1 reset;
 - synchronous and observable;
-- preserve protected/audit history according to the approved reset contract;
-- emit a reset audit record;
-- never schedule an uncontrolled destructive reset;
-- exact implementation belongs to WP-P7-03.
+- isolated demo environment only;
+- full disposable demo runtime reset (PostgreSQL + Redis state destroyed
+  and rebuilt from scratch);
+- canonical recreation → `alembic upgrade head` → canonical Golden seed;
+- no uncontrolled scheduled destructive reset;
+- no production-target reset;
+- no browser/backend Docker-host control (no reset API endpoint);
+- no requirement to preserve old demo history after an explicit reset.
 
 ### PD-8 — Backup: ACCEPTED
 
@@ -262,7 +274,7 @@ Known WP-P7-05 correction (NOT performed in WP-P7-01 unless strictly required to
 
 This contract truthfully lists the following known implementation gaps. Demo reset is NOT the only missing code artifact; rate limiting and login UX are additional required code changes.
 
-1. Demo reset service/command is not implemented (`reset_service.py` does not exist; `scripts/reset.sh` and the Makefile guard for its absence).
+1. Demo reset was scoped as an in-app `reset_service.py` + reset API endpoint. DEC-056 superseded that design: the Release 1 Demo is an isolated disposable environment, and reset is operator-level orchestration (`make demo-reset` → `scripts/demo-reset.sh` → full disposable PostgreSQL/Redis recreation → `alembic upgrade head` → canonical Golden seed), not an application-domain row-deletion API. No `reset_service.py` is required.
 2. General application rate limiting is not enforced (no rate-limiting middleware exists in the FastAPI app; `rate_limit_per_minute` is never read by any application code).
 3. Existing AI rate limiting is not distributed across multiple workers (the per-instance sliding-window limiter in `OpenAIChatProvider` is process-local; in a 4-worker deployment each worker has its own independent limiter window).
 4. Login page does not display the selected demo accounts (the login page says "Authorized use only. Contact your administrator for credentials.").
@@ -375,9 +387,16 @@ Lifecycle: implementation → independent review → bounded remediation if requ
 
 Must NOT access the VPS. May use placeholders for FQDN, TLS email, VPS address, and secret locations.
 
-### WP-P7-03 — Demo reset implementation
+### WP-P7-03 — Isolated Demo Environment and deterministic reset implementation
 
-`reset_service.py`, reset API endpoint, audit reset event, tests. Synchronous admin-triggered reset; preserve protected/audit history; emit reset audit record; never schedule uncontrolled destructive reset.
+`docker-compose.demo.yml` (isolated demo Compose project `forgemind-demo`,
+dedicated demo database `forgemind_demo`, dedicated demo volumes, no host
+PG/Redis ports, no Docker socket), `infra/demo.env.example`, an
+operator-level `scripts/demo-reset.sh` (full disposable reset: destroy demo
+containers/volumes → `alembic upgrade head` from empty DB → canonical Golden
+seed → health/baseline verify) with fail-closed guards against
+production-target reset, a `make demo-reset` entry point, and offline tests.
+No in-app destructive reset API. No `reset_service.py`. No schema migration.
 
 Lifecycle: implementation → independent review → bounded remediation if required → independent re-review → Ready transition → independent pre-merge verification → regular merge commit → post-merge verification.
 

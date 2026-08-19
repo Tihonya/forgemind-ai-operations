@@ -1143,6 +1143,59 @@ The independent evidence review established, from the sealed artifacts, that eve
 
 ---
 
+## DEC-056 — Isolated disposable Demo Environment and reset boundary
+
+**Date:** 2026-08-19
+
+**Status:** Accepted
+
+**Context:**
+
+WP-P7-03 (Demo reset implementation) was previously scoped as an in-app selective-deletion reset: a `reset_service.py`, a browser-triggered reset API endpoint, and a `DEMO_RESET` audit event. Reconnaissance established that selective in-place row deletion is architecturally incompatible with the append-only `audit_events` trail (RESTRICT foreign keys from `audit_events.workflow_run_id`/`actor_id`). The Product Owner superseded that design entirely: the Release 1 Demo is an ISOLATED, DISPOSABLE environment, and "reset" is operator-level destruction and recreation of the whole demo runtime, not an application-domain row-deletion API.
+
+**Decision:**
+
+The Product Owner accepts the following Release 1 Demo architecture:
+
+1. Demo must run the real ForgeMind application stack against synthetic data ("real ForgeMind in an unreal world").
+2. Release 1 uses ONE isolated shared demo environment.
+3. Per-browser / per-user ephemeral sandbox provisioning is a future evolution and is NOT implemented in Release 1.
+4. The deployed demo uses production-grade application/security behavior but demo business semantics.
+5. Security is NOT weakened by treating "demo" as a development environment.
+6. Prefer `ENVIRONMENT=production` for deployment/security behavior.
+7. If an explicit application/business mode is required, introduce a separate typed setting (e.g. `APP_MODE=demo`) — do NOT overload `ENVIRONMENT` to mean business/demo mode.
+8. Demo PostgreSQL and Redis state are isolated and disposable.
+9. Demo Reset is environment/operator orchestration, NOT an application-domain API operation.
+10. No backend route may receive Docker-host control or database-drop privileges.
+11. No Docker socket may be mounted into backend/worker containers.
+12. Reset removes the old demo session/runtime history by design. Old demo audit/workflow history is NOT required to survive an explicit Demo Reset.
+13. Audit history remains fully meaningful and immutable WITHIN the lifetime of one demo environment generation.
+14. A reset boundary starts a new clean demo generation.
+15. No database-level `DEMO_RESET` audit event is required because the database containing that event would itself be disposable.
+16. Reset observability belongs to operator/deployment logging, not to the disposable business audit database.
+17. Real AI provider calls are allowed in deployed Demo runtime. Real external BUSINESS side effects are forbidden.
+18. Phase 7 remains OPEN. Release 1 remains NOT READY / NOT DEPLOYED.
+
+**Reason:**
+
+Selective in-place reset is incompatible with the immutable audit trail and introduces an in-app destructive authority (browser → backend → database-drop) that violates the principle that the application must not hold the power to destroy its own runtime. Making the whole demo runtime disposable resolves the prior FK/preservation blockers architecturally while keeping the demo a genuine, security-real deployment of the application against synthetic business data.
+
+**Consequences:**
+
+- The previously proposed `DEMO_RESET` / `SYSTEM` audit-taxonomy migration is CANCELLED (NOT IMPLEMENTED).
+- The previously proposed `audit_events.actor_id` / `audit_events.workflow_run_id` `ON DELETE SET NULL` relaxation is CANCELLED (NOT IMPLEMENTED).
+- WP-P7-03 is reframed as "Isolated Demo Environment and deterministic reset implementation": demo Compose/profile isolation, operator-level reset command, full disposable DB/Redis recreation, canonical migration + seed, fail-closed guards against production-target reset, offline tests, minimal operational documentation.
+- NO in-app destructive reset API is implemented.
+- Expected WP-P7-03 schema-migration count: ZERO.
+- Existing production-like audit semantics are preserved unchanged.
+- Phase 7 remains OPEN / IN PROGRESS; deployment, staging, production NOT STARTED; Release 1 NOT READY / NOT DEPLOYED.
+
+**Affected documents/tests:** `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `docs/planning/phase_7_deployment_contract.md` (PD-7, WP-P7-03, Known Implementation Gaps), `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docker-compose.demo.yml` (new), `infra/demo.env.example` (new), `scripts/demo-reset.sh` (new, replacing `scripts/reset.sh`), `Makefile`, `docs/demo-environment.md` (new), `scripts/tests/test_demo_compose.sh` (new), `scripts/tests/test_demo_reset.sh` (new).
+
+**Approved by:** Product Owner (2026-08-19)
+
+---
+
 ## Template for new decisions
 
 ```markdown

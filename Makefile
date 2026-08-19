@@ -1,4 +1,4 @@
-.PHONY: help dev test lint seed reset deploy clean compose-validate config-validate backup-smoke smoke-prepare caddy-validate
+.PHONY: help dev test lint seed demo-reset deploy clean compose-validate config-validate backup-smoke smoke-prepare caddy-validate
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -30,14 +30,10 @@ seed: ## Seed the database with golden dataset (Phase 1+)
 	docker compose exec backend python -m app.seed.generator.main
 	@echo "Seed complete."
 
-reset: ## Reset demo data (admin only) (Phase 1+)
-	@echo "Resetting demo data..."
-	@if [ ! -f "backend/app/services/reset_service.py" ]; then \
-		echo "⚠️  Reset service not yet implemented (deferred to Phase 1)"; \
-		exit 0; \
-	fi
-	docker compose exec backend python -m app.services.reset_service
-	@echo "Reset complete."
+demo-reset: ## Reset the isolated disposable Demo environment (operator-level, WP-P7-03)
+	@echo "Resetting the isolated Demo environment (forgemind-demo)..."
+	./scripts/demo-reset.sh
+	@echo "Demo reset complete."
 
 deploy: ## Deploy to production
 	@echo "Building and deploying..."

@@ -1,0 +1,205 @@
+# ForgeMind AI Operations — Release 1 isolated Demo topology (WP-P7-03, DEC-056)
+#
+# "Real ForgeMind in an unreal world": the REAL application stack (Caddy ->
+# nginx frontend -> FastAPI backend -> ARQ worker -> PostgreSQL/Redis) runs
+# production-grade images and security behavior against SYNTHETIC demo data.
+#
+# ISOLATION CONTRACT (DEC-056):
+# - Distinct Compose project identity: ``name: forgemind-demo``.
+# - Distinct disposable volumes (demo_postgres_data / demo_redis_data /
+#   demo_caddy_data / demo_caddy_config) — never shared with production.
+# - The demo database name is HARD-CODED to ``forgemind_demo`` (both the
+#   ``POSTGRES_DB`` env and the ``DATABASE_URL``), so the demo cannot be
+#   redirected at an arbitrary/production database by configuration.
+# - PostgreSQL and Redis are NEVER published to host ports.
+# - Only Caddy publishes ports (80/443/443-udp).
+# - No Docker socket is mounted into any container.
+# - Backend/worker run as the non-root ``appuser`` (image-provided).
+# - ENVIRONMENT=production so the application enforces real production
+#   security/provider behavior (no fake providers, fail-closed rate
+#   limiting, strict secret-key guard). There is NO separate in-app
+#   "demo mode" — the demo is distinguished by this Compose file/project,
+#   not by weakening the application.
+#
+# SECURITY CONTRACT:
+# - No secrets in this file. Credentials come from the operator's demo
+#   environment file (copy infra/demo.env.example to infra/demo.env and
+#   fill real values); that file is never committed.
+# - The demo is disposable: a reset destroys and recreates this whole
+#   project (containers + volumes) via scripts/demo-reset.sh.
+#
+# There is NO backup service here: demo state is synthetic and disposable.
+
+name: forgemind-demo
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      # Demo database name is fixed, not configurable.
+      POSTGRES_DB: forgemind_demo
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - demo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d forgemind_demo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: &logging-defaults
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        umask 077
+        && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis-auth.conf
+        && exec redis-server /run/redis-auth.conf
+        --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+    volumes:
+      - demo_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: *logging-defaults
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.dockerfile
+      target: production
+    environment: &backend-environment
+      ENVIRONMENT: production
+      DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/forgemind_demo
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?OPENAI_API_KEY is required (OpenRouter key)}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:-https://openrouter.ai/api/v1}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-openai/text-embedding-3-small}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-1536}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required (no implicit reuse of OPENAI_API_KEY)}
+      OPENROUTER_API_BASE: ${OPENROUTER_API_BASE:-https://openrouter.ai/api/v1}
+      OPENROUTER_CHAT_MODEL: ${OPENROUTER_CHAT_MODEL:-qwen/qwen3.7-flash}
+      OPENROUTER_STRUCTURED_OUTPUT_MODE: ${OPENROUTER_STRUCTURED_OUTPUT_MODE:-json_object}
+      CHAT_PROVIDER_MODE: ${CHAT_PROVIDER_MODE:-openrouter}
+      DISTRIBUTED_RATE_LIMIT_ENABLED: ${DISTRIBUTED_RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_DEGRADED_MODE: ${RATE_LIMIT_DEGRADED_MODE:-fail_closed}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      AI_RATE_LIMIT_PER_MINUTE: ${AI_RATE_LIMIT_PER_MINUTE:-10}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://${CADDY_DOMAIN}}
+      CADDY_DOMAIN: ${CADDY_DOMAIN}
+      CADDY_EMAIL: ${CADDY_EMAIL}
+      LOG_LEVEL: INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - backend
+      - frontend
+    logging: *logging-defaults
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/worker.dockerfile
+      target: production
+    environment: *backend-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/worker-healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - backend
+    logging: *logging-defaults
+
+  frontend:
+    build:
+      context: .
+      dockerfile: infra/docker/frontend.dockerfile
+      target: production
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - frontend
+    logging: *logging-defaults
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      CADDY_DOMAIN: ${CADDY_DOMAIN:?CADDY_DOMAIN is required (demo FQDN)}
+      CADDY_EMAIL: ${CADDY_EMAIL:?CADDY_EMAIL is required (TLS contact email)}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - demo_caddy_data:/data
+      - demo_caddy_config:/config
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - frontend
+    logging: *logging-defaults
+
+volumes:
+  demo_postgres_data:
+  demo_redis_data:
+  demo_caddy_data:
+  demo_caddy_config:
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge
