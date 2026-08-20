@@ -247,12 +247,16 @@ provide).
 mkdir -p ./backups
 
 # Create a manual backup via the postgres container on the private
-# Compose network. pg_dump uses the container's environment
-# (POSTGRES_USER, POSTGRES_DB, PGPASSWORD are already set).
-# The dump is written to stdout and redirected to the host file.
+# Compose network. The postgres service container sets
+# POSTGRES_USER, POSTGRES_DB, and POSTGRES_PASSWORD — but NOT
+# PGPASSWORD. PGPASSWORD is set inline from POSTGRES_PASSWORD for
+# the individual pg_dump process so the client authenticates
+# explicitly (no reliance on implicit local-trust auth). The dump
+# is written to stdout and redirected to the host file.
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'pg_dump --username="${POSTGRES_USER}" \
-  --dbname="${POSTGRES_DB}" --format=custom' \
+  sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dump \
+  --username="${POSTGRES_USER}" --dbname="${POSTGRES_DB}" \
+  --format=custom' \
   > "./backups/forgemind-$(date -u +%Y%m%d_%H%M%S).dump"
 
 # Restrict permissions on the backup file:
@@ -286,10 +290,12 @@ docker compose -f docker-compose.prod.yml stop backend worker
 
 # 2. Restore from a specific dump file. The dump file is already on
 #    the host in ./backups. Use the postgres container where the
-#    database environment and network are available:
+#    database environment and network are available. PGPASSWORD is
+#    set inline from POSTGRES_PASSWORD for explicit authentication:
 docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'pg_restore --username="${POSTGRES_USER}" \
-  --dbname="${POSTGRES_DB}" --no-owner --no-privileges --clean' \
+  sh -lc 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore \
+  --username="${POSTGRES_USER}" --dbname="${POSTGRES_DB}" \
+  --no-owner --no-privileges --clean' \
   < "./backups/forgemind-XXXX.dump"
 
 # 3. Restart services:
@@ -302,38 +308,94 @@ docker compose -f docker-compose.prod.yml up -d
 
 **Rehearsal (throwaway database — never touches live DB):**
 
-```bash
-# 1. Create a throwaway database inside the postgres container:
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'createdb --username="${POSTGRES_USER}" \
-  "forgemind_rehearsal_$(date +%s)"'
+The rehearsal restores a production dump into a throwaway scratch
+database, verifies the contents, then drops the scratch database. It
+is a host-shell procedure: `SCRATCH_DB` is a host-shell variable that
+must be explicitly passed into the postgres container via
+`docker compose exec -e`. The same `SCRATCH_DB` value is used for
+createdb, pg_restore, psql verification, and dropdb — one identity,
+established once.
 
-# 2. Restore the newest dump into the throwaway database:
-NEWEST=$(ls -1t ./backups/forgemind-*.dump 2>/dev/null | head -1)
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'pg_restore --username="${POSTGRES_USER}" \
-  --dbname="forgemind_rehearsal_SCRATCH" --no-owner --no-privileges' \
+```bash
+# ── Rehearsal procedure (run on the deployment host) ──────────────
+set -euo pipefail
+
+# 1. Identify the newest backup dump. Fail immediately if none exists
+#    — do NOT proceed with an empty NEWEST variable.
+NEWEST="$(ls -1t ./backups/forgemind-*.dump 2>/dev/null | head -1)"
+if [ -z "${NEWEST}" ] || [ ! -f "${NEWEST}" ]; then
+  echo "ERROR: no backup dump found in ./backups/ — cannot rehearse." >&2
+  exit 1
+fi
+echo "Rehearsing with dump: ${NEWEST}"
+
+# 2. Establish one unique scratch database identity on the HOST.
+#    The rehearsal-only prefix prevents accidental production targeting.
+SCRATCH_DB="forgemind_rehearsal_$(date -u +%Y%m%d_%H%M%S)"
+
+# 3. Validate the scratch identity by construction — refuse anything
+#    that does not carry the rehearsal-only prefix or is empty.
+case "${SCRATCH_DB}" in
+  forgemind_rehearsal_*) ;;
+  *) echo "ERROR: SCRATCH_DB has unexpected form: '${SCRATCH_DB}'" >&2; exit 1 ;;
+esac
+
+# 4. Define a fail-safe cleanup function. Only a rehearsal-prefixed
+#    database is ever dropped. --if-exists tolerates the case where
+#    the scratch DB was never created (e.g. createdb failed).
+cleanup_rehearsal() {
+  echo "Cleaning up scratch database: ${SCRATCH_DB}"
+  docker compose -f docker-compose.prod.yml exec -T \
+    -e SCRATCH_DB="${SCRATCH_DB}" \
+    postgres sh -lc \
+    'PGPASSWORD="$POSTGRES_PASSWORD" dropdb --if-exists \
+     --username="${POSTGRES_USER}" "${SCRATCH_DB}"' \
+    || echo "WARNING: cleanup failed for ${SCRATCH_DB}" >&2
+}
+
+# 5. Arm the cleanup trap — if anything fails below, the scratch DB
+#    is still removed.
+trap cleanup_rehearsal EXIT
+
+# 6. Create the scratch database. SCRATCH_DB is passed into the
+#    container via -e so the inner shell sees it.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e SCRATCH_DB="${SCRATCH_DB}" \
+  postgres sh -lc \
+  'PGPASSWORD="$POSTGRES_PASSWORD" createdb \
+   --username="${POSTGRES_USER}" "${SCRATCH_DB}"'
+
+# 7. Restore the dump into EXACTLY the scratch database. The dump
+#    file is fed from the host via stdin redirect.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e SCRATCH_DB="${SCRATCH_DB}" \
+  postgres sh -lc \
+  'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore \
+   --username="${POSTGRES_USER}" --dbname="${SCRATCH_DB}" \
+   --no-owner --no-privileges' \
   < "${NEWEST}"
 
-# 3. Verify the restored table count:
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'psql --username="${POSTGRES_USER}" \
-  --dbname="forgemind_rehearsal_SCRATCH" -tAc \
-  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('"'"'pg_catalog'"'"','"'"'information_schema'"'"');"'"
+# 8. Verify the restored table count. The SQL string is quoted so
+#    that pg_catalog and information_schema are excluded.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e SCRATCH_DB="${SCRATCH_DB}" \
+  postgres sh -lc \
+  'PGPASSWORD="$POSTGRES_PASSWORD" psql \
+   --username="${POSTGRES_USER}" --dbname="${SCRATCH_DB}" -tAc \
+   "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('"'"'pg_catalog'"'"','"'"'information_schema'"'"');"'
 
-# 4. Drop the throwaway database:
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  sh -lc 'dropdb --username="${POSTGRES_USER}" \
-  "forgemind_rehearsal_SCRATCH"'
+# 9. Drop the scratch database — same identity, explicit cleanup.
+docker compose -f docker-compose.prod.yml exec -T \
+  -e SCRATCH_DB="${SCRATCH_DB}" \
+  postgres sh -lc \
+  'PGPASSWORD="$POSTGRES_PASSWORD" dropdb --if-exists \
+   --username="${POSTGRES_USER}" "${SCRATCH_DB}"'
+
+# 10. Disarm the trap — cleanup is done, no further action needed.
+trap - EXIT
+echo "Rehearsal complete: ${SCRATCH_DB} created, restored, verified, and dropped."
+# ── End rehearsal procedure ───────────────────────────────────────
 ```
-
-> **Rehearsal rules:**
-> - Use a throwaway database — create, restore, verify, drop.
-> - NEVER touch the live production database during rehearsal.
-> - The rehearsal database name must not match the production database name.
-> - Replace `forgemind_rehearsal_SCRATCH` with a unique scratch name per run.
-> - Restore rehearsal MUST be performed and validated before production
->   (Phase 7 staging-entry gates).
 
 > **Security boundary:** PostgreSQL remains private — no host port is
 > published. All manual operations above use `docker compose exec` against
