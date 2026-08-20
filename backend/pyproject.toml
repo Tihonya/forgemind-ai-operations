@@ -7,7 +7,7 @@ name = "forgemind-backend"
 version = "0.1.0"
 description = "ForgeMind AI Operations - Supply Risk Intelligence Backend"
 requires-python = "==3.12.*"
-license = { text = "Proprietary" }
+license = { text = "Apache-2.0" }
 authors = [
     { name = "ForgeMind AI Operations" }
 ]

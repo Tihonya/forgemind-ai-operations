@@ -58,15 +58,26 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 **WP-REC-03B is a foundation package.** It delivers the workflow state machine, engine, models, and migration — but does NOT deliver end-to-end AI workflow execution. WP-REC-03C (structured-output validation), 03D (automatic provider retry/outage), 03E (workflow-run detail API + recommendation UI), 03F (backend start/retry API + ARQ worker), and 03G (frontend start/retry UI interaction) are now COMPLETE (merged via PRs #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. AT-008 and AT-013 are now PASS and Phase 5 is ACCEPTED (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`). No acceptance test newly passed as a result of 03B alone.
 
-### ❌ NOT IMPLEMENTED (Release 1 blockers)
+### NOT YET DEPLOYED (Release 1 — implementation complete, deployment pending)
 
-| Capability | Required For | Phase |
-|-----------|--------------|-------|
-| Demo reset | AT-015 | Phase 7 |
-| Rate limiting | Gate D | Phase 7 |
-| Backup/restore | Gate E | Phase 7 |
-| Public HTTPS deployment | AT-014 | Phase 7 |
-| Operational runbooks | Gate E | Phase 7 |
+| Capability | Implementation | Deployment Status |
+|-----------|----------------|-------------------|
+| Demo reset (operator-level, disposable) | WP-P7-03 COMPLETE — `make demo-reset` / `scripts/demo-reset.sh` | Implemented; AT-015 not yet evaluated from deployment evidence |
+| Distributed rate limiting | WP-P7-02 COMPLETE — Redis-backed, fail-closed | Implemented; requires deployment verification |
+| Backup/restore | WP-P7-02 COMPLETE — `scripts/backup*.sh`, compose `backup` profile | Implemented; restore rehearsal required before production |
+| Public HTTPS deployment | WP-P7-02 configuration COMPLETE | NOT STARTED — WP-P7-06 |
+| Operational runbooks | `docs/infra-production.md` + `docs/operations/release_1_runbook.md` | COMPLETE |
+
+### What remains before Release 1
+
+- VPS security hardening (separate bounded action)
+- Staging deployment (WP-P7-06)
+- Staging verification (WP-P7-07)
+- Production deployment (WP-P7-08)
+- Post-deployment verification and evidence (WP-P7-09)
+- Product Owner acceptance (WP-P7-10)
+- GitHub Release/tag publication (WP-P7-11)
+- Final lifecycle reconciliation (WP-P7-12)
 
 ### Current MVP completion
 
@@ -166,7 +177,7 @@ Without explicit Product Owner authorization, do not:
 | AT-012 | Audit trace completeness | ✅ PASS — accepted evidence run `wp-rec-04-vfy-20260816-03` (Product Owner acceptance 2026-08-16) |
 | AT-013 | Model outage | ✅ PASS — accepted evidence run `wp-rec-03h-phase-c-20260813-02` (Product Owner acceptance 2026-08-14; WP-REC-03D + 03E + 03F + 03G) |
 | AT-014 | Public HTTPS smoke | REQUIRES DEPLOYMENT/ENVIRONMENT VERIFICATION |
-| AT-015 | Demo reset | NOT IMPLEMENTED |
+| AT-015 | Demo reset | IMPLEMENTED (WP-P7-03) — requires deployment/environment verification |
 
 **Summary:**
 - 11 ATs are PASS: AT-003, AT-004, AT-005, AT-006, AT-007, AT-008, AT-009, AT-010, AT-011, AT-012, AT-013.
@@ -176,7 +187,7 @@ Without explicit Product Owner authorization, do not:
 - AT-013 is PASS (accepted evidence run `wp-rec-03h-phase-c-20260813-02`, Product Owner acceptance 2026-08-14).
 - AT-009, AT-010, AT-011, and AT-012 are PASS (accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16, DEC-053).
 - 3 ATs require deployment/environment verification: AT-001, AT-002, AT-014.
-- 1 AT requires capabilities that are not implemented: AT-015.
+- 1 AT is implemented and requires deployment/environment verification: AT-015.
 
 **AT-006 and AT-007 are PASS** via the accepted composite of sealed packages `wp-rec-05-vfy-20260814-01` and `wp-rec-05-vfy-20260815-02` (Product Owner acceptance 2026-08-15, DEC-049). These are Product Owner decisions based on accepted composite evidence, not inferences from inspection alone.
 
