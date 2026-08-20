@@ -2,7 +2,7 @@
 
 **Controlled AI-assisted Supply Risk Intelligence** — a portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow from production plan to procurement decision.
 
-> **Status: NOT YET DEPLOYED** — Release 1 is implemented and locally runnable but has not been publicly deployed. No public Live Demo URL exists yet. Staging and production have not started.
+> **Status: NOT YET DEPLOYED** — The Release 1 application feature set is implemented and locally runnable, but Release 1 has not yet completed its deployment and acceptance gates. No public Live Demo URL exists. Staging: NOT STARTED. Production: NOT STARTED. Release 1: NOT READY / NOT DEPLOYED.
 
 **Source Code:** https://github.com/Tihonya/forgemind-ai-operations
 
@@ -33,7 +33,7 @@ Production Plan
   → Immutable audit trail
 ```
 
-Every step is persisted, correlated, and auditable. No action executes without human approval. No real ERP system is connected — the procurement task is a synthetic local record.
+Every step is persisted, correlated, and auditable. Analytical workflow steps run before approval — deterministic risk calculation, RAG evidence retrieval, and structured AI recommendation generation all execute automatically — but no consequential procurement task is created without the required independent human approval. No real ERP system is connected — the procurement task is a synthetic local record.
 
 ---
 
@@ -77,7 +77,7 @@ Three public Demo accounts are displayed on the login page for the isolated Demo
 | `procurement.demo` | Procurement Specialist | Independently approves or rejects procurement actions |
 | `auditor.demo` | Auditor | Inspects the audit trail — cannot approve |
 
-Non-public identities (`admin.demo`, `engineer.demo`) exist in the seed data but are not displayed on the login page. Demo passwords are shown on the login page itself — they are not repeated in this README.
+Additional non-public demo identities exist in the seed data but are not presented as public Demo login options. Demo passwords are shown on the login page itself — they are not repeated in this README.
 
 ---
 
@@ -158,6 +158,9 @@ cp .env.example .env
 # Start all services in development mode
 make dev
 
+# Seed demo data (requires the Docker dev stack to be running)
+make seed
+
 # Access the application
 # Frontend:  http://localhost:5173
 # Backend:   http://localhost:8000
@@ -180,9 +183,13 @@ cd frontend && npm install && cd ..
 # Run tests
 make test
 
-# Seed demo data (generates synthetic golden dataset)
-make seed
+# Run linters
+make lint
 ```
+
+> **Note:** `make seed` requires the Docker development stack to be running
+> (it uses `docker compose exec backend`). See the Docker-based development
+> environment section above. Do NOT use `make seed` in a without-Docker workflow.
 
 ### Available Makefile commands
 

@@ -210,25 +210,60 @@ intentionally discarded (DEC-056). See [docs/demo-environment.md](../demo-enviro
 
 ## 9. Backup
 
-### 9.1 Start the scheduled backup daemon
+### 9.1 Start the scheduled backup daemon (canonical production mechanism)
 
 ```bash
 docker compose -f docker-compose.prod.yml --profile backup up -d
 ```
 
 Daily `pg_dump` with 7-day retention via `scripts/backup-cycle.sh`.
-Backups land in `./backups` on the host (bind mount). The operator owns
-off-host replication.
+The backup service runs inside the Compose topology on the private
+`backend` Docker network — it reaches PostgreSQL via the `postgres`
+hostname on that network. No host PostgreSQL port is published or
+required. Backups land in `./backups` on the host (bind mount). The
+operator owns off-host replication.
+
+The backup container (`postgres:16-alpine`) sets `PGPASSWORD` from
+`${POSTGRES_PASSWORD}` and `PGHOST` defaults to `postgres` (inside
+the cycle script). The host-side `.env` file is NOT automatically
+equivalent to `PGHOST`/`PGUSER`/`PGPASSWORD` — those are Docker
+Compose interpolation variables, not shell-exported PG client vars.
 
 ### 9.2 Manual backup operations
 
-```bash
-# Create a backup:
-bash scripts/backup.sh backup ./backups
+Production PostgreSQL intentionally has NO host port publication. It
+is reachable only inside the private Docker network. Manual backup and
+restore operations MUST be executed through the existing PostgreSQL
+service/container where the real database environment and network are
+already available — NOT via host-side `bash scripts/backup.sh` (which
+requires separately configured `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`
+and network access that the current production topology does not
+provide).
 
-# Prune old backups (keep 7 days):
-bash scripts/backup.sh prune ./backups 7
+**Manual backup (via the PostgreSQL container):**
+
+```bash
+# Ensure the host backup directory exists:
+mkdir -p ./backups
+
+# Create a manual backup via the postgres container on the private
+# Compose network. pg_dump uses the container's environment
+# (POSTGRES_USER, POSTGRES_DB, PGPASSWORD are already set).
+# The dump is written to stdout and redirected to the host file.
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'pg_dump --username="${POSTGRES_USER}" \
+  --dbname="${POSTGRES_DB}" --format=custom' \
+  > "./backups/forgemind-$(date -u +%Y%m%d_%H%M%S).dump"
+
+# Restrict permissions on the backup file:
+chmod 600 ./backups/forgemind-*.dump
 ```
+
+> **Note:** `scripts/backup.sh` is a repository utility for environments
+> where `PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD` and network access are
+> intentionally provided. It is NOT the default production-host command
+> and CANNOT be executed correctly in the current production topology
+> without separately configuring PostgreSQL-client network access.
 
 ### 9.3 Failure visibility
 
@@ -243,66 +278,199 @@ See `docs/infra-production.md` §6 for full backup guarantees.
 
 ## 10. Restore and rehearsal
 
-```bash
-# Restore from a specific dump:
-bash scripts/backup.sh restore ./backups/forgemind-XXXX.dump forgemind
+**Restore from a specific dump (via the PostgreSQL container):**
 
-# Rehearse: restore newest dump into a throwaway database, verify, drop:
-bash scripts/backup.sh rehearse ./backups forgemind
+```bash
+# 1. Stop backend and worker to prevent concurrent writes:
+docker compose -f docker-compose.prod.yml stop backend worker
+
+# 2. Restore from a specific dump file. The dump file is already on
+#    the host in ./backups. Use the postgres container where the
+#    database environment and network are available:
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'pg_restore --username="${POSTGRES_USER}" \
+  --dbname="${POSTGRES_DB}" --no-owner --no-privileges --clean' \
+  < "./backups/forgemind-XXXX.dump"
+
+# 3. Restart services:
+docker compose -f docker-compose.prod.yml up -d
 ```
 
-The rehearsal restores the newest dump into a throwaway database, verifies
-the restored table count, and drops the scratch database. It never touches
-the live database. Restore rehearsal MUST be performed and validated before
-production (Phase 7 staging-entry gates).
+> **Warning:** Restore is destructive — `--clean` drops existing
+> database objects before recreating them from the dump. Verify the
+> target database name and the dump file before proceeding.
+
+**Rehearsal (throwaway database — never touches live DB):**
+
+```bash
+# 1. Create a throwaway database inside the postgres container:
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'createdb --username="${POSTGRES_USER}" \
+  "forgemind_rehearsal_$(date +%s)"'
+
+# 2. Restore the newest dump into the throwaway database:
+NEWEST=$(ls -1t ./backups/forgemind-*.dump 2>/dev/null | head -1)
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'pg_restore --username="${POSTGRES_USER}" \
+  --dbname="forgemind_rehearsal_SCRATCH" --no-owner --no-privileges' \
+  < "${NEWEST}"
+
+# 3. Verify the restored table count:
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'psql --username="${POSTGRES_USER}" \
+  --dbname="forgemind_rehearsal_SCRATCH" -tAc \
+  "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema NOT IN ('"'"'pg_catalog'"'"','"'"'information_schema'"'"');"'"
+
+# 4. Drop the throwaway database:
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  sh -lc 'dropdb --username="${POSTGRES_USER}" \
+  "forgemind_rehearsal_SCRATCH"'
+```
+
+> **Rehearsal rules:**
+> - Use a throwaway database — create, restore, verify, drop.
+> - NEVER touch the live production database during rehearsal.
+> - The rehearsal database name must not match the production database name.
+> - Replace `forgemind_rehearsal_SCRATCH` with a unique scratch name per run.
+> - Restore rehearsal MUST be performed and validated before production
+>   (Phase 7 staging-entry gates).
+
+> **Security boundary:** PostgreSQL remains private — no host port is
+> published. All manual operations above use `docker compose exec` against
+> the `postgres` service on the private Compose network. The host-side
+> `.env` file provides Docker Compose interpolation variables
+> (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`) but these are NOT
+> automatically equivalent to shell-exported `PGHOST`/`PGUSER`/`PGPASSWORD`
+> for direct host-side PostgreSQL client tools.
 
 ---
 
 ## 11. Rollback and recovery
 
-**Container rollback:**
+### 11.1 Application rollback (known-good git commit)
+
+The Compose topology builds application images from source at deploy time
+(see `docker-compose.prod.yml` — `backend`, `worker`, and `frontend` use
+`build:` context, not pinned `image:` tags). There is no versioned-image
+registry or pre-built image cache to select from. A rollback therefore
+requires restoring the repository to a known-good commit and rebuilding.
+
+**Prerequisites:**
+
+- A known-good deployment commit SHA must have been previously verified
+  (record it at deployment time).
+- Database schema compatibility must be verified: if the known-good
+  commit's Alembic migrations are not compatible with the current database
+  state, a database backup restore may be required (see §11.2 and §10).
+- The operator must have access to the deployment directory with `.env`.
+
+**Procedure:**
 
 ```bash
-# Stop all services:
-docker compose -f docker-compose.prod.yml down
+# 1. Identify and record the known-good verified deployment commit SHA.
+#    (This SHA must be recorded at the original deployment time.)
+KNOWN_GOOD_SHA="<known-good-commit-sha>"
 
-# Restart from a previous image (if built):
-docker compose -f docker-compose.prod.yml up -d
-```
+# 2. Record the current deployment SHA for audit purposes.
+git rev-parse HEAD
 
-**Database rollback:**
-
-```bash
-# Stop the backend and worker first:
+# 3. Stop backend and worker (or the full stack) to prevent writes:
 docker compose -f docker-compose.prod.yml stop backend worker
 
-# Restore from a backup dump:
-bash scripts/backup.sh restore ./backups/forgemind-XXXX.dump forgemind
+# 4. Fetch the latest repository state:
+git fetch origin
 
-# Restart services:
+# 5. Check out the exact known-good commit in detached-HEAD state:
+git checkout --detach "${KNOWN_GOOD_SHA}"
+
+# 6. Rebuild application images from the known-good revision:
+docker compose -f docker-compose.prod.yml up -d --build
+
+# 7. Run health verification:
+curl -f https://<FQDN>/health
+# Expected: HTTP 200, status "healthy" or "degraded"
+```
+
+**Warnings:**
+
+- `docker compose up -d --build` rebuilds from the current working tree.
+  Without checking out the known-good commit, the rebuild deploys the
+  current code — NOT a previous version.
+- If the database schema has migrated forward incompatibly since the
+  known-good commit, code-only rollback is NOT sufficient. Restore the
+  matching database backup (see §11.2) from before the problematic
+  migration.
+- This procedure does NOT implement image tagging or pinning. The
+  Compose file uses `build:` context; each `up --build` produces images
+  from the current source tree.
+
+### 11.2 Database rollback (restore from backup)
+
+**Prerequisites:**
+
+- A verified backup dump must exist in `./backups`.
+- Backend and worker MUST be stopped before restoring a live target
+  database to prevent concurrent writes.
+- Restore is destructive — it overwrites the target database.
+
+```bash
+# 1. Stop backend and worker:
+docker compose -f docker-compose.prod.yml stop backend worker
+
+# 2. Restore from a specific dump (via the PostgreSQL container on the
+#    private Compose network — no host PostgreSQL port required):
+#    See §10 for the canonical manual backup/restore procedure.
+
+# 3. Restart services:
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-**Emergency shutdown:**
+### 11.3 Emergency shutdown
 
 ```bash
+# Stop and remove containers (named volumes preserved):
 docker compose -f docker-compose.prod.yml down
 ```
 
-**Demo recovery:** The demo is disposable — run `make demo-reset` again.
+### 11.4 Demo recovery
+
+The demo is disposable — run `make demo-reset` again.
 No partial rollback is attempted.
 
 ---
 
 ## 12. Shutdown
 
-```bash
-# Stop all production services (containers stay, volumes preserved):
-docker compose -f docker-compose.prod.yml down
+**Stop services (retain containers):**
 
-# Stop and remove volumes (DESTRUCTIVE — use with caution):
+```bash
+# Stop containers without removing them — containers can be restarted
+# with `docker compose ... start`. Named volumes and networks preserved.
+docker compose -f docker-compose.prod.yml stop
+```
+
+**Stop and remove containers (preserve named volumes):**
+
+```bash
+# Stops and REMOVES service containers and Compose networks.
+# Named volumes are preserved (databases/Redis data retained).
+docker compose -f docker-compose.prod.yml down
+```
+
+**Stop and remove everything including volumes (DESTRUCTIVE):**
+
+```bash
+# WARNING: removes containers, networks, AND named volumes.
+# This destroys persisted PostgreSQL and Redis state.
 docker compose -f docker-compose.prod.yml down -v
 ```
+
+> **`stop` vs `down` semantics:** `docker compose stop` halts containers
+> without removing them — they can be restarted with `docker compose start`.
+> `docker compose down` stops and REMOVES containers and networks while
+> preserving named volumes (unless `-v` is supplied). `docker compose down -v`
+> additionally removes named volumes and is destructive to persisted
+> database/Redis state.
 
 ---
 
