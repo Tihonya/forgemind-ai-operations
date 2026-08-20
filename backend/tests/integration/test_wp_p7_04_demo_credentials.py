@@ -194,25 +194,44 @@ async def test_public_demo_identity_carries_expected_canonical_role(
     assert PUBLIC_ROLE_EXPECTATIONS[username] in roles
 
 
-@pytest.mark.parametrize("username", ["manager.demo", "procurement.demo"])
-async def test_public_demo_password_does_not_authenticate_other_demo_identities(
+NON_PUBLIC_IDENTITIES = ("admin.demo", "engineer.demo")
+
+_WRONG_IDENTITY_CASES: tuple[tuple[str, str], ...] = tuple(
+    (credential_owner, target)
+    for credential_owner in PUBLIC_DEMO_CREDENTIALS
+    for target in (*PUBLIC_DEMO_CREDENTIALS, *NON_PUBLIC_IDENTITIES)
+    if target != credential_owner
+)
+
+
+@pytest.mark.parametrize(
+    ("credential_owner", "target_username"),
+    _WRONG_IDENTITY_CASES,
+)
+async def test_public_demo_password_authenticates_no_other_identity(
     client: AsyncClient,
     _seeded_golden_dataset: None,
-    username: str,
+    credential_owner: str,
+    target_username: str,
 ) -> None:
-    """B: each public credential authenticates ONLY its intended Demo user —
-    no cross-identity password reuse."""
-    for other in PUBLIC_DEMO_CREDENTIALS:
-        if other == username:
-            continue
-        response = await client.post(
-            "/api/v1/auth/login",
-            json={"username": other, "password": PUBLIC_DEMO_CREDENTIALS[username]},
-        )
-        assert response.status_code == 401
+    """B: each public credential authenticates ONLY its intended Demo user.
+
+    Complete 3-source x 4-target negative matrix (12 combinations):
+      manager credential    -> procurement / auditor / engineer / admin
+      procurement credential -> manager / auditor / engineer / admin
+      auditor credential    -> manager / procurement / engineer / admin
+    """
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": target_username,
+            "password": PUBLIC_DEMO_CREDENTIALS[credential_owner],
+        },
+    )
+    assert response.status_code == 401
 
 
-@pytest.mark.parametrize("username", ["admin.demo", "engineer.demo"])
+@pytest.mark.parametrize("username", list(NON_PUBLIC_IDENTITIES))
 async def test_non_public_identity_absent_from_public_contract_and_credentials(
     client: AsyncClient,
     _seeded_golden_dataset: None,

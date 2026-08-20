@@ -177,7 +177,8 @@ export default function Login() {
         </section>
 
         <p className="text-center text-xs text-steel-500">
-          Authorized use only. Contact your administrator for credentials.
+          Demo credentials are provided for evaluation. Authentication is
+          still required.
         </p>
       </div>
     </div>
