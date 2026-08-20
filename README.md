@@ -1,87 +1,162 @@
 # ForgeMind AI Operations
 
-Controlled AI-assisted Supply Risk Intelligence portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow.
+**Controlled AI-assisted Supply Risk Intelligence** — a portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow from production plan to procurement decision.
 
-## Live Demo
-
-**Status:** IN DEVELOPMENT — Not yet deployed
-
-**Live Demo:** TBD — not yet deployed. Will be published once Phase 7 (VPS deployment) is complete.
+> **Status: NOT YET DEPLOYED** — Release 1 is implemented and locally runnable but has not been publicly deployed. No public Live Demo URL exists yet. Staging and production have not started.
 
 **Source Code:** https://github.com/Tihonya/forgemind-ai-operations
 
-**Current Status:** Development in progress. See [docs/next_steps.md](docs/next_steps.md) for current implementation status and blockers.
+**License:** Apache License 2.0 (see [LICENSE](LICENSE))
 
-## Release 1 Deliverables
-
-Release 1 must provide:
-- **Live Demo:** Public HTTPS deployment on Product Owner's VPS
-- **Public GitHub repository:** This repository with complete documentation
-- **Synthetic data only:** All data and documents are synthetic (invented for the project). No real corporate, military, or confidential systems.
-- **Real end-to-end workflows:** No static mockups — workflows exercise the real application stack against synthetic data.
-- **Persisted and observable state:** Database, audit logs, state transitions
-- **Recruiter-friendly README:** Clear value proposition, architecture, setup instructions
-- **Verified technology stack:** All listed technologies actually used in the released application
-
-**Success criteria:** A recruiter can view the Live Demo, understand the value proposition within 3-5 minutes, inspect the GitHub repository, and verify the technology stack matches the implementation.
+---
 
 ## What is ForgeMind?
 
-ForgeMind is a web platform for AI-assisted supply chain risk assessment in engineering and manufacturing environments.
+ForgeMind is a web platform for AI-assisted supply chain risk assessment in engineering and manufacturing environments. It demonstrates how an LLM can produce grounded, cited, structured risk recommendations while every consequential action remains behind a human approval gate with a complete, immutable audit trail.
 
-**Currently implemented:**
-- **Deterministic business logic** (Python/SQL) for risk calculation
-- **RAG-powered document intelligence** for evidence retrieval (implementation complete; AT-006 requires formal verification against a live database)
-- **AI provider adapter** — OpenAI-compatible ChatProvider (WP-REC-03A, merged)
-- **Workflow state machine + engine** — explicit state machine with 7 states and immutable transitions (WP-REC-03B, merged)
-- **Controlled AI workflow** (Phase 5) — structured recommendation generation with validation, workflow trace, and user-initiated retry, implemented and formally accepted (AT-008 PASS, AT-013 PASS; accepted evidence run `wp-rec-03h-phase-c-20260813-02`)
+The portfolio MVP implements one vertical scenario — **Production Plan Supply Risk Review** — end to end against synthetic data. No real corporate, military, or confidential systems are involved.
 
-**Release 1 targets (not yet implemented):**
-- **Human-in-the-loop approval** for AI recommendations (Phase 6)
-- **Controlled procurement writes** with approval (Phase 6)
-- **Complete audit traceability** for every workflow step (Phase 6)
-- **Public HTTPS deployment** with demo reset (Phase 7)
+---
 
-Release 1 is a **public portfolio MVP** demonstrating one complete vertical scenario: **Production Plan Supply Risk Review**.
+## The Golden Scenario
 
-## Overview
+A Production Manager opens a synthetic production plan, runs supply risk analysis, and receives AI-generated recommendations with document citations. The manager requests approval for a proposed procurement action. A Procurement Specialist independently approves or rejects it. On approval, a controlled procurement task is created. The Auditor inspects the complete audit trail.
 
-**Release 1 target scenario (not yet fully implemented):**
+```
+Production Plan
+  → Deterministic risk calculation
+  → RAG evidence retrieval with citations
+  → Structured AI recommendation
+  → Human approval request
+  → Independent procurement decision
+  → Controlled procurement task creation
+  → Immutable audit trail
+```
 
-A Production Manager logs in, views an active production plan, runs supply risk analysis, receives AI-explained recommendations with document citations, approves a procurement action, and reviews the complete audit trail — all with synthetic data only.
+Every step is persisted, correlated, and auditable. No action executes without human approval. No real ERP system is connected — the procurement task is a synthetic local record.
 
-**Currently working (demonstrable):**
-- Login and authentication
-- Dashboard with synthetic production plan
-- Supply risk list and detail views
-- Deterministic risk calculation (AT-003, AT-004, AT-005 verified)
-- RAG document retrieval infrastructure (AT-006 test exists but requires formal verification)
-- Structured AI recommendation workflow with validation and user-initiated retry (Phase 5, formally accepted — AT-008 PASS, AT-013 PASS)
+---
 
-**Not yet working (Release 1 targets):**
-- Human approval workflow (Phase 6)
-- Controlled procurement writes (Phase 6)
-- Audit trace (Phase 6)
-- Public HTTPS deployment (Phase 7)
+## Implemented Capabilities
 
-The full 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) is not yet complete. The current demonstrable journey covers steps 1–4 (deterministic core) plus partial step 8 (deterministic risk display).
+All capabilities below are implemented and tested in the repository. Acceptance tests AT-003 through AT-013 are PASS.
 
-**Target audience:** Recruiters and technical reviewers evaluating AI-assisted industrial workflow capabilities.
+| Capability | Evidence |
+|-----------|----------|
+| Authentication and RBAC (JWT, 5 demo roles) | AT-002 implemented; requires deployment verification |
+| Synthetic production / supply-risk domain (BOM, inventory, suppliers) | AT-003 PASS |
+| Deterministic risk calculation (Python/SQL) | AT-004, AT-005 PASS |
+| RAG over synthetic engineering documents with citations | AT-006, AT-007 PASS |
+| Role-filtered document access (DocumentPermission model) | AT-007 PASS |
+| Structured AI recommendation workflow (Pydantic-validated JSON) | AT-008 PASS |
+| Automatic provider retry / outage handling | AT-013 PASS |
+| User-initiated workflow retry | AT-013 PASS |
+| Approval-request lifecycle (request → approve/reject) | AT-009, AT-011 PASS |
+| Independent procurement approval (no self-approve) | AT-009, AT-010 PASS |
+| Controlled procurement-task creation (from approved requests only) | AT-010 PASS |
+| Immutable / auditable workflow events | AT-012 PASS |
+| Approval Center (frontend) | AT-009, AT-010 PASS |
+| Audit Log (frontend) | AT-012 PASS |
+| Isolated disposable Demo environment | WP-P7-03, implemented |
+| Deterministic operator-level Demo reset | `make demo-reset` |
+| Three public Demo identities on login UX | WP-P7-04, implemented |
+| Production-safe deployment configuration | WP-P7-02, prepared |
+| Distributed application rate limiting (Redis-backed) | WP-P7-02, implemented |
+| Backup/restore and operational controls | WP-P7-02, implemented |
+| Live embedding gate (OpenRouter → OpenAI embeddings) | WP-P7-02, accepted (DEC-055) |
 
-**Reviewer journey:** CV → Live Demo → complete working scenario (3–5 minutes) → inspect results and state transitions → open GitHub → understand architecture, implementation, tests, deployment, and limitations.
+---
 
-**Data policy:** Synthetic data only. No real corporate, military, or confidential systems.
+## Demo Roles
+
+Three public Demo accounts are displayed on the login page for the isolated Demo environment:
+
+| Account | Role | Responsibility |
+|---------|------|-----------------|
+| `manager.demo` | Production Manager | Initiates workflows, creates approval requests — cannot self-approve |
+| `procurement.demo` | Procurement Specialist | Independently approves or rejects procurement actions |
+| `auditor.demo` | Auditor | Inspects the audit trail — cannot approve |
+
+Non-public identities (`admin.demo`, `engineer.demo`) exist in the seed data but are not displayed on the login page. Demo passwords are shown on the login page itself — they are not repeated in this README.
+
+---
+
+## Architecture
+
+```mermaid
+graph TB
+    Internet[Internet / Browser]
+    Caddy[Caddy — HTTPS termination]
+    Frontend[Frontend — React SPA<br/>nginx static serve]
+    Backend[Backend — FastAPI<br/>uvicorn]
+    Worker[ARQ Worker]
+    Postgres[(PostgreSQL + pgvector)]
+    Redis[(Redis)]
+    OpenRouter[OpenRouter<br/>chat + embeddings]
+
+    Internet -->|HTTPS only| Caddy
+    Caddy -->|/api/*, /health| Backend
+    Caddy -->|static + SPA| Frontend
+    Frontend -->|/api/v1/*| Caddy
+    Backend --> Postgres
+    Backend --> Redis
+    Worker --> Postgres
+    Worker --> Redis
+    Worker -->|chat: qwen/qwen3.7-flash<br/>embeddings: text-embedding-3-small| OpenRouter
+
+    style Postgres fill:#336791,color:#fff
+    style Redis fill:#dc382d,color:#fff
+    style OpenRouter fill:#6c31a3,color:#fff
+```
+
+**Trust and safety boundaries:**
+
+- PostgreSQL and Redis are never published to host ports — they stay on private Docker networks
+- Authentication is required for all application access (no anonymous access)
+- All business and demo data are synthetic — no real corporate systems are connected
+- Secrets remain outside Git (production `.env` is operator-owned, never committed)
+- Human approval gates control every consequential action
+- Interactive API docs (`/docs`, `/redoc`) are not exposed on the public origin
+
+---
+
+## Release 1 AI / RAG Configuration
+
+The initial Release 1 deployment profile uses a bounded, explicitly pinned provider configuration:
+
+| Component | Provider | Model | Mode |
+|-----------|----------|-------|------|
+| Chat | OpenRouter only | `qwen/qwen3.7-flash` | `json_object` |
+| Embeddings | OpenRouter (OpenAI-compatible endpoint) | `openai/text-embedding-3-small` | 1536 dimensions |
+
+Automatic provider fallback is **disabled** in the Release 1 profile. No Groq-first chain is used in the initial deployment.
+
+The repository also contains a generic runtime chat-provider chain capability (Groq → OpenRouter ordered fallback) that can be configured for non-Release-1 scenarios. This is a runtime capability, not the initial deployment profile.
+
+No secret values are stored in the repository. Provider keys are supplied through the operator's production `.env` file (see `infra/prod.env.example`).
+
+---
 
 ## Quick Start
 
-```bash
-# Clone and configure
-git clone <repo-url> && cd forgemind-ai-operations
-cp .env.example .env
-# Edit .env with your settings (or keep defaults for local dev)
+### Prerequisites
 
-# Start all services
-docker compose up -d
+- Docker and Docker Compose
+- Python 3.12 (for local development outside Docker)
+- Node.js 22 (for frontend development)
+
+### Development environment
+
+```bash
+# Clone
+git clone https://github.com/Tihonya/forgemind-ai-operations.git
+cd forgemind-ai-operations
+
+# Configure (development defaults work for local dev)
+cp .env.example .env
+
+# Start all services in development mode
+make dev
 
 # Access the application
 # Frontend:  http://localhost:5173
@@ -90,131 +165,128 @@ docker compose up -d
 # Caddy:     http://localhost
 ```
 
-## Developer Setup
+### Local development (without Docker)
 
 ```bash
-# Create root virtual environment (one venv for the whole project)
+# Create root virtual environment
 python3.12 -m venv .venv && source .venv/bin/activate
 
-# Install backend dependencies from the root venv
+# Install backend dependencies
 cd backend && pip install -e ".[dev]" && cd ..
 
-# Frontend
-cd frontend && npm install && npm run dev && cd ..
+# Install frontend dependencies
+cd frontend && npm install && cd ..
 
-# Run tests (uses root .venv for backend)
+# Run tests
 make test
 
-# Seed demo data (implemented — generates synthetic golden dataset)
+# Seed demo data (generates synthetic golden dataset)
 make seed
-
-# Reset demo data (placeholder — reset_service.py not yet implemented; see Phase 7 blockers)
-make reset
 ```
 
-## Configuration
+### Available Makefile commands
 
-Chat-provider selection is independent of embedding-provider selection. The
-chat provider is configured via `CHAT_PROVIDER_MODE`:
+| Command | Purpose |
+|---------|---------|
+| `make dev` | Start all services in development mode |
+| `make test` | Run all test suites (backend + frontend) |
+| `make lint` | Run all linters (ruff, mypy, npm lint) |
+| `make seed` | Seed the database with the golden dataset |
+| `make demo-reset` | Reset the isolated disposable Demo environment |
+| `make compose-validate` | Validate production Compose with template env |
+| `make caddy-validate` | Validate production Caddyfile with placeholder env |
+| `make config-validate` | Fail-closed production configuration validation |
+| `make backup-smoke` | Run repo-owned backup/healthcheck test suites |
+| `make smoke-prepare` | Offline embedding smoke preparation (no live provider call) |
 
-| `CHAT_PROVIDER_MODE` | Behaviour |
-|---|---|
-| `fake` | Deterministic offline provider. Default for development/CI. Requires no key. Rejected outside development. |
-| `openai` | OpenAI (requires `OPENAI_API_KEY`). |
-| `chain` | Ordered external fallback chain, server-configured via `CHAT_PROVIDER_CHAIN` (default `groq,openrouter`). |
+---
 
-### External fallback chain
+## Isolated Demo Environment
 
-The chain advances from Groq (free primary) to OpenRouter (paid fallback)
-only after the current provider's bounded retry budget is exhausted with a
-**transient** failure (connection failure, timeout, HTTP 429, retryable 5xx).
-Permanent errors — including OpenRouter HTTP 402 (external budget/credit
-exhaustion), authentication failures, schema-invalid and citation-invalid
-responses — never fall back. Total provider calls are bounded by
-`provider_count × attempts_per_provider`.
+The Release 1 Demo runs the **real** ForgeMind application stack — Caddy, nginx frontend, FastAPI backend, ARQ worker, PostgreSQL (pgvector), Redis — with production-grade security and provider behavior against **synthetic** demo data.
 
-| Variable | Meaning |
-|---|---|
-| `GROQ_API_KEY` | Groq API key (required when Groq is in use). |
-| `GROQ_API_BASE` | Default `https://api.groq.com/openai/v1`. |
-| `GROQ_CHAT_MODEL` | Pinned free model, default `openai/gpt-oss-120b`. |
-| `OPENROUTER_API_KEY` | OpenRouter API key (required when OpenRouter is in use). |
-| `OPENROUTER_API_BASE` | Default `https://openrouter.ai/api/v1`. |
-| `OPENROUTER_CHAT_MODEL` | **Required explicit pinned paid model — no default is ever guessed.** |
+- No "demo mode" inside the application — the demo is distinguished by its Compose file and project identity, not by weakening the app
+- Isolated volumes, database (`forgemind_demo`), and Compose project (`forgemind-demo`)
+- PostgreSQL and Redis never publish host ports
+- No Docker socket mounted into any container
+- Reset is operator-level: `make demo-reset` destroys and rebuilds the entire demo runtime from scratch
+- No in-app reset API or `reset_service.py` — the application backend has no destructive capabilities
 
-The ~USD 5 OpenRouter budget is an **external** OpenRouter account/key
-control configured separately by the Product Owner. The application does not
-enforce it; on exhaustion OpenRouter returns HTTP 402, which the application
-treats as a permanent failure (no retry, no fallback).
+See [docs/demo-environment.md](docs/demo-environment.md) for full details.
 
-### Structured output modes
+---
 
-Each provider carries an explicit structured-output capability mode
-(`*_STRUCTURED_OUTPUT_MODE`): `json_schema` (strict JSON Schema response
-format), `json_object` (provider JSON-object mode), or `prompt_json`
-(explicit prompt-only compatibility mode). Server-side Pydantic validation
-remains authoritative in every mode. An unsupported mode fails safely at
-startup; it is never silently downgraded after a provider error.
+## Human Control and Auditability
 
-API keys are never logged, printed, serialized, or committed.
+ForgeMind demonstrates that AI-assisted decisions can be transparent and controllable:
 
-## Architecture
+- **No action without approval:** The AI generates recommendations, but no procurement task is created until a human approves the request
+- **Separation of duties:** The manager who requests an action cannot approve it — a different identity (Procurement Specialist) must decide
+- **Immutable audit trail:** Every workflow step, approval decision, procurement action, and state transition is persisted as an immutable audit event with actor, timestamp, and correlation ID
+- **Full traceability:** Each recommendation links to its RAG evidence (retrieved document fragments with citations) and the deterministic risk calculation that triggered it
+- **Auditor oversight:** The Auditor role can inspect the complete audit trail but cannot approve or modify anything
 
-```
-┌─────────────────────────────────────────────────────┐
-│ Caddy (reverse proxy, HTTPS)                        │
-├──────────────┬──────────────────────────────────────┤
-│ Frontend     │ Backend (FastAPI)                    │
-│ React 18 +   │ ┌─────────┬──────────┬───────────┐  │
-│ TypeScript   │ │ REST API│ AI/LLM   │ ARQ Worker│  │
-│              │ │         │ Service  │           │  │
-│              │ └────┬────┴────┬─────┴─────┬─────┘  │
-│              │      │         │           │        │
-│              │   ┌──┴─────────┴───────────┴──┐     │
-│              │   │ PostgreSQL + pgvector      │     │
-│              │   └────────────────────────────┘     │
-│              │   ┌──────────┐                       │
-│              │   │ Redis    │ (ARQ + cache)         │
-│              │   └──────────┘                       │
-└──────────────┴──────────────────────────────────────┘
-```
+---
 
-## MVP Vertical: Supply Risk Intelligence
+## Testing and Verification
 
-Release 1 implements one complete vertical scenario:
+| Suite | Tool | Scope |
+|-------|------|-------|
+| Backend unit + integration | pytest | Risk engine, workflow state machine, AI provider, approval/procurement, audit, RBAC |
+| Frontend unit | Vitest | Components, hooks, routing, auth context |
+| End-to-end | Playwright | Golden Scenario walkthrough |
+| Acceptance harness | Custom harness | AT-003 through AT-013 (11 PASS; AT-001/002/014 require deployment) |
+| Deployment config | Shell test suites | Compose validation, Caddyfile validation, backup/restore, demo reset, worker healthcheck |
 
-**Production Plan Supply Risk Review (5 condensed milestones)**
+Run tests: `make test`
 
-1. Synthetic production plan → deterministic risk calculation ✅ IMPLEMENTED (AT-003, AT-004, AT-005 verified)
-2. RAG over synthetic engineering documents → cited retrieval ⚠️ IMPLEMENTATION COMPLETE (AT-006 test exists; requires formal verification)
-3. Structured AI recommendation ✅ IMPLEMENTED & ACCEPTED (Phase 5: WP-REC-03A–03G; AT-008 PASS, AT-013 PASS) → human approval ❌ NOT IMPLEMENTED (Phase 6)
-4. Controlled procurement task creation → complete audit trace ❌ NOT IMPLEMENTED (Phase 6)
-5. Public HTTPS deployment → demo reset ❌ NOT IMPLEMENTED (Phase 7)
+---
 
-**Current implementation status:** steps 1 and 2 are implemented; step 3's structured AI recommendation is implemented and accepted, while its transition to human approval is not implemented; step 4 (controlled procurement task creation and complete audit trace) and step 5 (public HTTPS deployment and demo reset) are not implemented.
+## Documentation Map
 
-**Canonical Golden Scenario:** The full 13-step Golden Scenario is defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2. The 5 condensed milestones above map to subsets of the canonical steps.
+| Document | Path |
+|----------|------|
+| Source of Truth (9 documents) | [forgemind_project_source_of_truth/](forgemind_project_source_of_truth/) |
+| Phase 7 deployment contract | [docs/planning/phase_7_deployment_contract.md](docs/planning/phase_7_deployment_contract.md) |
+| Requirements traceability matrix | [docs/planning/requirements_traceability_matrix.md](docs/planning/requirements_traceability_matrix.md) |
+| Product strategy | [docs/planning/wp_strat_01_product_strategy.md](docs/planning/wp_strat_01_product_strategy.md) |
+| Production deployment runbook | [docs/infra-production.md](docs/infra-production.md) |
+| Release 1 operator runbook | [docs/operations/release_1_runbook.md](docs/operations/release_1_runbook.md) |
+| Isolated Demo environment | [docs/demo-environment.md](docs/demo-environment.md) |
+| Current lifecycle status | [docs/next_steps.md](docs/next_steps.md) |
+| Active work tracker | [docs/ACTIVE_WORK.md](docs/ACTIVE_WORK.md) |
+| Decision log | [forgemind_project_source_of_truth/08_DECISION_LOG.md](forgemind_project_source_of_truth/08_DECISION_LOG.md) |
 
-See [docs/next_steps.md](docs/next_steps.md) for the full status and blockers.
-
-## Documentation
-
-- [Source of Truth](forgemind_project_source_of_truth/)
-- [Product Strategy (WP-STRAT-01)](docs/planning/wp_strat_01_product_strategy.md)
-- [Requirements Traceability](docs/planning/requirements_traceability_matrix.md)
-- [Open Questions](docs/planning/open_questions.md)
+---
 
 ## Technology Stack
 
 | Layer | Choice |
 |-------|--------|
 | Backend | Python 3.12, FastAPI, SQLAlchemy 2, Alembic |
-| AI/ML | ARQ + Redis, OpenAI-compatible ChatProvider adapter with server-configured Groq → OpenRouter fallback chain (offline-verified; no live provider call) |
-| Frontend | React 18, TypeScript, Vite, Tailwind, shadcn/ui |
-| Database | PostgreSQL + pgvector |
-| Infra | Docker Compose, Caddy, GitHub Actions |
+| AI/ML | ARQ + Redis, OpenAI-compatible chat provider, pgvector embeddings |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui |
+| Database | PostgreSQL 16 + pgvector |
+| Infra | Docker Compose, Caddy (automatic HTTPS), GitHub Actions |
 | Testing | pytest, Vitest, Playwright |
+
+---
+
+## Limitations
+
+ForgeMind is a **portfolio MVP**. The following are intentionally out of scope for Release 1:
+
+- **Synthetic data only:** All production plans, BOMs, inventory, suppliers, documents, and audit events are synthetic. No real corporate ERP or procurement system is connected.
+- **No public deployment yet:** Release 1 has not been deployed. No public Live Demo URL exists.
+- **Ukrainian localization deferred:** Release 1 is English-first. Ukrainian localization is planned for post-deployment stabilization.
+- **Bounded deployment profile:** Initial deployment uses OpenRouter-only chat and embedding providers. A Groq-first fallback chain exists as a runtime capability but is not the initial deployment profile.
+- **No CI/CD deployment automation:** First deployment is manual and checklist-driven.
+- **No full observability platform:** Monitoring is limited to Docker logs, backend `/health`, and backup state markers.
+- **No per-browser ephemeral sandboxes:** Release 1 uses one shared isolated Demo environment.
+- **Broader enterprise/platform expansion:** Out of Release 1 scope.
+
+---
 
 ## License
 
-Proprietary — ForgeMind AI Operations
+This project is licensed under the [Apache License 2.0](LICENSE).
