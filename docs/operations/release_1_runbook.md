@@ -320,10 +320,18 @@ established once.
 # ── Rehearsal procedure (run on the deployment host) ──────────────
 set -euo pipefail
 
-# 1. Identify the newest backup dump. Fail immediately if none exists
-#    — do NOT proceed with an empty NEWEST variable.
-NEWEST="$(ls -1t ./backups/forgemind-*.dump 2>/dev/null | head -1)"
-if [ -z "${NEWEST}" ] || [ ! -f "${NEWEST}" ]; then
+# 1. Identify the newest backup dump using a Bash-native loop (no ls
+#    pipeline) so that zero matching files reach the explicit guard
+#    instead of triggering set -e via pipefail. Fail immediately if
+#    none exists — do NOT proceed with an empty NEWEST variable.
+NEWEST=""
+for candidate in ./backups/forgemind-*.dump; do
+  [[ -f "${candidate}" ]] || continue
+  if [[ -z "${NEWEST}" || "${candidate}" -nt "${NEWEST}" ]]; then
+    NEWEST="${candidate}"
+  fi
+done
+if [[ -z "${NEWEST}" ]]; then
   echo "ERROR: no backup dump found in ./backups/ — cannot rehearse." >&2
   exit 1
 fi
