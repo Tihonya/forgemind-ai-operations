@@ -63,16 +63,17 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(page.getByRole('heading', { name: /Sign in/i, level: 2 })).toBeVisible();
   await expect(page.getByText(/Supply Risk Intelligence/i)).toBeVisible();
 
-  // Verify login form elements
-  await expect(page.getByLabel(/Username/i)).toBeVisible();
-  await expect(page.getByLabel(/Password/i)).toBeVisible();
+  // Verify login form elements (data-testid selectors: stable with the
+  // demo-account UX; broad label regex collides with the visibility toggle)
+  await expect(page.getByTestId('login-username')).toBeVisible();
+  await expect(page.getByTestId('login-password')).toBeVisible();
   await expect(page.getByRole('button', { name: /Sign in/i })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 2: Authenticate as manager.demo
   // ────────────────────────────────────────────────────────────
-  await page.getByLabel(/Username/i).fill('manager.demo');
-  await page.getByLabel(/Password/i).fill('ManagerPass123!');
+  await page.getByTestId('login-username').fill('manager.demo');
+  await page.getByTestId('login-password').fill('ManagerPass123!');
   await page.getByRole('button', { name: /Sign in/i }).click();
 
   // Wait for navigation to dashboard

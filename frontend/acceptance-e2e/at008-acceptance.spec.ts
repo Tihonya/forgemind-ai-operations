@@ -196,8 +196,8 @@ test.describe('AT-008: Structured Output Validation Failure', () => {
 
     // Login as manager.demo (PRODUCTION_MANAGER)
     await page.goto('/login')
-    await page.getByLabel(/username/i).fill('manager.demo')
-    await page.getByLabel(/password/i).fill('ManagerPass123!')
+    await page.getByTestId('login-username').fill('manager.demo')
+    await page.getByTestId('login-password').fill('ManagerPass123!')
     await page.getByRole('button', { name: /sign in/i }).click()
     await expect(page).toHaveURL('/', { timeout: 10000 })
 
