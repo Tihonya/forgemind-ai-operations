@@ -15,9 +15,10 @@
 # - All services publish log rotation settings via per-service logging
 #   options so container logs cannot fill the VPS disk.
 #
-# The intended host: single VPS, 16 GB RAM, 200 GB storage (Phase 7
-# contract, PD-1). This file MUST NOT be used to access that VPS from
-# this repository task.
+# The intended host: single-purpose ForgeMind VPS, 2 vCPU, 8 GB RAM,
+# 100 GB SSD, no GPU (DEC-057, 2026-08-21; supersedes the historical
+# 16 GB RAM / 200 GB storage assumption of PD-1). This file MUST NOT be
+# used to access that VPS from this repository task.
 
 name: forgemind
 
@@ -65,7 +66,8 @@ services:
         umask 077
         && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis-auth.conf
         && exec redis-server /run/redis-auth.conf
-        --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+        --appendonly yes --appendfsync everysec
+        --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
       - redis_data:/data
     healthcheck:

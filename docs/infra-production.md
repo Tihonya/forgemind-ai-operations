@@ -10,7 +10,11 @@ deployment, and live provider calls are separate bounded actions.
 
 ## 1. Topology
 
-Host: single VPS (16 GB RAM, 200 GB storage) + Docker Compose.
+Host: single-purpose ForgeMind VPS, 2 vCPU, 8 GB RAM, 100 GB SSD, no GPU
+(DEC-057, 2026-08-21; supersedes the historical 16 GB RAM / 200 GB storage
+assumption of PD-1) + Docker Compose. No local LLM or embedding model runs
+on the host — OpenRouter inference/embeddings are external (PD-3 / PD-3a),
+so there is no local-model memory demand.
 
 ```
 Internet
@@ -145,19 +149,90 @@ Known behavior (fixed window): at a window boundary a client can
 consume up to ~2× the configured budget in a single straddling burst.
 This is a standard fixed-window property and accepted for Release 1.
 
-## 5. Deploy (manual, checklist-driven — PD-9)
+## 5. Deploy (manual, checklist-driven — PD-9; Model C — DEC-058)
+
+Primer: the authoritative Release 1 procedure lives in
+`docs/operations/release_1_runbook.md` §3/§5. `make deploy` is
+INTENTIONALLY DISABLED (fail-closed, WP-P7-CORR-01) and refuses to start
+any Compose stack; a one-command production deploy shortcut does not exist.
+
+Release 1 uses the single-VPS MODEL C flow (DEC-058): disposable staging →
+verification → staging teardown → promotion of the same SHA and the same
+locally built verified application images → independent production
+verification. Application images are built exactly ONCE for the candidate
+SHA, SERIALIZED (one service at a time; never run backend/worker/frontend
+builds concurrently on the 2 vCPU / 8 GB host). No rebuild and no pull may
+occur between successful staging verification and production promotion.
+
+The Model C candidate artifact identity is: repository SHA + build-time
+input values + verified application image IDs. The Git SHA alone does not
+identify a rebuild with changed build args.
+
+**Production promotion start (after staging verification + teardown)** —
+the same exact SHA S and the SAME retained verified images; fail-closed
+against accidental rebuild or pull:
 
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml up -d --no-build --pull never
 docker compose -f docker-compose.prod.yml exec backend python -m alembic upgrade head
 docker compose -f docker-compose.prod.yml exec backend python -m app.seed.generator.main
 curl -f https://<FQDN>/health   # expect JSON, status healthy/degraded
 ```
 
-All commands run from the deployment directory with `.env` present.
-Caddy obtains the certificate automatically after the first successful
-deployment (automatic HTTPS; no manual cert handling).
+`--no-build` and `--pull never` are both supported options of the projected
+Docker Compose v2 tooling. Since both Compose files remain built on that
+source state with no further `--build`, changes in mutable base tags do not
+enter production before `--no-build`/`--pull never` forecloses them.
+
+All commands run from the deployment directory with `.env` present, after
+`git rev-parse HEAD` == S has been verified. Caddy obtains the certificate
+automatically after the first successful deployment (automatic HTTPS; no
+manual cert handling).
+
+The production `CADDY_DOMAIN` / `CADDY_EMAIL` / secret values may differ
+from the staging ones — those are GENUINELY RUNTIME inputs, not image
+content. BUILD-TIME inputs MUST NOT differ: `VITE_API_BASE_URL` is
+compiled into the frontend image (frontend Dockerfile `ARG`/`ENV` → Vite
+build; consumed as `import.meta.env.VITE_API_BASE_URL` in
+`frontend/src/lib/api.ts`; nginx performs no runtime substitution) and is
+recorded in the staging evidence boundary, then re-verified at promotion.
+New production runtime data may be created at promotion time.
+
+## 5.1 Host resource discipline (DEC-057 / DEC-058)
+
+- 2 GB host swap is the intended host safety cushion for the transient
+  build peaks (DEC-057, 2026-08-21: required/recommended for Release 1
+  deployment) and is created during the PRE-STAGING VPS SECURITY HARDENING
+  operational action (`vm.swappiness` target approximately 10–30 so
+  PostgreSQL/Redis stay in RAM). Swap is an OPERATOR/HARDENING action —
+  Docker Compose does NOT create it, and no repository task creates it.
+- Evidence of staging verification records the swap presence/size as part
+  of the deployment environment (see the RESOURCE PRECHECK in the runbook).
+  Host resource values are operational deployment gates, not immutable
+  application-artifact identity — the promotion boundary's immutable
+  identity is the candidate SHA + build-time inputs + application image
+  IDs; host values may be rechecked at promotion where relevant but are
+  not required to remain numerically unchanged.
+- Builds are SERIALIZED on this host (one application image at a time).
+- Backend runs 2 Uvicorn workers (one per 2 vCPU; `infra/docker/backend.dockerfile`
+  production stage). The development-stage command is unchanged.
+- Redis: bounded `--maxmemory 128mb --maxmemory-policy noeviction`
+  (fail-closed: when the bound is hit, writes are refused rather than
+  unbounded host-memory growth).
+- No general Docker memory-limit architecture is required on the
+  single-purpose host.
+
+## 5.2 Build-cache / disk hygiene guidance
+
+100 GB SSD is comfortable for Release 1; the realistic runtime/storage
+footprint is far below the disk size. Build cache and old image generations
+must not grow forever, so the operator MAY perform bounded, low-frequency
+cleanup (e.g. `docker builder prune` or equivalent) — but ONLY after
+confirming that no verified image still needed for promotion or rollback
+will be deleted (check image IDs against the staging verification evidence
+first). This is operator maintenance, not an automatic destructive cron;
+no prune command may silently delete the currently verified promotion
+images without an identity check.
 
 ## 6. Backups (PD-8)
 

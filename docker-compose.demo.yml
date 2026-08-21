@@ -69,7 +69,8 @@ services:
         umask 077
         && printf 'requirepass %s\n' "$$REDIS_PASSWORD" > /run/redis-auth.conf
         && exec redis-server /run/redis-auth.conf
-        --appendonly yes --appendfsync everysec --maxmemory-policy noeviction
+        --appendonly yes --appendfsync everysec
+        --maxmemory 128mb --maxmemory-policy noeviction
     volumes:
       - demo_redis_data:/data
     healthcheck:
