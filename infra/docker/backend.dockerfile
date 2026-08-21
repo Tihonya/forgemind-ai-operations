@@ -108,5 +108,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Default command.
+# Release 1 host has 2 vCPU (DEC-057, 2026-08-21): 2 workers, one per
+# vCPU. ARQ handles background work separately; the Redis-backed
+# distributed rate limiter already prevents per-process budget
+# multiplication. The development stage command is unchanged.
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

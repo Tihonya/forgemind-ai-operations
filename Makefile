@@ -35,10 +35,19 @@ demo-reset: ## Reset the isolated disposable Demo environment (operator-level, W
 	./scripts/demo-reset.sh
 	@echo "Demo reset complete."
 
-deploy: ## Deploy to production
-	@echo "Building and deploying..."
-	docker compose -f docker-compose.yml up -d --build
-	@echo "Deployment complete."
+# Direct generic deployment is INTENTIONALLY DISABLED (fail-closed, WP-P7-CORR-01).
+# Staging/production deployment is checklist-controlled and begins only from the
+# authoritative Release 1 runbook (docs/operations/release_1_runbook.md) after
+# pre-staging VPS hardening, PO authorization, and staging verification.
+# The historical `make deploy` behavior (booting the DEVELOPMENT compose
+# topology) was an operator footgun. This target cannot start any Compose stack.
+deploy: ## REFUSES direct deployment (disabled) — see docs/operations/release_1_runbook.md
+	@echo "ERROR: direct generic deployment is intentionally disabled (WP-P7-CORR-01)." >&2
+	@echo "This target refuses to start docker-compose.yml, docker-compose.prod.yml," >&2
+	@echo "or docker-compose.demo.yml. Staging and production deployment are" >&2
+	@echo "checklist-controlled; follow the authoritative Release 1 runbook:" >&2
+	@echo "  docs/operations/release_1_runbook.md" >&2
+	@exit 1
 
 clean: ## Remove all containers, volumes, and build artifacts
 	docker compose down -v

@@ -16,13 +16,57 @@ provider call is authorized by this document.
 
 ## 1. Prerequisites
 
-- Single VPS (16 GB RAM, 200 GB storage) per Phase 7 contract PD-1
+- Single-purpose ForgeMind VPS: 2 vCPU, 8 GB RAM, 100 GB SSD, no GPU
+  (DEC-057, 2026-08-21; supersedes the historical 16 GB RAM / 200 GB
+  storage assumption of PD-1). No local LLM or embedding model runs on
+  the host — OpenRouter inference/embeddings are external (PD-3 / PD-3a).
+- 2 GB host swap created during the PRE-STAGING VPS SECURITY HARDENING
+  operational action (`vm.swappiness` approximately 10–30). Swap is an
+  operator/hardening action — Docker Compose does not create it, and no
+  repository task creates it.
 - Docker and Docker Compose installed on the deployment host
 - Production FQDN and TLS contact email (Product Owner deployment-time input)
 - OpenRouter account with API key (used for both chat and embeddings)
+- OpenRouter provider-side hard budget/cap expected by PD-4 confirmed
+  administratively BEFORE staging entry (external USD 5 account/billing
+  control; the application does not enforce the monetary cap). If the cap
+  cannot be confirmed later, staging entry remains blocked.
 - All secrets prepared via `infra/prod.env.example` — see §2 below
 - VPS security hardening completed and independently verified (separate
   bounded action; see Phase 7 contract §7)
+
+### 1.1 Resource precheck (REQUIRED before any deployment action here)
+
+On the deployment host, confirm before starting (all are deployment-time
+verifications; this repository task executes NONE of them):
+
+```bash
+# 1. Free RAM
+free -h
+
+# 2. Swap presence and size (evidence records that swap exists)
+swapon --show
+grep -i swap /proc/meminfo
+
+# 3. Free disk
+df -h /
+
+# 4. Exact repository SHA — must equal the candidate Release SHA S
+git rev-parse HEAD
+
+# 5. Docker / Compose available
+docker --version
+docker compose version
+```
+
+Also confirm `vm.swappiness` is within the ~10–30 target for evidence:
+
+```bash
+cat /proc/sys/vm/swappiness
+```
+
+Staging evidence records the confirmed values so the promotion boundary can
+verify them unchanged.
 
 ---
 
@@ -98,20 +142,124 @@ list.
 
 ---
 
-## 3. Build and start (future deployment procedure)
+## 3. Release 1 deployment model (Model C — DEC-058)
 
 > This section documents the procedure. It must NOT be executed from
 > this repository task. VPS deployment is a separate bounded action
-> (WP-P7-06).
+> (WP-P7-06) and begins only after pre-staging VPS hardening, PO
+> authorization, and the RESOURCE PRECHECK (§1.1) have passed.
+> Direct `make deploy` is intentionally disabled (WP-P7-CORR-01).
+
+Release 1 uses Model C on the single VPS (DEC-058, 2026-08-21): ONE
+public ForgeMind stack exists on the host at a time; staging and
+production cannot coexist on the current port topology (80/443/443-udp).
+Application images are built ONCE for the candidate Release SHA S, staging
+is verified against exactly S, staging is then torn down, and production
+is started from the same SHA S with the SAME locally retained verified
+images — never by rebuilding and never by pulling replacement images.
+
+There is no GHCR/container-registry promotion step for Release 1
+(PD-9 manual-first delivery stays in force).
+
+### 3.1 STAGING BUILD (WP-P7-06)
 
 ```bash
 # From the deployment directory on the VPS (with .env present):
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d --build
+git fetch origin
+git checkout --detach S                # exact candidate Release SHA S
+git rev-parse HEAD                     # record: MUST equal S
+
+# Build ONCE, SERIALIZED (one service at a time). Never run these
+# builds concurrently on the 2 vCPU / 8 GB host.
+docker compose -f docker-compose.prod.yml build backend
+docker compose -f docker-compose.prod.yml build worker
+docker compose -f docker-compose.prod.yml build frontend
+
+# Start the disposable staging stack:
+docker compose -f docker-compose.prod.yml up -d
+
+# Migrate + seed:
+docker compose -f docker-compose.prod.yml exec backend python -m alembic upgrade head
+docker compose -f docker-compose.prod.yml exec backend python -m app.seed.generator.main
+
+# Record SHA + image identities into the staging evidence:
+git rev-parse HEAD                    # candidate SHA S
+docker image inspect --format '{{.Id}}' docker-compose_prod_backend   # backend image ID
+docker image inspect --format '{{.Id}}' docker-compose_prod_worker    # worker image ID
+docker image inspect --format '{{.Id}}' docker-compose_prod_frontend  # frontend image ID
 ```
+
+(Adapt the image names to the resolved local image names for this host —
+the default project/filename-based names above follow Docker Compose v2
+conventions. The full `docker compose images` inventory is additional,
+cheap evidence.)
+
+### 3.2 STAGING VERIFICATION (WP-P7-07)
+
+Read-only. Runs AT-001, AT-002, AT-014, the Golden Scenario walkthrough,
+health verification, and the reboot test against staging, bound to the
+exact SHA S. NEVER repair staging defects during this verification — a
+defect means solving separately and re-verifying against a new candidate
+SHA S. The evidence records/validates the exact SHA S and the image
+identities recorded in §3.1.
+
+### 3.3 STAGING TEARDOWN (only after WP-P7-07 PASS)
+
+```bash
+# Destroy the staging runtime/state (disposable model). Verified
+# application images are RETAINED.
+docker compose -f docker-compose.prod.yml down --volumes
+```
+
+- Do NOT rebuild. Do NOT pull new images. Do NOT prune the retained
+  verified images.
+- Staging teardown is NOT a rollback of staging verification evidence:
+  the evidence stays valid because the promoted production artifact is
+  the same SHA with the same verified image identities.
+
+### 3.4 PRODUCTION PROMOTION (WP-P7-08)
+
+```bash
+# From the deployment directory on the VPS (with the final .env present):
+git fetch origin
+git checkout --detach S                # the SAME SHA S
+git rev-parse HEAD                     # FAIL CLOSED if this != S
+
+# Verify required image IDs equal the staging evidence (FAIL CLOSED on
+# any mismatch, absence, or accidental rebuild after staging verification):
+docker image inspect --format '{{.Id}}' docker-compose_prod_backend
+docker image inspect --format '{{.Id}}' docker-compose_prod_worker
+docker image inspect --format '{{.Id}}' docker-compose_prod_frontend
+
+# Start production with NO rebuild and NO pull:
+docker compose -f docker-compose.prod.yml up -d --no-build --pull never
+
+# Migrate + seed (new production runtime data may be created):
+docker compose -f docker-compose.prod.yml exec backend python -m alembic upgrade head
+docker compose -f docker-compose.prod.yml exec backend python -m app.seed.generator.main
+
+# Health:
+curl -f https://<FQDN>/health
+```
+
+Production runtime configuration, the final FQDN (`CADDY_DOMAIN`), and
+production secrets MAY differ from staging — they are runtime inputs, not
+application-image content.
 
 Caddy obtains the TLS certificate automatically after the first
 successful start (automatic HTTPS; no manual cert handling).
+
+**FAIL-CLOSED conditions** — if ANY of the following occur, DO NOT deploy
+production from the changed artifact; return to staging verification with
+a new candidate evidence boundary:
+
+- SHA differs from the staging-verified S;
+- an application image ID differs from the staging evidence;
+- a verified image is missing;
+- an operator accidentally rebuilt after staging verification.
+
+**WP-P7-09 remains mandatory after production deployment** — production is
+not verified merely because staging passed.
 
 ---
 
@@ -419,6 +567,15 @@ echo "Rehearsal complete: ${SCRATCH_DB} created, restored, verified, and dropped
 
 ### 11.1 Application rollback (known-good git commit)
 
+> **Promotion-boundary note (DEC-058, 2026-08-21):** the no-rebuild /
+> no-pull promotion rule in §3.4 governs ONLY the staging-verified →
+> production-promotion boundary. A rollback below is an emergency
+> recovery action to a KNOWN-GOOD commit/artifact (per the rollback
+> procedure), and is performed only when the running production artifact
+> is defective. A rollback does NOT authorize skipping §3.4 for a normal
+> promotion, and what a rollback rebuilds must itself be a previously
+> verified known-good state.
+
 The Compose topology builds application images from source at deploy time
 (see `docker-compose.prod.yml` — `backend`, `worker`, and `frontend` use
 `build:` context, not pinned `image:` tags). There is no versioned-image
@@ -550,10 +707,19 @@ docker compose -f docker-compose.prod.yml down -v
   action (Phase 7 contract §7)
 - DNS mutation and TLS procurement are deployment-time actions, not
   repository tasks
+- Off-host backup: no destination has been selected yet. Before production
+  closure, the operator/Product Owner must either configure at least one
+  off-host backup copy or record an explicitly accepted temporary Release
+  1 limitation (hardening contract). This remains a pre-production
+  operator decision/gate — this runbook does not select a destination and
+  adds no S3/rclone/scp automation.
 - Live provider calls require separately authorized gates
 - The embedding smoke harness (`make smoke-prepare`) runs offline by
   default; a live call requires `--live` flag AND
   `FORGEMIND_EMBEDDING_SMOKE_LIVE_CONFIRM=yes` (double barrier)
+- `make deploy` is intentionally disabled (fails with a pointer to this
+  runbook); staging/production deployment is checklist-controlled (Model C,
+  §3) — there is no one-command deploy shortcut
 - If a deployment defect is found, create a separate bounded remediation
   package — do NOT repair defects inside a read-only verification action
 - Escalate to the Product Owner for: FQDN changes, provider key rotation,
@@ -561,7 +727,19 @@ docker compose -f docker-compose.prod.yml down -v
 
 ---
 
-## 14. Reference: Makefile commands
+## 14. Operator maintenance notes (build cache / disk)
+
+The host has 100 GB SSD — comfortable for Release 1; the realistic
+runtime/storage footprint is far below the disk size. Build cache and old
+image generations must not grow forever. The operator MAY perform bounded,
+low-frequency cleanup (e.g. `docker builder prune` or equivalent) —
+quarterly or occasional, NOT an aggressive automatic cron — and only after
+confirming (against the staging verification evidence) that no verified
+image still needed for promotion or rollback will be deleted. No prune
+command may silently delete the currently verified promotion images
+without an identity check.
+
+## 15. Reference: Makefile commands
 
 | Command | Purpose |
 |---------|---------|
@@ -570,6 +748,7 @@ docker compose -f docker-compose.prod.yml down -v
 | `make lint` | Run all linters |
 | `make seed` | Seed the database with the golden dataset |
 | `make demo-reset` | Reset the isolated disposable Demo environment |
+| `make deploy` | REFUSES direct deployment (disabled) — follow this runbook §3 |
 | `make compose-validate` | Validate production Compose with template env |
 | `make caddy-validate` | Validate production Caddyfile |
 | `make config-validate` | Fail-closed production configuration validation |

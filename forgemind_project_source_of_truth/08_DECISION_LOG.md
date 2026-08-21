@@ -1196,6 +1196,90 @@ Selective in-place reset is incompatible with the immutable audit trail and intr
 
 ---
 
+## DEC-057 — Release 1 VPS resource target
+
+**Date:** 2026-08-21
+
+**Status:** Accepted
+
+**Context:**
+
+The independent pre-staging deployment architecture / resource audit (2026-08-21, audited revision `9b4e77119cec625389ff3f3afef198038b5f07df`, verdict: PRE-STAGING ARCHITECTURE / RESOURCE AUDIT COMPLETE — REPOSITORY CORRECTION PACKAGE REQUIRED BEFORE VPS HARDENING) established that the PD-1 host premise ("16 GB RAM and 200 GB storage") is plan-level drift: no component of the Release 1 stack genuinely requires 16 GB RAM or 200 GB storage, and the actual purchased target host is smaller. The Product Owner has decided the authoritative Release 1 host target for the single-purpose ForgeMind VPS.
+
+**Decision:**
+
+- Release 1 target host = single VPS, 2 vCPU / 8 GB RAM / 100 GB SSD, dedicated to ForgeMind Release 1. No unrelated applications or services are intended to run on it.
+- No GPU. External OpenRouter inference and embeddings (PD-3 / PD-3a) mean there is no local-model memory demand on this host.
+- This decision supersedes ONLY the obsolete PD-1 sizing assumption of 16 GB RAM / 200 GB storage. All other PD-1 content remains in force. The steady-state architecture (Caddy → nginx → FastAPI backend, ARQ worker, PostgreSQL+pgvector, Redis) is not changed.
+- 100 GB SSD is comfortably above the audited 40 GB minimum / 60–100 GB recommendation for Release 1.
+- 2 GB host swap is the intended host safety cushion for transient build peaks. Swap creation belongs to the PRE-STAGING VPS SECURITY HARDENING operational action and is NOT performed by any repository task.
+- Release 1 production runs 2 Uvicorn workers (one per vCPU). See the bounded repository correction package WP-P7-CORR-01 (this decision's implementation).
+- No general Docker memory-limit architecture is required on the single-purpose host; Redis receives an explicit bounded `maxmemory` ceiling (128 MB) instead (WP-P7-CORR-01).
+- VPS hardening still requires a separate operational action and is not authorized by this decision.
+
+**Reason:**
+
+The independent audit source-verified that estimated steady-state memory is ~2.1–3.7 GB with the previous configuration (~1.6–2.9 GB after the worker correction) and that lifetime disk usage is realistically ~15–25 GB. The 16 GB / 200 GB figures were artifacts of the original PD-1 text and no longer match the real host; keeping them authoritative would falsify every downstream gate and runbook.
+
+**Consequences:**
+
+- The Release 1 host target is 2 vCPU / 8 GB RAM / 100 GB SSD (single-purpose ForgeMind VPS, no GPU).
+- PD-1's 16 GB / 200 GB sizing is superseded by this decision; the deployment contract, operational runbooks, and Compose host comments are reconciled by WP-P7-CORR-01.
+- 2 GB swap (operator/hardening action, `vm.swappiness` ≈ 10–30) is required/recommended by this decision before Release 1 deployment execution.
+- Redis carries a bounded 128 MB `maxmemory` with `noeviction` (fail-closed); backend/worker/frontend builds are serialized on this host.
+- No change to PD-3 / PD-3a provider decisions, PD-4 cost-cap semantics, the security-hardening contract (§7), or the steady-state architecture.
+- VPS hardening remains a separate future bounded action.
+
+**Affected documents/tests:** `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `docs/planning/phase_7_deployment_contract.md`, `docs/infra-production.md`, `docs/operations/release_1_runbook.md`, `docker-compose.prod.yml`, `docker-compose.demo.yml`, `infra/docker/backend.dockerfile`, `Makefile`.
+
+**Approved by:** Product Owner (2026-08-21)
+
+---
+
+## DEC-058 — Single-VPS disposable staging to production promotion model (Model C)
+
+**Date:** 2026-08-21
+
+**Status:** Accepted
+
+**Context:**
+
+The independent pre-staging architecture / resource audit established that both public Release 1 stack definitions (`docker-compose.prod.yml` and `docker-compose.demo.yml`) publish host ports 80/443/443-udp, so two public stacks cannot coexist on the SAME host — the WP-P7-06 → WP-P7-08 flow on the single Release 1 VPS is physically sequential. No document stated the staging/production model explicitly, and the staging-teardown ordering and the no-rebuild image-promotion rule (the Runbook previously implied rebuilds were normal operational behavior) were undefined. The Product Owner has decided the Release 1 deployment model.
+
+**Decision:**
+
+- One public ForgeMind stack exists on the VPS at a time. Staging and production CANNOT coexist on the current Release 1 port topology (ports 80/443/443-udp).
+- Release 1 adopts MODEL C: PRE-STAGING HARDENING → disposable staging deployment → staging verification of the exact Release SHA and built images → staging teardown → production deployment of THE SAME SHA and THE SAME previously verified application images → production verification.
+- Staging is disposable. It runs the exact candidate Release SHA S (recorded via `git rev-parse HEAD`).
+- Application images are built ONCE for S (serialized, one at a time).
+- WP-P7-07 verifies staging against exactly S and records/validates image identities (backend image ID, worker image ID, frontend image ID; the full service image inventory is additional evidence where cheap and unambiguous).
+- Successful staging verification authorizes only the later bounded production deployment action, never an automatic deployment.
+- Before production, staging runtime/state is intentionally torn down. Locally built verified application images are RETAINED. No rebuild, no pull.
+- Production checks out the same SHA S, verifies S before starting, verifies required image IDs equal the staging evidence, and starts with no-build / no-pull. Production MUST NOT rebuild application images and MUST NOT pull replacement images between staging verification and promotion. Production startup fails closed if required verified images are absent or their identities differ.
+- Production runtime configuration / FQDN / secrets may differ from staging — these are runtime inputs, not application-image content.
+- After production deployment, WP-P7-09 (independent production verification/evidence) remains mandatory. Production is NOT verified merely because staging passed.
+- GHCR / container registry is deferred with the already accepted manual-first deployment model (PD-9). A second VPS and a permanent same-host staging stack are NOT required for Release 1.
+- This decision adds the promotion model and does NOT weaken DEC-056 Demo isolation (the Demo remains a separate, isolated, disposable stack with its own project/volumes/database).
+- No VPS, DNS, provider, or deployment mutation occurs in the repository correction package recording and implementing this decision.
+
+**Reason:**
+
+The single-port public topology makes concurrent same-host staging+production physically impossible; Model C preserves evidence integrity on one host (same verified SHA + the same locally built images) without new front-door infrastructure and without the cost of a second VPS, and matches the established bounded-action philosophy.
+
+**Consequences:**
+
+- Staging teardown is NOT a rollback of staging verification evidence: the evidence remains valid because the promoted production artifact is bound to the same SHA and verified image identities.
+- The deployment contract now defines WP-P7-06 (disposable staging, exact SHA, serialized one-time build, SHA+image-ID recording), WP-P7-07 (staging verification bound to SHA S + image identities), the teardown window between WP-P7-07 PASS and WP-P7-08 (destroy staging runtime/state, retain verified images, no build/pull), WP-P7-08 (same SHA, same retained images, no rebuild/pull, fail closed on any mismatch), and WP-P7-09 (independent production verification).
+- The Release 1 runbook gains the RESOURCE PRECHECK, the explicit Model C procedure sequence, and the fail-closed mismatch handling (return to staging verification with a new candidate evidence boundary if SHA/image identity differs, a verified image is missing, or an operator accidentally rebuilt after staging verification).
+- Rollback remains possible for known-good commits/artifacts; the no-build/no-pull promotion rule concerns the staging→production promotion boundary specifically.
+- No VPS, DNS, provider, or deployment mutation occurs in WP-P7-CORR-01. VPS hardening remains blocked until that package completes its independent review / merge / post-merge lifecycle.
+
+**Affected documents/tests:** `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `docs/planning/phase_7_deployment_contract.md`, `docs/operations/release_1_runbook.md`, `docs/infra-production.md`, `docker-compose.prod.yml`.
+
+**Approved by:** Product Owner (2026-08-21)
+
+---
+
 ## Template for new decisions
 
 ```markdown
