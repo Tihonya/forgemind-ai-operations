@@ -65,8 +65,13 @@ Also confirm `vm.swappiness` is within the ~10–30 target for evidence:
 cat /proc/sys/vm/swappiness
 ```
 
-Staging evidence records the confirmed values so the promotion boundary can
-verify them unchanged.
+Staging evidence records the confirmed values as deployment-environment
+evidence. Host resource values (free RAM, swap presence/size, free disk,
+swappiness) are operational deployment gates, NOT immutable application
+artifact identity — the promotion pre-flight in §3.4 binds correctness to
+the artifact identity (repository SHA S + build-time input values +
+application image IDs). Relevant host values may be rechecked at promotion
+where relevant, but they are not required to remain numerically unchanged.
 
 ---
 
@@ -182,17 +187,32 @@ docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml exec backend python -m alembic upgrade head
 docker compose -f docker-compose.prod.yml exec backend python -m app.seed.generator.main
 
-# Record SHA + image identities into the staging evidence:
-git rev-parse HEAD                    # candidate SHA S
-docker image inspect --format '{{.Id}}' docker-compose_prod_backend   # backend image ID
-docker image inspect --format '{{.Id}}' docker-compose_prod_worker    # worker image ID
-docker image inspect --format '{{.Id}}' docker-compose_prod_frontend  # frontend image ID
+# Record the artifact identity into the staging evidence:
+git rev-parse HEAD                    # candidate SHA S (record: MUST equal S)
+
+# Build-time input used to build the frontend image (non-secret; the
+# Release 1 expected/default value is /api/v1). The value is compiled
+# into the frontend image — it is part of the artifact identity boundary.
+# If the .env line is absent, the Compose build default
+# ${VITE_API_BASE_URL:-/api/v1} applies — record `/api/v1` in that case.
+grep '^VITE_API_BASE_URL=' .env      # record the exact build value
+
+# Application image identities. docker-compose.prod.yml declares
+# `name: forgemind`, so Docker Compose v2 resolves the three build-derived
+# application image tags deterministically as:
+docker image inspect --format '{{.Id}}' forgemind-backend    # backend image ID
+docker image inspect --format '{{.Id}}' forgemind-worker     # worker image ID
+docker image inspect --format '{{.Id}}' forgemind-frontend   # frontend image ID
+
+# Full Compose-resolved image inventory (ADDITIONAL cheap evidence;
+# pure non-mutating render):
+docker compose -f docker-compose.prod.yml config --images
 ```
 
-(Adapt the image names to the resolved local image names for this host —
-the default project/filename-based names above follow Docker Compose v2
-conventions. The full `docker compose images` inventory is additional,
-cheap evidence.)
+The application image references above are exact for this repository: the
+prod Compose file has the explicit top-level `name: forgemind`, so there is
+no filename-derived default and no operator guessing — the same three
+references apply on any host.
 
 ### 3.2 STAGING VERIFICATION (WP-P7-07)
 
@@ -200,8 +220,8 @@ Read-only. Runs AT-001, AT-002, AT-014, the Golden Scenario walkthrough,
 health verification, and the reboot test against staging, bound to the
 exact SHA S. NEVER repair staging defects during this verification — a
 defect means solving separately and re-verifying against a new candidate
-SHA S. The evidence records/validates the exact SHA S and the image
-identities recorded in §3.1.
+SHA S. The evidence records/validates the exact SHA S, the build-time
+input values (VITE_API_BASE_URL), and the image identities recorded in §3.1.
 
 ### 3.3 STAGING TEARDOWN (only after WP-P7-07 PASS)
 
@@ -225,11 +245,20 @@ git fetch origin
 git checkout --detach S                # the SAME SHA S
 git rev-parse HEAD                     # FAIL CLOSED if this != S
 
-# Verify required image IDs equal the staging evidence (FAIL CLOSED on
-# any mismatch, absence, or accidental rebuild after staging verification):
-docker image inspect --format '{{.Id}}' docker-compose_prod_backend
-docker image inspect --format '{{.Id}}' docker-compose_prod_worker
-docker image inspect --format '{{.Id}}' docker-compose_prod_frontend
+# Build-time input check — the intended production VITE_API_BASE_URL must
+# equal the staging-recorded build value (FAIL CLOSED on any difference;
+# it is compiled into the frontend image):
+grep '^VITE_API_BASE_URL=' .env      # compare to staging evidence
+
+# Resolve the Compose image inventory (pure non-mutating render):
+docker compose -f docker-compose.prod.yml config --images
+
+# Verify required application image IDs equal the staging evidence (FAIL
+# CLOSED on any mismatch, absence, or accidental rebuild after staging
+# verification). The references are exact for this repository:
+docker image inspect --format '{{.Id}}' forgemind-backend
+docker image inspect --format '{{.Id}}' forgemind-worker
+docker image inspect --format '{{.Id}}' forgemind-frontend
 
 # Start production with NO rebuild and NO pull:
 docker compose -f docker-compose.prod.yml up -d --no-build --pull never
@@ -242,9 +271,17 @@ docker compose -f docker-compose.prod.yml exec backend python -m app.seed.genera
 curl -f https://<FQDN>/health
 ```
 
-Production runtime configuration, the final FQDN (`CADDY_DOMAIN`), and
-production secrets MAY differ from staging — they are runtime inputs, not
-application-image content.
+Production RUNTIME configuration, the final FQDN (`CADDY_DOMAIN`), and
+production secrets MAY differ from staging — the FQDN/TLS contact,
+database/Redis credentials, and other container environment values that
+are NOT compiled into an application image. BUILD-TIME inputs MUST NOT
+differ: `VITE_API_BASE_URL` is compiled into the frontend image during
+`npm run build` (frontend Dockerfile `ARG`/`ENV` → Vite statically
+substitutes `import.meta.env.VITE_API_BASE_URL`; nginx performs NO runtime
+substitution). Changing a build-time input after staging verification
+REQUIRES a rebuild, and the rebuilt application image set is a NEW
+candidate artifact set that must repeat the staging deployment and
+verification cycle before production promotion.
 
 Caddy obtains the TLS certificate automatically after the first
 successful start (automatic HTTPS; no manual cert handling).
@@ -254,9 +291,16 @@ production from the changed artifact; return to staging verification with
 a new candidate evidence boundary:
 
 - SHA differs from the staging-verified S;
+- a build-time input value differs from the staging evidence (currently:
+  VITE_API_BASE_URL);
 - an application image ID differs from the staging evidence;
 - a verified image is missing;
 - an operator accidentally rebuilt after staging verification.
+
+The Model C candidate artifact identity is: repository SHA + build-time
+input values + verified application image IDs. The Git SHA alone does not
+identify a rebuild with changed build args — the SHA may stay the same
+while the image IDs change.
 
 **WP-P7-09 remains mandatory after production deployment** — production is
 not verified merely because staging passed.

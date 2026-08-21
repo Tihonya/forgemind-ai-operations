@@ -164,6 +164,10 @@ SHA, SERIALIZED (one service at a time; never run backend/worker/frontend
 builds concurrently on the 2 vCPU / 8 GB host). No rebuild and no pull may
 occur between successful staging verification and production promotion.
 
+The Model C candidate artifact identity is: repository SHA + build-time
+input values + verified application image IDs. The Git SHA alone does not
+identify a rebuild with changed build args.
+
 **Production promotion start (after staging verification + teardown)** —
 the same exact SHA S and the SAME retained verified images; fail-closed
 against accidental rebuild or pull:
@@ -186,8 +190,13 @@ automatically after the first successful deployment (automatic HTTPS; no
 manual cert handling).
 
 The production `CADDY_DOMAIN` / `CADDY_EMAIL` / secret values may differ
-from the staging ones — they are runtime inputs, not image content. New
-production runtime data may be created at promotion time.
+from the staging ones — those are GENUINELY RUNTIME inputs, not image
+content. BUILD-TIME inputs MUST NOT differ: `VITE_API_BASE_URL` is
+compiled into the frontend image (frontend Dockerfile `ARG`/`ENV` → Vite
+build; consumed as `import.meta.env.VITE_API_BASE_URL` in
+`frontend/src/lib/api.ts`; nginx performs no runtime substitution) and is
+recorded in the staging evidence boundary, then re-verified at promotion.
+New production runtime data may be created at promotion time.
 
 ## 5.1 Host resource discipline (DEC-057 / DEC-058)
 
@@ -199,6 +208,11 @@ production runtime data may be created at promotion time.
   Docker Compose does NOT create it, and no repository task creates it.
 - Evidence of staging verification records the swap presence/size as part
   of the deployment environment (see the RESOURCE PRECHECK in the runbook).
+  Host resource values are operational deployment gates, not immutable
+  application-artifact identity — the promotion boundary's immutable
+  identity is the candidate SHA + build-time inputs + application image
+  IDs; host values may be rechecked at promotion where relevant but are
+  not required to remain numerically unchanged.
 - Builds are SERIALIZED on this host (one application image at a time).
 - Backend runs 2 Uvicorn workers (one per 2 vCPU; `infra/docker/backend.dockerfile`
   production stage). The development-stage command is unchanged.

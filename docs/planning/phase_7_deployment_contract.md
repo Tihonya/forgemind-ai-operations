@@ -283,9 +283,12 @@ one VPS, recorded in DEC-058:
   same-host staging stack is NOT required.
 - Staging is disposable and runs the exact candidate Release SHA S.
   Application images are built ONCE for S (serialized, one at a time).
-  The candidate SHA and resulting image identities are recorded.
+  The candidate SHA, the build-time input values, and the resulting image
+  identities are recorded. The Model C candidate artifact identity is:
+  repository SHA + build-time inputs + verified application image IDs —
+  the Git SHA alone does not identify a rebuild with changed build args.
 - WP-P7-07 verifies staging; its evidence binds to exact SHA S and
-  records/validates image identities.
+  records/validates the build-time input values and image identities.
 - Between WP-P7-07 PASS and WP-P7-08: staging runtime/state is torn down,
   built application images are retained, no build/pull occurs.
 - WP-P7-08 checks out exact same SHA S, uses the SAME locally retained
@@ -472,10 +475,12 @@ Lifecycle: implementation → independent review → regular merge → post-merg
 On the hardened single VPS (2 vCPU / 8 GB / 100 GB SSD, swap created during hardening):
 
 - checkout the exact candidate Release SHA S (`git rev-parse HEAD` recorded);
+- record the build-time input values used for the build (currently:
+  `VITE_API_BASE_URL`, non-secret; Release 1 expected/default `/api/v1`);
 - build the application images (backend, worker, frontend) exactly ONCE for S — builds are SERIALIZED (one at a time), never concurrent;
 - start the disposable staging stack;
 - run migrations and the canonical Golden seed;
-- record candidate SHA S and the resulting application image IDs (backend / worker / frontend — full service image inventory as additional evidence where cheap and unambiguous);
+- record candidate SHA S and the resulting application image IDs. The references are deterministic: the production Compose project (`name: forgemind`) resolves them as `forgemind-backend` / `forgemind-worker` / `forgemind-frontend`; the Compose-resolved full image inventory (`docker compose -f docker-compose.prod.yml config --images`, pure non-mutating render) is recorded as additional evidence where cheap and unambiguous;
 - verify health.
 
 Dependencies: WP-P7-CORR-01 merged and post-merge verified; WP-P7-05 merged and post-merge verified; PO approval for VPS access; domain/DNS configured; VPS security hardening completed and independently verified.
@@ -486,7 +491,7 @@ Lifecycle: deployment action → verification.
 
 Read-only verification, never repairing staging defects: AT-001, AT-002, AT-014 on staging; Golden Scenario walkthrough; health verification; reboot test.
 
-All evidence binds to the exact candidate SHA S and records/validates the application image identities built and started by WP-P7-06 (backend / worker / frontend image IDs).
+All evidence binds to the exact candidate SHA S and records/validates the application image identities and the build-time input values (VITE_API_BASE_URL) built and started by WP-P7-06 (backend / worker / frontend image IDs).
 
 Dependencies: WP-P7-06 (staging deployed).
 
@@ -501,10 +506,11 @@ If staging defects exist: create a separate bounded remediation implementation p
 On the same VPS, after staging teardown:
 
 - checkout the exact same SHA S and verify it before starting;
-- verify required application image IDs equal the staging verification evidence;
+- verify the intended build-time input values equal the staging evidence (currently: `VITE_API_BASE_URL`);
+- verify required application image IDs equal the staging verification evidence (deterministic references `forgemind-backend` / `forgemind-worker` / `forgemind-frontend`);
 - start production with NO rebuild and NO pull (`up -d --no-build --pull never`) using the SAME locally retained verified application images;
-- fail closed if the SHA differs, a required verified image is absent, an image identity differs, or an operator accidentally rebuilt after staging verification — DO NOT deploy the changed artifact; return to staging verification with a new candidate evidence boundary;
-- production runtime configuration, final FQDN, and production secrets may differ from staging — they are runtime inputs, not application-image content; new production runtime data may be created.
+- fail closed if the SHA differs, a build-time input value differs, a required verified image is absent, an image identity differs, or an operator accidentally rebuilt after staging verification — DO NOT deploy the changed artifact; return to staging verification with a new candidate evidence boundary;
+- production runtime configuration, final FQDN, and production secrets may differ from staging ONLY where they are genuinely runtime inputs (the final FQDN, TLS contact, database/Redis credentials, and other container environment values that are not compiled into an image). BUILD-TIME inputs MUST NOT differ: `VITE_API_BASE_URL` is compiled into the frontend image. If a build-time input changes after staging verification, the verified frontend image is no longer the artifact intended for production: production promotion MUST STOP, do NOT rebuild during promotion, and the rebuilt application image set is a NEW candidate artifact set that must repeat staging deployment and verification before production promotion (the Git SHA may remain the same; the image IDs change); new production runtime data may be created.
 
 Dependencies: WP-P7-07 (staging verification passed); staging teardown performed; explicit PO production-deployment authorization.
 
@@ -622,18 +628,24 @@ Phase 6 and DEC-053 remain intact. Release 1 remains NOT READY / NOT DEPLOYED. N
 
 ### Application image identity contract (evidence boundary, DEC-058)
 
-The simplest defensible single-host Release 1 evidence boundary binds staging
-evidence to, at minimum:
+The single-host Release 1 evidence boundary binds staging evidence to:
 
 - repository SHA (exact candidate Release SHA S);
+- build-time input values used for the build (currently: `VITE_API_BASE_URL`
+  — non-secret, Release 1 expected/default `/api/v1`);
 - backend image ID;
 - worker image ID;
 - frontend image ID.
 
+The application image references are deterministic: `docker-compose.prod.yml`
+declares `name: forgemind` and backend / worker / frontend use `build:` with no
+explicit `image:`, so Docker Compose v2 resolves them as `forgemind-backend` /
+`forgemind-worker` / `forgemind-frontend`; evidence records the
+`docker image inspect --format '{{.Id}}'` IDs of those three references.
 Where the existing Compose tooling makes it cheap and unambiguous, the full
-service image inventory is recorded as additional evidence
-(`docker image inspect`-based IDs, plus compose-reported hashes/images per
-service).
+service image inventory (`docker compose -f docker-compose.prod.yml
+config --images` — a pure non-mutating render) is recorded as additional
+evidence.
 
 Not introduced by Release 1: GHCR, container-registry auth, an image
 publishing workflow, or CI/CD deployment automation (PD-9 stays in force).
@@ -642,8 +654,8 @@ The runbook must make it impossible to accidentally rebuild between staging
 verification and production promotion — production startup uses the explicit
 fail-closed form `docker compose ... up -d --no-build --pull never` (both
 supported options of the projected Docker Compose v2 tooling) after
-verification. Recorded image identities are compared against staging
-evidence before that startup.
+verification. Recorded build-time input values and image identities are
+compared against staging evidence before that startup.
 
 ## 12. Explicit Next Action
 
