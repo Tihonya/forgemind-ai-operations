@@ -51,6 +51,7 @@ jobs:
           bash -n scripts/tests/test_backup.sh
           bash -n scripts/tests/test_backup_cycle.sh
           bash -n scripts/tests/test_worker_healthcheck.sh
+          bash -n scripts/tests/test_frontend_healthcheck.sh
           bash -n scripts/tests/test_demo_compose.sh
           bash -n scripts/tests/test_demo_reset.sh
 
@@ -59,5 +60,6 @@ jobs:
           bash scripts/tests/test_backup.sh
           bash scripts/tests/test_backup_cycle.sh
           bash scripts/tests/test_worker_healthcheck.sh
+          bash scripts/tests/test_frontend_healthcheck.sh
           bash scripts/tests/test_demo_compose.sh
           bash scripts/tests/test_demo_reset.sh

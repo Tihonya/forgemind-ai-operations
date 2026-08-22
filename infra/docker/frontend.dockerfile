@@ -52,8 +52,15 @@ COPY infra/docker/nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 # Health check
+# The probe target is pinned to 127.0.0.1 on purpose (WP-P7-07 F-1):
+# BusyBox wget resolves "localhost" to ::1 first under /etc/hosts entries
+# like "::1 localhost ...", while nginx (infra/docker/nginx.conf) listens
+# IPv4-only (`listen 80;`). Probing "localhost" therefore fails with
+# "can't connect to remote host: Connection refused" on [::1]:80 even
+# though nginx serves the SPA fine on 127.0.0.1:80. The IPv4 literal
+# removes the resolution ambiguity while staying strictly network-local.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1
 
 # Default command
 CMD ["nginx", "-g", "daemon off;"]
