@@ -94,14 +94,26 @@ export function formatActionType(actionType: string): string {
 
 /**
  * Fetch the caller-scoped page of approval requests.
+ *
+ * @param limit  Page size (default 50).
+ * @param offset Page offset (default 0).
+ * @param status Optional status filter. When provided, results and `total`
+ *               are filtered to that status on the backend. The filter
+ *               composes with the caller's RBAC read scope and never
+ *               widens it. Omit to preserve existing unfiltered behavior.
  */
 export async function fetchApprovalRequests(
   limit = 50,
   offset = 0,
+  status?: ApprovalStatus,
 ): Promise<ApprovalRequestListResponse> {
   const response = await api.get<ApprovalRequestListResponse>(
     '/approval-requests',
-    { params: { limit, offset } },
+    {
+      params: status
+        ? { limit, offset, status }
+        : { limit, offset },
+    },
   )
   return response.data
 }

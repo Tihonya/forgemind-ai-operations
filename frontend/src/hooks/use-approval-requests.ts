@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import {
   fetchApprovalRequests,
   type ApprovalRequestResponse,
+  type ApprovalStatus,
 } from '@/lib/approval-api'
 
 export interface UseApprovalRequestsResult {
@@ -20,17 +21,36 @@ export interface UseApprovalRequestsResult {
   refetch: () => void
 }
 
+export interface UseApprovalRequestsOptions {
+  /** Optional status filter forwarded to the backend. */
+  status?: ApprovalStatus
+  /** Page size (default 50). */
+  limit?: number
+  /** Page offset (default 0). */
+  offset?: number
+}
+
 /**
  * Fetch the caller-scoped approval requests.
+ *
+ * When `status` is provided, the backend filters results and `total` to
+ * that status (composing with the caller's RBAC read scope). When omitted,
+ * behavior is unchanged from the original unfiltered list.
  */
-export function useApprovalRequests(): UseApprovalRequestsResult {
+export function useApprovalRequests(
+  options?: UseApprovalRequestsOptions,
+): UseApprovalRequestsResult {
+  const status = options?.status
+  const limit = options?.limit ?? 50
+  const offset = options?.offset ?? 0
+
   const { data, isLoading, isError, error, refetch } = useQuery<
     { items: ApprovalRequestResponse[]; total: number },
     Error
   >({
-    queryKey: ['approval-requests'],
+    queryKey: ['approval-requests', status, limit, offset],
     queryFn: async () => {
-      const result = await fetchApprovalRequests()
+      const result = await fetchApprovalRequests(limit, offset, status)
       return { items: result.items, total: result.total }
     },
     staleTime: 30_000,

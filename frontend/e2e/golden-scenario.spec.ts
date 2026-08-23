@@ -78,7 +78,42 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
 
   // Wait for navigation to dashboard
   await expect(page).toHaveURL('/', { timeout: 10000 });
-  await expect(page.getByRole('heading', { name: /Executive Dashboard/i, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
+
+  // ────────────────────────────────────────────────────────────
+  // Step 2b: Verify live WP-UX-01 Dashboard widget contract
+  // ────────────────────────────────────────────────────────────
+  // The canonical CI seed creates no workflow runs and no approval
+  // requests, so the fresh-state Dashboard must show the truthful
+  // empty-state text — not loading skeletons, not stale placeholders.
+  // These assertions verify the live widget contract without creating
+  // any application writes (no workflow runs, no provider calls, no
+  // approval requests).
+
+  // Latest AI Analysis widget is visible
+  await expect(page.getByTestId('latest-ai-analysis-widget')).toBeVisible();
+  await expect(page.getByText('Latest AI Analysis')).toBeVisible();
+
+  // Fresh seed: no workflow runs → "No AI analysis yet" + CTA link
+  await expect(page.getByTestId('latest-ai-analysis-empty')).toBeVisible();
+  await expect(page.getByText('No AI analysis yet')).toBeVisible();
+  await expect(page.getByTestId('latest-ai-analysis-cta')).toBeVisible();
+  await expect(page.getByTestId('latest-ai-analysis-cta')).toContainText(/Review supply risks/i);
+
+  // Awaiting Decision widget is visible
+  await expect(page.getByTestId('awaiting-decision-widget')).toBeVisible();
+  await expect(page.getByText('Awaiting Decision')).toBeVisible();
+
+  // Fresh seed: no pending approval requests → "No decisions waiting"
+  await expect(page.getByTestId('awaiting-decision-zero')).toBeVisible();
+  await expect(page.getByText('No decisions waiting')).toBeVisible();
+
+  // Stale user-facing text from removed placeholders must be absent
+  await expect(page.getByText(/Unavailable/i)).not.toBeVisible();
+  await expect(page.getByText(/Latest Agent Runs/i)).not.toBeVisible();
+  await expect(page.getByText(/Pending Approvals/i)).not.toBeVisible();
+  await expect(page.getByText(/Estimated Time Saved/i)).not.toBeVisible();
+  await expect(page.getByText(/Metric available in Phase 5/i)).not.toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 3: Verify Dashboard - Active Plan and Risk Summary
