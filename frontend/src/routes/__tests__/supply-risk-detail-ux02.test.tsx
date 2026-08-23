@@ -21,7 +21,7 @@
  * - No duplicate Start appears after restored completed run
  */
 
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -64,8 +64,8 @@ vi.mock('@/lib/workflow-api', async () => {
 vi.mock('@/hooks/useActivePlan', () => ({
   useActivePlan: () => ({
     activePlan: activePlanMock,
-    isLoading: false,
-    error: null,
+    isLoading: planLoadingMock,
+    error: planErrorMock,
   }),
 }));
 
@@ -140,10 +140,13 @@ let authUser: {
   roles: ['production_manager'],
 };
 
-let activePlanMock: { code: string; status: string } = {
+let activePlanMock: { code: string; status: string } | null = {
   code: 'PLAN-2026-W31',
   status: 'ACTIVE',
 };
+
+let planLoadingMock = false;
+let planErrorMock: Error | null = null;
 
 vi.mock('@/contexts/auth.context', () => ({
   useAuth: () => ({
@@ -303,6 +306,8 @@ describe('SupplyRiskDetail — WP-UX-02 Restoration & Completed Moment', () => {
       code: 'PLAN-2026-W31',
       status: 'ACTIVE',
     };
+    planLoadingMock = false;
+    planErrorMock = null;
     // Default: no existing run → restoration returns empty.
     vi.mocked(workflowApi.fetchWorkflowRuns).mockResolvedValue(makeEmptyListResponse());
     // Default: fetchWorkflowRun returns PENDING (for polling tests).
@@ -583,5 +588,335 @@ describe('SupplyRiskDetail — WP-UX-02 Restoration & Completed Moment', () => {
 
     // Start button must not appear.
     expect(screen.queryByTestId('start-workflow-button')).not.toBeInTheDocument();
+  });
+
+  // -----------------------------------------------------------------------
+  // F-1/F-4: UNRESOLVED PLAN — NO GLOBAL QUERY, NO CROSS-PLAN INSTALL
+  // -----------------------------------------------------------------------
+
+  it('F-1/F-4: while active plan is unresolved, no global workflow-runs fetch is issued', async () => {
+    // Simulate cold load: plan still loading.
+    planLoadingMock = true;
+    activePlanMock = null;
+
+    // This mock should NEVER be called while plan is unresolved.
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockResolvedValue(makeEmptyListResponse());
+
+    renderDetail();
+
+    // Wait a tick to let any potential effect fire.
+    await waitFor(() => {
+      expect(screen.getByText('Loading risk...')).toBeInTheDocument();
+    });
+
+    // No fetchWorkflowRuns call should have been made — the query is disabled.
+    expect(workflowApi.fetchWorkflowRuns).not.toHaveBeenCalled();
+  });
+
+  it('F-1/F-4: plan resolves after loading → only plan-scoped fetch occurs, not a global one', async () => {
+    // Phase 1: plan is loading — no fetch should happen.
+    planLoadingMock = true;
+    activePlanMock = null;
+
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockResolvedValue(makeEmptyListResponse());
+
+    const { rerender, queryClient } = renderDetail();
+
+    // No fetch during loading.
+    await waitFor(() => {
+      expect(screen.getByText('Loading risk...')).toBeInTheDocument();
+    });
+    expect(workflowApi.fetchWorkflowRuns).not.toHaveBeenCalled();
+
+    // Phase 2: plan resolves to PLAN-B.
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockClear();
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W42', status: 'ACTIVE' };
+
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+            <Route path="/workflow-runs/:runId" element={<div>Run Detail Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Now the plan-scoped fetch should fire with PLAN-2026-W42.
+    await waitFor(() => {
+      expect(workflowApi.fetchWorkflowRuns).toHaveBeenCalledWith(1, 0, 'PLAN-2026-W42');
+    });
+
+    // No global (undefined planCode) fetch should have been made.
+    const globalCallFound = vi.mocked(workflowApi.fetchWorkflowRuns).mock.calls.some(
+      (call) => call[2] === undefined,
+    );
+    expect(globalCallFound).toBe(false);
+  });
+
+  it('F-1/F-4: Dashboard global cache does not become Risk Detail restoration data', async () => {
+    // This test uses a real QueryClient to verify that a global workflow-runs
+    // query (as Dashboard would issue) does NOT get consumed by Risk Detail
+    // when the plan is unresolved.
+    const queryClient = createQueryClient();
+
+    // Pre-populate the cache with global data (as if Dashboard had fetched).
+    queryClient.setQueryData(
+      ['workflow-runs', null, 5, 0],
+      {
+        items: [
+          {
+            id: 'run-global-001',
+            correlation_id: 'corr-global',
+            state: 'COMPLETED',
+            plan_id: 'plan-A',
+            triggered_by: 'someone',
+            error_code: null,
+            error_detail: null,
+            started_at: '2026-01-01T10:00:00Z',
+            completed_at: '2026-01-01T10:05:00Z',
+            created_at: '2026-01-01T10:00:00Z',
+            updated_at: '2026-01-01T10:05:00Z',
+          },
+        ],
+        limit: 5,
+        offset: 0,
+        total: 1,
+      },
+    );
+
+    // Render with plan unresolved.
+    planLoadingMock = true;
+    activePlanMock = null;
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockResolvedValue(makeEmptyListResponse());
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+            <Route path="/workflow-runs/:runId" element={<div>Run Detail Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Wait for skeleton.
+    await waitFor(() => {
+      expect(screen.getByText('Loading risk...')).toBeInTheDocument();
+    });
+
+    // No workflow status should appear — the global cached run must not
+    // be installed as restoration data.
+    expect(screen.queryByTestId('workflow-status')).not.toBeInTheDocument();
+
+    // No fetch should have been issued.
+    expect(workflowApi.fetchWorkflowRuns).not.toHaveBeenCalled();
+  });
+
+  // -----------------------------------------------------------------------
+  // F-4: PLAN-SWITCH — stale restoration data cannot overwrite current plan
+  // -----------------------------------------------------------------------
+
+  it('F-4: plan-A restoration data completing after plan switch to plan-B does not install plan-A run', async () => {
+    // Phase 1: Start with plan A, no existing run.
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    // Make the restoration query hang so we can change the plan before it resolves.
+    let resolveRestoration!: (value: WorkflowRunListResponse) => void;
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockImplementation(
+      () => new Promise((resolve) => { resolveRestoration = resolve; }),
+    );
+
+    const { rerender, queryClient } = renderDetail();
+
+    // Wait for the plan-A restoration query to be issued.
+    await waitFor(() => {
+      expect(workflowApi.fetchWorkflowRuns).toHaveBeenCalledWith(1, 0, 'PLAN-2026-W31');
+    });
+
+    // Phase 2: Plan changes to plan B.
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockClear();
+    // Now set up a normal mock for plan-B's query.
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockResolvedValue(makeEmptyListResponse());
+
+    activePlanMock = { code: 'PLAN-2026-W42', status: 'ACTIVE' };
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/supply-risk/RISK-001']}>
+          <Routes>
+            <Route path="/supply-risk/:riskId" element={<SupplyRiskDetail />} />
+            <Route path="/workflow-runs/:runId" element={<div>Run Detail Page</div>} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    // Wait for plan-B query to fire.
+    await waitFor(() => {
+      expect(workflowApi.fetchWorkflowRuns).toHaveBeenCalledWith(1, 0, 'PLAN-2026-W42');
+    });
+
+    // Phase 3: The stale plan-A restoration resolves with a run from plan A.
+    await act(async () => {
+      resolveRestoration(makeListWithRun('run-plan-A-stale', 'COMPLETED'));
+    });
+
+    // Phase 4: The stale plan-A run must NOT be installed.
+    // No workflow status should appear for the stale run.
+    await waitFor(() => {
+      expect(screen.queryByTestId('workflow-status')).not.toBeInTheDocument();
+    });
+
+    // Start button should be available for plan B (no existing run).
+    await waitFor(() => {
+      expect(screen.getByTestId('start-workflow-button')).toBeInTheDocument();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // F-5: RESTORATION ERROR FAILS CLOSED
+  // -----------------------------------------------------------------------
+
+  it('F-5: restoration query hard-fails → Start remains unavailable and error is visible', async () => {
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    // Make the restoration query reject.
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockRejectedValue(
+      new Error('Network error'),
+    );
+
+    renderDetail();
+
+    // The restoration error should be visible (retry:1 in hook adds delay).
+    await waitFor(() => {
+      expect(screen.getByTestId('restoration-error')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // Start must NOT be available.
+    expect(screen.queryByTestId('start-workflow-button')).not.toBeInTheDocument();
+
+    // No raw error detail leakage.
+    expect(screen.queryByText('Network error')).not.toBeInTheDocument();
+  });
+
+  it('F-5: restoration error shows safe user-facing message and retry button', async () => {
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockRejectedValue(
+      new Error('Internal server error'),
+    );
+
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('restoration-error')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // Safe message is visible.
+    expect(screen.getByTestId('restoration-error')).toHaveTextContent(
+      /Couldn.*check for an existing AI analysis/,
+    );
+    // Retry button is visible.
+    expect(screen.getByTestId('restoration-retry')).toBeInTheDocument();
+  });
+
+  it('F-5: restoration retry → refetch succeeds with zero runs → Start becomes available', async () => {
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    // Hook has retry:1, so the initial attempt AND the automatic retry must
+    // both fail before isError becomes true. Then the user-initiated refetch
+    // (third call) succeeds with an empty list.
+    vi.mocked(workflowApi.fetchWorkflowRuns)
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce(makeEmptyListResponse());
+
+    renderDetail();
+
+    // Error appears (after initial + retry both fail).
+    await waitFor(() => {
+      expect(screen.getByTestId('restoration-error')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // Start not available during error.
+    expect(screen.queryByTestId('start-workflow-button')).not.toBeInTheDocument();
+
+    // Click retry.
+    await act(async () => {
+      const retryButton = screen.getByTestId('restoration-retry');
+      await userEvent.click(retryButton);
+    });
+
+    // After successful refetch, Start should become available.
+    await waitFor(() => {
+      expect(screen.getByTestId('start-workflow-button')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // Error should be gone.
+    expect(screen.queryByTestId('restoration-error')).not.toBeInTheDocument();
+  });
+
+  it('F-5: restoration retry → refetch succeeds with existing run → Start stays unavailable', async () => {
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    const runId = 'run-restored-001';
+
+    // Hook has retry:1, so the initial attempt AND the automatic retry must
+    // both fail before isError becomes true. Then the user-initiated refetch
+    // (third call) succeeds with a completed run.
+    vi.mocked(workflowApi.fetchWorkflowRuns)
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockRejectedValueOnce(new Error('Network error'))
+      .mockResolvedValueOnce(makeListWithRun(runId, 'COMPLETED'));
+
+    vi.mocked(workflowApi.fetchWorkflowRun).mockResolvedValue(
+      makeCompletedRunWithRec('RISK-001', runId),
+    );
+
+    renderDetail();
+
+    // Error appears (after initial + retry both fail).
+    await waitFor(() => {
+      expect(screen.getByTestId('restoration-error')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // Click retry.
+    await act(async () => {
+      const retryButton = screen.getByTestId('restoration-retry');
+      await userEvent.click(retryButton);
+    });
+
+    // After refetch finds existing run, Start should NOT appear.
+    await waitFor(() => {
+      expect(screen.queryByTestId('start-workflow-button')).not.toBeInTheDocument();
+    }, { timeout: 5000 });
+  });
+
+  it('F-5: no recommendation from unrelated/global data is shown during restoration error', async () => {
+    planLoadingMock = false;
+    activePlanMock = { code: 'PLAN-2026-W31', status: 'ACTIVE' };
+
+    vi.mocked(workflowApi.fetchWorkflowRuns).mockRejectedValue(
+      new Error('Server error'),
+    );
+
+    renderDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('restoration-error')).toBeInTheDocument();
+    }, { timeout: 5000 });
+
+    // No recommendation panel should appear.
+    expect(screen.queryByTestId('recommendation-panel')).not.toBeInTheDocument();
+    // No workflow status.
+    expect(screen.queryByTestId('workflow-status')).not.toBeInTheDocument();
   });
 });

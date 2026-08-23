@@ -22,6 +22,10 @@ export interface UseWorkflowRunsResult {
   isLoading: boolean;
   isError: boolean;
   error: Error | null;
+  /** The planCode used for this query, or null if unfiltered. */
+  queriedPlanCode: string | null;
+  /** True when the query is deliberately disabled (not yet authoritative). */
+  isDisabled: boolean;
   refetch: () => void;
 }
 
@@ -36,6 +40,19 @@ export interface UseWorkflowRunsOptions {
    * Undefined means no filter (all plans).
    */
   planCode?: string;
+  /**
+   * Explicit execution gate. When false, the queryFn MUST NOT execute
+   * and no network request is issued. Default: true (enabled).
+   *
+   * Use this to prevent an unfiltered/global query from firing before
+   * a required parameter (e.g. planCode) is resolved. When disabled:
+   * - isLoading is false (not pending);
+   * - runs is [] and total is 0 (no data);
+   * - isDisabled is true (callers can distinguish "not yet
+   *   authoritative / disabled" from "authoritative query completed
+   *   with zero runs").
+   */
+  enabled?: boolean;
 }
 
 /**
@@ -54,6 +71,7 @@ export function useWorkflowRuns(
   const limit = options?.limit ?? 10;
   const offset = options?.offset ?? 0;
   const planCode = options?.planCode;
+  const enabled = options?.enabled ?? true;
 
   const { data, isLoading, isError, error, refetch } = useQuery<
     WorkflowRunListResponse,
@@ -63,6 +81,7 @@ export function useWorkflowRuns(
     queryFn: () => fetchWorkflowRuns(limit, offset, planCode),
     staleTime: 30_000,
     retry: 1,
+    enabled,
   });
 
   return {
@@ -71,6 +90,8 @@ export function useWorkflowRuns(
     isLoading,
     isError,
     error,
+    queriedPlanCode: planCode ?? null,
+    isDisabled: !enabled,
     refetch,
   };
 }

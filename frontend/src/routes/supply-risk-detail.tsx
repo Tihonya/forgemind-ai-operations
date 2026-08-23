@@ -74,14 +74,25 @@ export default function SupplyRiskDetail() {
   // -----------------------------------------------------------------------
   // Query the backend for the latest workflow run belonging to the active
   // production plan. This survives refresh, navigation, and plan switching.
+  //
+  // F-1 FIX: The query is DISABLED while the active plan is unresolved
+  // (currentPlanCode is undefined). This prevents an unfiltered/global
+  // workflow-runs query from racing the plan-resolution query and
+  // installing a cross-plan run before the concrete plan is known.
   const currentPlanCode = activePlan?.code;
 
   const {
     runs: planRuns,
     total: planRunTotal,
     isLoading: restorationLoading,
+    isError: restorationError,
+    queriedPlanCode,
+    isDisabled: restorationDisabled,
+    refetch: refetchRestoration,
   } = useWorkflowRuns(
-    currentPlanCode ? { planCode: currentPlanCode, limit: 1, offset: 0 } : undefined,
+    currentPlanCode
+      ? { planCode: currentPlanCode, limit: 1, offset: 0, enabled: true }
+      : { limit: 1, offset: 0, enabled: false },
   );
 
   // The latest run for this plan (first item due to created_at DESC ordering).
@@ -104,11 +115,25 @@ export default function SupplyRiskDetail() {
   // as the active run so useWorkflowRun polls/fetches its detail. This
   // effect runs whenever the restored run changes (e.g. after refresh,
   // navigation back, or initial load).
+  //
+  // F-1 FIX — Plan affinity: Only install the restored run when:
+  // 1. The restoration query is NOT disabled (plan was resolved);
+  // 2. The queriedPlanCode matches the currentPlanCode (the data belongs
+  //    to the same plan that is currently active — not a stale or global
+  //    result from before plan resolution);
+  // 3. activeRunId has not already been set by Start/Retry.
   useEffect(() => {
-    if (hasExistingRun && restoredRun && !activeRunId) {
+    if (
+      hasExistingRun &&
+      restoredRun &&
+      !activeRunId &&
+      !restorationDisabled &&
+      queriedPlanCode !== null &&
+      queriedPlanCode === currentPlanCode
+    ) {
       setActiveRunId(restoredRun.id);
     }
-  }, [hasExistingRun, restoredRun, activeRunId]);
+  }, [hasExistingRun, restoredRun, activeRunId, restorationDisabled, queriedPlanCode, currentPlanCode]);
 
   const { user } = useAuth();
 
@@ -173,18 +198,28 @@ export default function SupplyRiskDetail() {
   // ── Race / duplicate-start safety (WP-UX-02 §10) ──────────────────────
   //
   // Start is NOT actionable while:
-  // 1. The plan-scoped latest-run lookup is unresolved (restorationLoading).
-  //    This prevents a race where Start briefly appears before the
-  //    restoration query discovers an existing run.
-  // 2. An existing nonterminal run is active (PENDING/RUNNING/AWAITING).
-  // 3. An existing COMPLETED run has been restored — no duplicate starts.
+  // 1. The plan-scoped latest-run lookup is unresolved — either still
+  //    loading (restorationLoading) or disabled because the active plan
+  //    is not yet resolved (restorationDisabled). Both states prevent
+  //    a race where Start briefly appears before the restoration query
+  //    discovers an existing run or before the plan is even known.
+  // 2. The restoration query hard-failed (restorationError). F-5: an
+  //    unknown restoration state is NOT the same as "no existing run".
+  //    Start must remain unavailable until the authoritative lookup
+  //    succeeds (either with a real run or an authoritative zero-result).
+  // 3. An existing nonterminal run is active (PENDING/RUNNING/AWAITING).
+  // 4. An existing COMPLETED run has been restored — no duplicate starts.
   //
   // Additionally, a polling error for an existing activeRunId must NOT
   // re-enable Start (Target A).
-  const restorationPending = restorationLoading && currentPlanCode !== undefined;
+  const restorationPending =
+    (restorationLoading || restorationDisabled) && currentPlanCode !== undefined;
+  const restorationFailed =
+    restorationError && !restorationDisabled && !restorationLoading;
   const canStart =
     isProductionManager &&
     !restorationPending &&
+    !restorationFailed &&
     activeRunId === undefined &&
     (workflowState === undefined || workflowState === 'COMPLETED') &&
     !hasExistingRun;
@@ -505,6 +540,37 @@ export default function SupplyRiskDetail() {
             >
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               Checking for existing analysis...
+            </div>
+          )}
+
+          {/* F-5: Restoration error — fail closed */}
+          {restorationFailed && activeRunId === undefined && (
+            <div
+              className="flex items-start gap-3 rounded-md border border-red-600/30 bg-red-600/10 px-4 py-3"
+              data-testid="restoration-error"
+              role="alert"
+            >
+              <AlertCircle className="mt-0.5 h-5 w-5 flex-shrink-0 text-red-500" aria-hidden="true" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-300">
+                  Couldn&apos;t check for an existing AI analysis
+                </p>
+                <p className="mt-1 text-xs text-red-400">
+                  We couldn&apos;t check for an existing AI analysis. Try again before starting a new analysis.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    void refetchRestoration();
+                  }}
+                  data-testid="restoration-retry"
+                  className="mt-2 border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
+                >
+                  <RotateCw className="h-3.5 w-3.5" />
+                  Try again
+                </Button>
+              </div>
             </div>
           )}
 

@@ -51,6 +51,8 @@ describe('Dashboard — WP-UX-01', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
     vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({

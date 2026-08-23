@@ -59,6 +59,8 @@ vi.mock('@/hooks/use-workflow-runs', () => ({
     isLoading: false,
     isError: false,
     error: null,
+    queriedPlanCode: 'PLAN-001',
+    isDisabled: false,
     refetch: vi.fn(),
   }),
 }));
