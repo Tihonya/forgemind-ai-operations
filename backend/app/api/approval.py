@@ -29,6 +29,7 @@ entity-existence lookup (no ID-existence disclosure).
 
 from __future__ import annotations
 
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -38,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.database import get_async_session
 from app.dependencies import require_role
+from app.models.approval import ApprovalStatus
 from app.schemas.approval import (
     ApprovalRequestCreate,
     ApprovalRequestListResponse,
@@ -175,6 +177,7 @@ async def create_approval_request(
 async def list_approval_requests(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    status_filter: Annotated[ApprovalStatus | None, Query(alias="status")] = None,
     current_user: AuthenticatedUser = Depends(require_role(_READ_ROLES)),  # noqa: B008
     session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> ApprovalRequestListResponse:
@@ -183,11 +186,15 @@ async def list_approval_requests(
     Scope (decomposition §3.6): PRODUCTION_MANAGER sees its own requests;
     PROCUREMENT_SPECIALIST sees PENDING requests; AI_ADMINISTRATOR sees all.
 
+    Optional ``status`` query parameter filters results and ``total`` to
+    that status. The filter composes with — and never widens — the
+    caller's RBAC read scope. When omitted, behavior is unchanged.
+
     Ordering: requested_at DESC, id DESC (deterministic tie-breaker).
     """
     service = ApprovalService(session)
     items, total = await service.list_requests(
-        user=current_user, limit=limit, offset=offset
+        user=current_user, limit=limit, offset=offset, status=status_filter,
     )
     return ApprovalRequestListResponse(
         items=[

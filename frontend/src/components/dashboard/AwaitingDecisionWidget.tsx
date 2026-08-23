@@ -2,8 +2,13 @@
  * Awaiting Decision widget — replaces the stale "Pending Approvals —
  * Unavailable — Phase 6" placeholder.
  *
- * Shows the count of PENDING approval requests and a CTA to the Approval
- * Center. Zero state is positive and truthful.
+ * Shows the exact count of PENDING approval requests (as reported by the
+ * backend) and a CTA to the Approval Center. Zero state is positive and
+ * truthful.
+ *
+ * The count uses a backend-filtered `status=PENDING` query with
+ * `limit=1` and displays `response.total`, which is exact across
+ * pagination and composes with the caller's RBAC read scope.
  */
 
 import { Link } from 'react-router-dom';
@@ -15,8 +20,11 @@ import { Button } from '@/components/ui/button';
 import { useApprovalRequests } from '@/hooks/use-approval-requests';
 
 export default function AwaitingDecisionWidget() {
-  const { requests, isLoading, isError, refetch } = useApprovalRequests();
-  const pendingCount = requests.filter((r) => r.status === 'PENDING').length;
+  const { total: pendingCount, isLoading, isError, refetch } = useApprovalRequests({
+    status: 'PENDING',
+    limit: 1,
+    offset: 0,
+  });
 
   return (
     <Card

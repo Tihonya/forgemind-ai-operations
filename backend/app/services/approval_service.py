@@ -495,18 +495,26 @@ class ApprovalService:
         user: AuthenticatedUser,
         limit: int,
         offset: int,
+        status: ApprovalStatus | None = None,
     ) -> tuple[list[ApprovalRequest], int]:
         """Return the caller-scoped page of approval requests.
 
         Scope (decomposition §3.6): manager sees own requests; specialist
         sees PENDING requests; administrator sees all. Returns
         ``(items, total)`` ordered by ``requested_at DESC, id DESC``.
+
+        When ``status`` is provided, results and ``total`` are further
+        filtered to that status. The status filter composes with — and
+        never widens — the caller's RBAC read scope.
         """
         scope = _read_scope(user)
         if scope == "none":
             return [], 0
 
         conditions = _scope_conditions(user)
+        if status is not None:
+            conditions = [*conditions, ApprovalRequest.status == status.value]
+
         total_stmt = select(func.count(ApprovalRequest.id)).where(*conditions)
         total = (await self._session.execute(total_stmt)).scalar_one()
 

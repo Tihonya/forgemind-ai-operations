@@ -61,6 +61,25 @@ function createApproval(
   };
 }
 
+/**
+ * Mock return value for useApprovalRequests when the widget requests
+ * status=PENDING with limit=1. The backend returns one item but the
+ * exact count is in `total`.
+ */
+function mockPendingTotal(
+  total: number,
+  items: ApprovalRequestResponse[] = [],
+) {
+  vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
+    requests: items,
+    total,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  });
+}
+
 describe('AwaitingDecisionWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -98,32 +117,17 @@ describe('AwaitingDecisionWidget', () => {
     expect(screen.getByTestId('awaiting-decision-retry')).toBeInTheDocument();
   });
 
-  it('renders zero-pending state truthfully', () => {
-    const approved = createApproval({ status: 'APPROVED' });
-    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
-      requests: [approved],
-      total: 1,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+  it('renders zero-pending state truthfully when total is 0', () => {
+    mockPendingTotal(0);
 
     renderWithProviders(<AwaitingDecisionWidget />);
     expect(screen.getByTestId('awaiting-decision-zero')).toBeInTheDocument();
     expect(screen.getByText('No decisions waiting')).toBeInTheDocument();
   });
 
-  it('renders one pending approval', () => {
+  it('renders one pending approval from total', () => {
     const pending = createApproval({ status: 'PENDING' });
-    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
-      requests: [pending],
-      total: 1,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+    mockPendingTotal(1, [pending]);
 
     renderWithProviders(<AwaitingDecisionWidget />);
     expect(screen.getByTestId('awaiting-decision-pending')).toBeInTheDocument();
@@ -133,38 +137,74 @@ describe('AwaitingDecisionWidget', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders multiple pending approvals', () => {
-    const pending1 = createApproval({
-      id: 'apr-001',
-      status: 'PENDING',
-    });
-    const pending2 = createApproval({
-      id: 'apr-002',
-      status: 'PENDING',
-      risk_id: 'RISK-002',
-    });
-    const approved = createApproval({
-      id: 'apr-003',
-      status: 'APPROVED',
-    });
-    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
-      requests: [pending1, pending2, approved],
-      total: 3,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
+  it('displays exact backend total even when only one item is returned', () => {
+    // The widget requests limit=1, so the backend returns one item
+    // but total=73 — the widget must display 73, not 1.
+    const pending = createApproval({ status: 'PENDING' });
+    mockPendingTotal(73, [pending]);
 
     renderWithProviders(<AwaitingDecisionWidget />);
     expect(screen.getByTestId('awaiting-decision-pending')).toBeInTheDocument();
-    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('73')).toBeInTheDocument();
     expect(
       screen.getByText('approval requests waiting'),
     ).toBeInTheDocument();
   });
 
+  it('uses backend-filtered total, not client-side count of items', () => {
+    // Even if the response includes non-PENDING items (shouldn't happen
+    // with the filter, but the widget must still use total, not filter),
+    // the displayed number must be the backend total.
+    const pending = createApproval({ status: 'PENDING' });
+    const approved = createApproval({
+      id: 'apr-002',
+      status: 'APPROVED',
+    });
+    mockPendingTotal(42, [pending, approved]);
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    expect(screen.getByTestId('awaiting-decision-pending')).toBeInTheDocument();
+    expect(screen.getByText('42')).toBeInTheDocument();
+  });
+
+  it('pluralizes correctly for total > 1', () => {
+    mockPendingTotal(5);
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    expect(screen.getByText('5')).toBeInTheDocument();
+    expect(
+      screen.getByText('approval requests waiting'),
+    ).toBeInTheDocument();
+  });
+
+  it('singularizes correctly for total === 1', () => {
+    mockPendingTotal(1);
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(
+      screen.getByText('approval request waiting'),
+    ).toBeInTheDocument();
+  });
+
   it('links to Approval Center', () => {
+    mockPendingTotal(0);
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    const cta = screen.getByTestId('awaiting-decision-cta');
+    expect(cta.closest('a')).toHaveAttribute('href', '/approval-center');
+  });
+
+  it('shows Approval Center link even when there are pending approvals', () => {
+    mockPendingTotal(3);
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    const cta = screen.getByTestId('awaiting-decision-cta');
+    expect(cta.closest('a')).toHaveAttribute('href', '/approval-center');
+  });
+
+  it('passes status=PENDING option to useApprovalRequests hook', () => {
+    // Verify the widget calls useApprovalRequests with status=PENDING
     vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
       requests: [],
       total: 0,
@@ -175,23 +215,15 @@ describe('AwaitingDecisionWidget', () => {
     });
 
     renderWithProviders(<AwaitingDecisionWidget />);
-    const cta = screen.getByTestId('awaiting-decision-cta');
-    expect(cta.closest('a')).toHaveAttribute('href', '/approval-center');
-  });
 
-  it('shows Approval Center link even when there are pending approvals', () => {
-    const pending = createApproval({ status: 'PENDING' });
-    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
-      requests: [pending],
-      total: 1,
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: vi.fn(),
-    });
-
-    renderWithProviders(<AwaitingDecisionWidget />);
-    const cta = screen.getByTestId('awaiting-decision-cta');
-    expect(cta.closest('a')).toHaveAttribute('href', '/approval-center');
+    expect(
+      useApprovalRequestsModule.useApprovalRequests,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'PENDING',
+        limit: 1,
+        offset: 0,
+      }),
+    );
   });
 });
