@@ -2,7 +2,8 @@
  * TanStack Query hook for fetching a paginated list of workflow run summaries.
  *
  * Wraps the existing `fetchWorkflowRuns` API client (workflow-api.ts).
- * Designed for reuse by WP-UX-02 and WP-UX-03.
+ * Designed for reuse by WP-UX-02 (risk-detail plan-scoped latest run)
+ * and WP-UX-03 (archive list).
  *
  * No polling — the dashboard and future list pages can refetch on user action
  * or via React Query's staleTime/refetchOnWindowFocus defaults.
@@ -24,22 +25,42 @@ export interface UseWorkflowRunsResult {
   refetch: () => void;
 }
 
+export interface UseWorkflowRunsOptions {
+  /** Page size (default 10). */
+  limit?: number;
+  /** Page offset (default 0). */
+  offset?: number;
+  /**
+   * Optional production plan code filter (e.g. PLAN-2026-W31).
+   * When provided, only runs for that plan are returned.
+   * Undefined means no filter (all plans).
+   */
+  planCode?: string;
+}
+
 /**
  * Fetch a paginated list of workflow run summaries.
  *
- * @param limit  - page size (default 10)
- * @param offset - page offset (default 0)
+ * The React Query key includes every parameter that changes the result
+ * (planCode, limit, offset) to prevent cache collisions between:
+ * - the Dashboard's global latest-run query (no planCode);
+ * - the Risk Detail's plan-scoped latest-run query (planCode set).
+ *
+ * @param options - Optional filter/pagination options.
  */
 export function useWorkflowRuns(
-  limit = 10,
-  offset = 0,
+  options?: UseWorkflowRunsOptions,
 ): UseWorkflowRunsResult {
+  const limit = options?.limit ?? 10;
+  const offset = options?.offset ?? 0;
+  const planCode = options?.planCode;
+
   const { data, isLoading, isError, error, refetch } = useQuery<
     WorkflowRunListResponse,
     Error
   >({
-    queryKey: ['workflow-runs', limit, offset],
-    queryFn: () => fetchWorkflowRuns(limit, offset),
+    queryKey: ['workflow-runs', planCode ?? null, limit, offset],
+    queryFn: () => fetchWorkflowRuns(limit, offset, planCode),
     staleTime: 30_000,
     retry: 1,
   });

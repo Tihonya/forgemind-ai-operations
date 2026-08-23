@@ -59,7 +59,7 @@ function getCtaDestination(runId: string | undefined, state: string | null | und
 }
 
 export default function LatestAIAnalysisWidget() {
-  const { runs, isLoading, isError, refetch } = useWorkflowRuns(5, 0);
+  const { runs, isLoading, isError, refetch } = useWorkflowRuns({ limit: 5, offset: 0 });
   const latestRun = runs.length > 0 ? runs[0] : undefined;
   const ctaLabel = getCtaLabel(latestRun?.state);
   const ctaDestination = getCtaDestination(latestRun?.id, latestRun?.state);

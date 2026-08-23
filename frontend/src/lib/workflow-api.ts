@@ -140,13 +140,22 @@ export async function fetchWorkflowRun(runId: string): Promise<WorkflowRunDetail
 
 /**
  * Fetch a paginated list of workflow run summaries.
+ *
+ * @param limit   - page size.
+ * @param offset  - page offset.
+ * @param planCode - optional production plan code filter (e.g. PLAN-2026-W31).
+ *   When provided, the backend resolves the code to the plan UUID server-side
+ *   and returns only runs for that plan. Omitted/undefined → no filter.
  */
 export async function fetchWorkflowRuns(
   limit: number,
   offset: number,
+  planCode?: string,
 ): Promise<WorkflowRunListResponse> {
-  const response = await api.get('/workflow-runs', {
-    params: { limit, offset },
-  });
+  const params: Record<string, number | string> = { limit, offset };
+  if (planCode !== undefined) {
+    params.plan_code = planCode;
+  }
+  const response = await api.get('/workflow-runs', { params });
   return response.data;
 }

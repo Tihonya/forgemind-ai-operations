@@ -44,12 +44,19 @@ vi.mock('@/lib/api', () => ({
 }));
 
 // Mock workflow-api to control fetchWorkflowRun behavior.
+// Also mock fetchWorkflowRuns (plural) for WP-UX-02 plan-scoped restoration.
 vi.mock('@/lib/workflow-api', async () => {
   const actual =
     await vi.importActual<typeof import('@/lib/workflow-api')>('@/lib/workflow-api');
   return {
     ...actual,
     fetchWorkflowRun: vi.fn(),
+    fetchWorkflowRuns: vi.fn(async () => ({
+      items: [],
+      limit: 1,
+      offset: 0,
+      total: 0,
+    })),
   };
 });
 
@@ -59,6 +66,19 @@ vi.mock('@/hooks/useActivePlan', () => ({
     activePlan: activePlanMock,
     isLoading: false,
     error: null,
+  }),
+}));
+
+// Mock useWorkflowRuns (WP-UX-02: plan-scoped latest-run restoration).
+// Default: no existing run, not loading.
+vi.mock('@/hooks/use-workflow-runs', () => ({
+  useWorkflowRuns: () => ({
+    runs: [],
+    total: 0,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
   }),
 }));
 
@@ -290,10 +310,10 @@ describe('SupplyRiskDetail — WP-REC-03G Start/Retry UI', () => {
   // Start AI Analysis — visibility
   // -----------------------------------------------------------------------
 
-  it('authorized user (production_manager) can see "Start AI Analysis"', () => {
+  it('authorized user (production_manager) can see "Analyze production plan"', () => {
     renderDetail();
     expect(screen.getByTestId('start-workflow-button')).toBeInTheDocument();
-    expect(screen.getByText('Start AI Analysis')).toBeInTheDocument();
+    expect(screen.getByText('Analyze production plan')).toBeInTheDocument();
   });
 
   it('unauthorized frontend role does not see the Start action', () => {
