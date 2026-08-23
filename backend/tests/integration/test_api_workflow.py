@@ -555,7 +555,9 @@ class TestListWorkflowRunsPlanCodeFilter:
                 text("SELECT code FROM production_plans WHERE id = :pid"),
                 {"pid": str(plan_id_sync)},
             )
-            plan_code = result.fetchone()[0]
+            plan_row = result.fetchone()
+            assert plan_row is not None, "Plan must exist"
+            plan_code = plan_row[0]
         engine.dispose()
 
         # Create runs for this plan.
@@ -602,7 +604,9 @@ class TestListWorkflowRunsPlanCodeFilter:
                 text("SELECT code FROM production_plans WHERE id = :pid"),
                 {"pid": str(plan_id_sync)},
             )
-            plan_code = result.fetchone()[0]
+            plan_row = result.fetchone()
+            assert plan_row is not None, "Plan must exist"
+            plan_code = plan_row[0]
         engine.dispose()
 
         base = datetime(2026, 1, 1, tzinfo=UTC)
@@ -640,7 +644,9 @@ class TestListWorkflowRunsPlanCodeFilter:
                 text("SELECT code FROM production_plans WHERE id = :pid"),
                 {"pid": str(plan_id_sync)},
             )
-            plan_code = result.fetchone()[0]
+            plan_row = result.fetchone()
+            assert plan_row is not None, "Plan must exist"
+            plan_code = plan_row[0]
         engine.dispose()
 
         base = datetime(2026, 1, 1, tzinfo=UTC)
@@ -686,7 +692,9 @@ class TestListWorkflowRunsPlanCodeFilter:
                 text("SELECT code FROM production_plans WHERE id = :pid"),
                 {"pid": str(plan_id_sync)},
             )
-            plan_code = result.fetchone()[0]
+            plan_row = result.fetchone()
+            assert plan_row is not None, "Plan must exist"
+            plan_code = plan_row[0]
         engine.dispose()
 
         # Create runs with identical timestamps to test tie-breaker.
@@ -733,7 +741,9 @@ class TestListWorkflowRunsPlanCodeFilter:
                 text("SELECT code FROM production_plans WHERE id = :pid"),
                 {"pid": str(plan_id_sync)},
             )
-            plan_code = result.fetchone()[0]
+            plan_row = result.fetchone()
+            assert plan_row is not None, "Plan must exist"
+            plan_code = plan_row[0]
             # Get a second plan if available.
             result2 = conn.execute(
                 text(
@@ -748,6 +758,7 @@ class TestListWorkflowRunsPlanCodeFilter:
         if row2 is None:
             pytest.skip("Only one production plan in database")
 
+        assert row2 is not None, "Second plan must exist"
         second_plan_id = row2[0]
 
         # Create an old run for the first plan.
