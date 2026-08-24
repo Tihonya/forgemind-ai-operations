@@ -146,6 +146,37 @@ The Release 1 / Phase 7 deployment contract and controlled decomposition are def
 - 24 години без P1/P2;
 - project status changed to `PORTFOLIO_READY`.
 
+## UX product direction — Ukrainian-first, first-time experience, mobile-first, traceability (DEC-059)
+
+**Status:** DIRECTION ACCEPTED — PLANNING RECORDED; NOT IMPLEMENTED. The Product Owner accepted the Ukrainian-first, first-time user experience, mobile-first and traceability direction on 2026-08-24 (DEC-059). It supersedes ONLY the English-first ordering of DEC-054; all Phase 7 deployment-security and lifecycle gates remain intact. Release 1 remains NOT READY / NOT DEPLOYED.
+
+**Authoritative planning documents:** `docs/planning/wp_ux_ua_00_product_direction.md` (decisions U1–U6, first-time user experience contract, visual direction, mobile-first contract, bounded decomposition WP-UX-UA-01 through WP-UX-UA-12) and DEC-059 in `forgemind_project_source_of_truth/08_DECISION_LOG.md`.
+
+**Evidence base:** WP-UX-UA-TRACE-01 reconnaissance report `/tmp/wp-ux-ua-trace-01-reconnaissance-report.md` (SHA-256 `ff263e28146ea13b9315ede51160bacb01e99ccf54f9c028e9319fc72047c80c`, read-only against main @ `7e80e0f3ccb98dcf5685509b6847bc9c193fd599`).
+
+**Bounded work-package order (each separately authorized; no combined UX mega-PR):**
+
+1. WP-UX-UA-01 — localization foundation + localized login/first-time-guidance pilot + mobile login acceptance;
+2. WP-UX-UA-02 — visual design-system foundation (separate from broad translation migration);
+3. WP-UX-UA-03 — Ukrainian translation catalog (broad migration);
+4. WP-UX-UA-04 — localized statuses and explanations (parallel with 05 after 03);
+5. WP-UX-UA-05 — navigation, onboarding completion, entity cross-links;
+6. WP-UX-UA-06 — audit/status-transition backend contract + migration (U2; backend track);
+7. WP-UX-UA-07 — Trace API read-only projection (U3; no migration; backend track);
+8. WP-UX-UA-08 — Trace Map frontend (after 07 + 03/04; linear trace default on mobile);
+9. WP-UX-UA-09 — provider-output language package (U5; own verification);
+10. WP-UX-UA-10 — source identity schema + migration (U4; backend track);
+11. WP-UX-UA-11 — accessibility/responsive consolidation audit (gate, not first mobile work);
+12. WP-UX-UA-12 — demo verification on the isolated disposable Demo stack.
+
+**Cross-cutting rules:** responsive/mobile acceptance criteria are required in EVERY frontend package; backend migrations are separated from frontend presentation; Document Trace stays projection-first until U2/U4 packages merge; the Audit Log remains the canonical transition source (no second persistent timeline); stable machine contracts (API enums, DB values, event codes, persisted identifiers) are never localized.
+
+**Exit criteria**
+- Every WP-UX-UA package separately planned, authorized, implemented, verified and merged before being marked complete.
+- First-time-user comprehension verified on the demo (WP-UX-UA-12 evidence).
+- Mobile acceptance evidence exists for every materially changed route.
+- No localization change alters any API enum, DB value, event code, or persisted identifier.
+
 ## Post-MVP
 
 Лише після Portfolio Ready:

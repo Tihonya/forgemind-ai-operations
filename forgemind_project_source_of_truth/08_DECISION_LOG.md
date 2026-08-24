@@ -1281,6 +1281,50 @@ The single-port public topology makes concurrent same-host staging+production ph
 
 ---
 
+## DEC-059 — Ukrainian-first, first-time user experience, mobile-first and traceability product direction
+
+**Date:** 2026-08-24
+
+**Status:** Accepted
+
+**Context:**
+
+WP-UX-UA-TRACE-01 reconnaissance (read-only, against main @ `7e80e0f3ccb98dcf5685509b6847bc9c193fd599`; report `/tmp/wp-ux-ua-trace-01-reconnaissance-report.md`, SHA-256 `ff263e28146ea13b9315ede51160bacb01e99ccf54f9c028e9319fc72047c80c`) established: no i18n infrastructure exists; the repository already uses stable-machine-code → display-label maps (workflow states, audit event/entity types, trace categories, roles); the Knowledge Sources screen and all document/version UI are absent; raw enum values are rendered to users on several screens; the nine-item correlation trace API exists; the Audit Log is the canonical event stream; and the document-centric lineage segment (Source → Document → Version → Ingestion) has no durable records. The reconnaissance returned open decisions U1–U6. DEC-054 (2026-08-17) recorded an English-first initial deployment with Ukrainian localization deferred. A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (observed HTTP 200, 2026-08-24); this is an operational demo fact (DEC-056) and does NOT make Release 1 deployed, accepted or complete. The Product Owner has accepted the Ukrainian-first, first-time user experience, mobile-first and traceability direction and the resulting bounded decomposition.
+
+**Decision:**
+
+The Product Owner accepts decisions U1–U6 and the product contracts recorded in `docs/planning/wp_ux_ua_00_product_direction.md`:
+
+- U1 — Language priority: Ukrainian is the default product and demo language; English remains the secondary locale. This supersedes ONLY the English-first ordering of DEC-054 (Context paragraph 2, the deferred-items list entry "Ukrainian localization", the corresponding deployment-contract wording, and the README limitation bullet). Every other DEC-054 control remains intact: the Phase 7 deployment contract, PD-1 through PD-12, all staging/production/release gates, the Model C promotion model (DEC-058), the VPS hardening contract, and Release 1 status NOT READY / NOT DEPLOYED. Stable API enums, database values, event codes and persisted machine identifiers remain English and are never translated in storage; user-facing labels are localized through the frontend catalog.
+- U2 — Workflow transition history: authoritative workflow-run state transitions should eventually be emitted as canonical Audit Log events carrying actor, timestamp, reason, correlation identity and exact `from_status → to_status`; this requires a separate bounded backend contract and migration package (WP-UX-UA-06) and is NOT implemented by any UX frontend package; until then the UI must clearly distinguish derived workflow progress from persisted audit history.
+- U3 — Initial document trace strategy: the first Document Trace implementation is projection-first and read-only; it reconstructs relationships only from existing repository data; it must not fabricate ingestion events, missing transitions or source relationships; missing evidence is shown explicitly as unavailable or not recorded; the Audit Log remains the canonical source of truth for persisted transitions; a second persistent timeline or competing event history is forbidden.
+- U4 — Source identity: structured document-source identity (source type, source-system identity, external document identity, ingestion identity) is the eventual contract, delivered by a separate schema-design and migration package (WP-UX-UA-10); Release 1 shows only relationships supported by current fields and must not present title or description text as authoritative source identity.
+- U5 — Language of provider-generated content: AI-generated recommendation summaries, business impact and rationale follow the active user locale (Ukrainian default; English on explicit selection); machine-readable schemas, enum values, validation contracts and audit codes remain language-neutral/stable; prompt and model-behavior changes are their own bounded implementation and verification package (WP-UX-UA-09); no AI prompt is modified by this decision.
+- U6 — Graph rendering: a maintained graph library (preferred candidate React Flow) may be introduced for the desktop/tablet Trace Map after a bounded dependency and security review; the graph is progressive enhancement, never the only representation; a semantic linear trace remains available and keyboard accessible; on narrow mobile screens the linear trace is the default and the graph a secondary expanded view; no dependency is added by this package.
+- First-time user experience contract: goal-based demo-role framing at login («Хочу перевірити ризики постачання» / «Хочу погодити запропоновану дію» / «Хочу перевірити історію та докази»); synthetic-data disclosure; first-entry role explanation, recommended first action and a compact Golden Scenario stepper whose progress is derived only from live backend state (no persisted onboarding state); every primary screen makes purpose, current state, business meaning, primary next action, related-entity links and the deterministic/AI/human/demo separation evident; raw technical identifiers are available only through disclosures, copy-ID actions, technical drawers or auditor/admin views.
+- Visual direction: professional operations/industrial-risk identity retained; calmer, consistent, scannable surfaces via a separate bounded visual-system package (WP-UX-UA-02); beauty verified through consistency and comprehension; gradients, decorative animations, card walls, raw codes as primary content, competing primary buttons, hover-only interactions and color-only status indicators are avoided.
+- Mobile-first contract: reference viewports 360×800, 390×844, 768×1024, 1280×800; every frontend package from WP-UX-UA-01 onward carries responsive acceptance criteria (no unintended horizontal scroll at 360 px, 44×44 touch targets where practical, visible focus, correct landmarks, Ukrainian expansion without truncation, full-screen dialogs/drawers on narrow viewports, accessible mobile menu, safe long-ID wrapping with copy actions, linear trace as default mobile view, touch-safe pan/zoom); viewport evidence is required per materially changed route in each package, not only in the final consolidation audit (WP-UX-UA-11).
+- Updated bounded order: WP-UX-UA-01 (localization foundation + login/FTUX pilot + mobile login acceptance) → WP-UX-UA-02 (visual design-system foundation) → WP-UX-UA-03 (Ukrainian catalog broad migration) → WP-UX-UA-04 (localized statuses) ∥ WP-UX-UA-05 (navigation/onboarding/cross-links) → WP-UX-UA-08 (Trace Map UI, after WP-UX-UA-07) → WP-UX-UA-11 (consolidation audit) → WP-UX-UA-12 (demo verification); backend track separate: WP-UX-UA-06 (transition contract + migration, U2) → WP-UX-UA-07 (Trace API projection, no migration) and WP-UX-UA-10 (source identity schema + migration, U4); model-behavior track: WP-UX-UA-09 (provider-output language, U5). Responsive requirements apply to every frontend package; backend migrations stay separated from frontend presentation; no combined UX mega-PR.
+
+**Reason:**
+
+A reviewer opening the demo for the first time must understand the product, the role choice, the scenario, the deterministic/AI separation, the evidence, the approval boundary and the next action within minutes, on a phone as well as a desktop. Ukrainian-first with a stable English secondary locale matches the Product Owner's audience. Projection-first traceability and Audit Log canonicality preserve the existing evidence model without inventing lineage. Separating the visual system from broad translation keeps each PR reviewable. Making mobile acceptance cross-cutting prevents a late, cosmetic responsive retrofit.
+
+**Consequences:**
+
+- DEC-054 is PARTIALLY superseded: only its English-first ordering (see exact boundary above); all deployment-security and lifecycle boundaries remain in force.
+- Release 1 remains NOT READY / NOT DEPLOYED. The publicly reachable Demo at `https://demo.forgemind-ai.tech/` is an isolated disposable DEC-056 environment and does not constitute Release 1 deployment, acceptance or completion. No deployment-gated acceptance test is marked PASS.
+- Phase 7 remains OPEN / IN PROGRESS with its gates unchanged; pre-staging VPS hardening and WP-P7-06 onward remain the deployment path.
+- The UX phase decomposition (WP-UX-UA-01 through WP-UX-UA-12) is recorded in `docs/planning/wp_ux_ua_00_product_direction.md`. This decision records direction only; it authorizes NO implementation, NO dependency addition, NO migration, NO prompt change, NO deployment action. Each package remains separately authorized.
+- No application code, test, migration, schema, dependency, CI, infrastructure, or evidence-package change is made by the WP-UX-UA-00 package recording this decision.
+- Phase 4, Phase 5, Phase 6 and DEC-049/DEC-053 remain intact.
+
+**Affected documents/tests:** `forgemind_project_source_of_truth/08_DECISION_LOG.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`, `docs/planning/wp_ux_ua_00_product_direction.md`, `docs/planning/phase_7_deployment_contract.md`, `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/demo-environment.md`, `README.md`.
+
+**Approved by:** Product Owner (2026-08-24)
+
+---
+
 ## Template for new decisions
 
 ```markdown

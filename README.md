@@ -284,8 +284,8 @@ Run tests: `make test`
 ForgeMind is a **portfolio MVP**. The following are intentionally out of scope for Release 1:
 
 - **Synthetic data only:** All production plans, BOMs, inventory, suppliers, documents, and audit events are synthetic. No real corporate ERP or procurement system is connected.
-- **No public deployment yet:** Release 1 has not been deployed. No public Live Demo URL exists.
-- **Ukrainian localization deferred:** Release 1 is English-first. Ukrainian localization is planned for post-deployment stabilization.
+- **No Release 1 production deployment yet:** Release 1 has not been formally deployed or accepted. A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056); demo availability is not a Release 1 deployment, acceptance, or completion claim.
+- **Ukrainian-first direction adopted, not yet implemented:** The Product Owner has accepted Ukrainian as the default product and demo language with English as the secondary locale (DEC-059, superseding only the English-first ordering of DEC-054). The currently deployed/committed UI remains English-only until the WP-UX-UA localization packages are implemented; no localization code exists yet.
 - **Bounded deployment profile:** Initial deployment uses OpenRouter-only chat and embedding providers. A Groq-first fallback chain exists as a runtime capability but is not the initial deployment profile.
 - **No CI/CD deployment automation:** First deployment is manual and checklist-driven.
 - **No full observability platform:** Monitoring is limited to Docker logs, backend `/health`, and backup state markers.

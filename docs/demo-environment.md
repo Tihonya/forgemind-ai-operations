@@ -114,6 +114,19 @@ There is NO browser/backend reset endpoint and NO `reset_service.py`. The
 application backend cannot receive Docker-host or database-drop privileges,
 and no Docker socket is mounted into any container.
 
+## Public demo availability (observed fact)
+
+The isolated disposable Demo stack is publicly reachable at
+`https://demo.forgemind-ai.tech/` (observed serving the ForgeMind frontend,
+HTTP 200, 2026-08-24). The FQDN is operator configuration (`CADDY_DOMAIN`
+from `infra/demo.env`); it is not a committed repository value.
+
+This is an operational fact about the DEC-056 demo stack. It does NOT
+constitute a Release 1 production deployment: Release 1 remains NOT READY /
+NOT DEPLOYED under the Phase 7 deployment contract (DEC-054, DEC-058
+Model C), and no deployment-gated acceptance test is marked PASS on demo
+availability alone (DEC-059 §9 distinction).
+
 ## Per-browser sandbox (future)
 
 Per-browser/per-user ephemeral sandboxes (open demo → ephemeral demo_session
