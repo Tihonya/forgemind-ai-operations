@@ -50,6 +50,21 @@ vi.mock('@tanstack/react-query', async () => {
   };
 });
 
+// Mock useWorkflowRuns (WP-UX-02: component now uses this for plan-scoped
+// latest-run restoration). Returns no existing run by default.
+vi.mock('@/hooks/use-workflow-runs', () => ({
+  useWorkflowRuns: () => ({
+    runs: [],
+    total: 0,
+    isLoading: false,
+    isError: false,
+    error: null,
+    queriedPlanCode: 'PLAN-001',
+    isDisabled: false,
+    refetch: vi.fn(),
+  }),
+}));
+
 // Mock workflow hooks (WP-REC-03G: component now uses these for start/retry/polling)
 vi.mock('@/hooks/use-workflow-run', () => ({
   useWorkflowRun: () => ({

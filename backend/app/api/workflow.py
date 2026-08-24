@@ -163,6 +163,13 @@ async def get_workflow_run(
 async def list_workflow_runs(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    plan_code: str | None = Query(
+        default=None,
+        description=(
+            "Filter by the external production plan code "
+            "(e.g. PLAN-2026-W31). When omitted, all runs are listed."
+        ),
+    ),
     current_user: AuthenticatedUser = Depends(get_current_user),  # noqa: B008
     session: AsyncSession = Depends(get_async_session),  # noqa: B008
 ) -> WorkflowRunListResponse:
@@ -170,9 +177,18 @@ async def list_workflow_runs(
 
     Ordering: created_at DESC, id DESC (deterministic tie-breaker).
 
+    Optional ``plan_code`` filter resolves the external production plan
+    code to the internal plan UUID server-side and filters runs by that
+    plan. When the plan code is unknown, an empty list with total=0 is
+    returned — consistent with the existing list convention for no
+    matching data. The filter is purely additive: when omitted, the
+    behavior is identical to the previous unfiltered endpoint.
+
     Args:
         limit: Maximum number of items (1-200).
         offset: Number of items to skip.
+        plan_code: External production plan code to filter by
+            (e.g. PLAN-2026-W31). ``None`` means no filter.
         current_user: Authenticated user (dependency-injected).
         session: Async database session (dependency-injected).
 
@@ -180,7 +196,28 @@ async def list_workflow_runs(
         WorkflowRunListResponse: Paginated list with items, limit,
         offset, and total count.
     """
+    # Build the base conditions list. When plan_code is None, this is
+    # empty and the query is identical to the previous unfiltered one.
+    conditions: list[Any] = []
+
+    if plan_code is not None:
+        plan_result = await session.execute(
+            select(ProductionPlan.id).where(ProductionPlan.code == plan_code)
+        )
+        plan_row = plan_result.scalar_one_or_none()
+        if plan_row is None:
+            # Unknown plan code → empty result, total=0.
+            return WorkflowRunListResponse(
+                items=[],
+                limit=limit,
+                offset=offset,
+                total=0,
+            )
+        conditions.append(WorkflowRun.plan_id == plan_row)
+
     total_stmt = select(func.count(WorkflowRun.id))
+    if conditions:
+        total_stmt = total_stmt.where(*conditions)
     total = (await session.execute(total_stmt)).scalar_one()
 
     stmt = (
@@ -192,6 +229,8 @@ async def list_workflow_runs(
         .limit(limit)
         .offset(offset)
     )
+    if conditions:
+        stmt = stmt.where(*conditions)
     result = await session.execute(stmt)
     runs = result.scalars().all()
 

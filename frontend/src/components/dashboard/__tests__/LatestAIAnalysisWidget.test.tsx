@@ -59,6 +59,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: true,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -73,6 +75,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: true,
       error: new Error('Network error'),
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -89,6 +93,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -108,6 +114,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -132,6 +140,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -151,6 +161,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -171,6 +183,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -191,6 +205,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -211,6 +227,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -231,6 +249,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -251,6 +271,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -274,6 +296,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -295,6 +319,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
@@ -313,6 +339,8 @@ describe('LatestAIAnalysisWidget', () => {
       isLoading: false,
       isError: false,
       error: null,
+      queriedPlanCode: null,
+      isDisabled: false,
       refetch: vi.fn(),
     });
 
