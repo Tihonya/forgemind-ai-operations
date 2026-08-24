@@ -128,7 +128,7 @@ OPEN / IN PROGRESS — WP-P7-01 (deployment contract, DEC-054) is COMPLETE (inco
 - AT-001, AT-002, AT-014, AT-015 pass on public environment.
 
 ### Authoritative contract
-The Release 1 / Phase 7 deployment contract and controlled decomposition are defined in `docs/planning/phase_7_deployment_contract.md` (WP-P7-01, DEC-054). The contract records Product Owner deployment decisions PD-1 through PD-11, a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12), staging/production/release gates, a VPS security-hardening contract, and a Hostinger and domain input contract. No deployment-gated acceptance test is marked PASS until deployment evidence exists.
+The Release 1 / Phase 7 deployment contract and controlled decomposition are defined in `docs/planning/phase_7_deployment_contract.md` (WP-P7-01, DEC-054). The contract records Product Owner deployment decisions PD-1 through PD-12, a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12), staging/production/release gates, a VPS security-hardening contract, and a Hostinger and domain input contract. No deployment-gated acceptance test is marked PASS until deployment evidence exists.
 
 ## Phase 8 — Portfolio release
 
@@ -156,9 +156,9 @@ The Release 1 / Phase 7 deployment contract and controlled decomposition are def
 
 **Bounded work-package order (each separately authorized; no combined UX mega-PR):**
 
-1. WP-UX-UA-01 — localization foundation + localized login/first-time-guidance pilot + mobile login acceptance;
+1. WP-UX-UA-01 — localization foundation + small authenticated application-shell and first-time guidance pilot + responsive shell evidence;
 2. WP-UX-UA-02 — visual design-system foundation (separate from broad translation migration);
-3. WP-UX-UA-03 — Ukrainian translation catalog (broad migration);
+3. WP-UX-UA-03 — broad Ukrainian migration of the complete user-facing application interface (translation catalog);
 4. WP-UX-UA-04 — localized statuses and explanations (parallel with 05 after 03);
 5. WP-UX-UA-05 — navigation, onboarding completion, entity cross-links;
 6. WP-UX-UA-06 — audit/status-transition backend contract + migration (U2; backend track);

@@ -1,7 +1,7 @@
 # WP-UX-UA-00 — Ukrainian-First, First-Time User Experience, Mobile-First and Traceability Product Direction
 
 **Package:** WP-UX-UA-00 — Product decision application and planning reconciliation (documentation-only)
-**Status:** PLANNING / DECISION PACKAGE — pending merge. This document records accepted Product Owner decisions and the updated bounded implementation order. It authorizes NO implementation.
+**Status:** COMPLETE / INCORPORATED through PR #126 (regular merge commit `1b60d293d05fc76f5610d11fcc9100edd3d8dfb4`, 2026-08-24). This document records accepted Product Owner decisions and the updated bounded implementation order. It authorizes NO implementation.
 **Decision record:** DEC-059 (see `forgemind_project_source_of_truth/08_DECISION_LOG.md`)
 **Date:** 2026-08-24
 **Reconciliation base snapshot:** main @ `7e80e0f3ccb98dcf5685509b6847bc9c193fd599` (PR #125 merge commit; snapshot semantics per DEC-051)
@@ -216,13 +216,16 @@ Testing requirement: automated or documented viewport evidence for every materia
 
 All packages are separate PRs. No single PR combines all UX work. Backend migrations are always separated from frontend presentation work. Responsive/mobile acceptance criteria are part of every frontend package, not deferred to the end. None of the packages below is implemented or authorized for implementation by this document; each requires its own authorization.
 
-### WP-UX-UA-01 — Localization foundation, localized login pilot and first-time guidance pilot
+Full-application Ukrainian interface scope: WP-UX-UA-01 establishes the localization infrastructure and proves it on a small authenticated application-shell slice. WP-UX-UA-03 migrates the complete existing user-facing application interface to Ukrainian-first/English-secondary catalogs — navigation, routes, components, statuses, actions, messages, empty/error/loading states and accessibility labels. Login is not the boundary of the Ukrainian-interface requirement. A pilot screen or shell is implementation sequencing only and must never be interpreted as the final localization scope.
 
-- Objective: i18n foundation (`uk` default, `en` secondary), catalog skeleton, typed keys, locale switcher, `<html lang>` sync, missing-translation fallback, Europe/Kyiv-aware date/time helpers; localized login pilot with goal-based role framing and synthetic-data disclosure; first-time dashboard guidance pilot (role explanation, recommended first action, compact Golden Scenario stepper, dismissible, progress derived only from live backend state); mobile login acceptance.
+### WP-UX-UA-01 — Localization foundation, authenticated application-shell pilot and first-time guidance pilot
+
+- Objective: i18n foundation (`uk` default, `en` secondary), catalog skeleton, typed keys, locale switcher, `<html lang>` sync, missing-translation fallback, Europe/Kyiv-aware date/time helpers; a small authenticated application-shell pilot (login entry with goal-based role framing and synthetic-data disclosure, Header locale switcher, dashboard shell) proving the localization mechanism in authenticated UI infrastructure — implementation sequencing only, not the complete localization scope; first-time dashboard guidance pilot (role explanation, recommended first action, compact Golden Scenario stepper, dismissible, progress derived only from live backend state); mobile acceptance on the changed shell routes.
 - Dependencies: DEC-059 merged; bounded library-choice spike (react-i18next vs react-intl) resolved inside the package plan.
 - Likely file scope: `frontend/package.json` (single dependency addition), new `frontend/src/i18n/**`, `frontend/src/main.tsx`, `frontend/src/routes/login.tsx`, `frontend/src/routes/dashboard.tsx` (guidance pilot only), `frontend/src/components/layout/Header.tsx` (switcher), `frontend/src/lib/format.ts`, `frontend/src/lib/audit-api.ts` (date helpers), CI key-parity job, tests.
-- Acceptance: `uk` default boots; switcher persists; login fully localized in both locales; goal-based role framing renders; synthetic-data disclosure visible; Europe/Kyiv dates verified with fixed instants; CI fails on `uk` key gaps; mobile acceptance at the four reference viewports for changed routes; no API/enum/persisted-value change.
+- Acceptance: `uk` default boots; switcher persists; authenticated shell pilot surfaces (incl. login entry) localized in both locales; goal-based role framing renders; synthetic-data disclosure visible; Europe/Kyiv dates verified with fixed instants; CI fails on `uk` key gaps; mobile acceptance at the four reference viewports for changed routes; no API/enum/persisted-value change; no complete-application translation in this package.
 - Migration: none. Live verification: not required.
+- Boundary: this package establishes the localization mechanism only — i18n library and provider, `uk` default, `en` secondary, locale persistence, document `lang` synchronization, safe fallback behavior, catalog key-parity validation, Europe/Kyiv-aware formatting, a small authenticated-shell proof and responsive evidence for the authenticated shell. It must not attempt the complete application translation (WP-UX-UA-03).
 
 ### WP-UX-UA-02 — Visual design-system foundation
 
@@ -234,10 +237,10 @@ All packages are separate PRs. No single PR combines all UX work. Backend migrat
 
 ### WP-UX-UA-03 — Ukrainian translation catalog (broad migration)
 
-- Objective: migrate all remaining screen copy, menu labels, headings, buttons, empty states, error messages, placeholders, accessibility labels to catalogs; Ukrainian pluralization (ICU rules); uk/en parity; replace hardcoded en-US formatting everywhere; provider-generated text stays untouched (U5 owns model-output language).
+- Objective: migrate the complete existing user-facing application interface to Ukrainian-first/English-secondary catalogs — navigation, routes, components, status copy (machine-status label registry ships in WP-UX-UA-04), actions, menu labels, headings, buttons, empty states, error messages, validation messages, placeholders, loading feedback and accessibility labels; login surfaces are included but are not the boundary of this migration. Ukrainian pluralization (ICU rules); uk/en parity; replace hardcoded en-US formatting everywhere; provider-generated text stays untouched (U5 owns model-output language).
 - Dependencies: WP-UX-UA-01, WP-UX-UA-02.
 - Likely file scope: all non-test `frontend/src/routes/**` and `frontend/src/components/**`, `navigation-config.ts`, `demo-accounts.ts`, `frontend/src/i18n/locales/**`, corresponding tests.
-- Acceptance: no hardcoded user-visible English string in non-test TSX (grep gate + review); plural tests for 1/2/5/21 forms; Europe/Kyiv dates everywhere; mobile acceptance on changed routes; no machine-code literal localized.
+- Acceptance: no hardcoded user-visible English string in non-test TSX (grep gate + review), except explicitly approved non-localizable machine content; Ukrainian is the default presentation with English remaining available as the secondary locale; API enums, database values, event codes and persisted identifiers remain unchanged; plural tests for 1/2/5/21 forms; Europe/Kyiv dates everywhere; mobile layouts verified with Ukrainian text expansion; no machine-code literal localized.
 - Migration: none. Live verification: not required.
 
 ### WP-UX-UA-04 — Localized statuses and explanations
@@ -298,7 +301,7 @@ All packages are separate PRs. No single PR combines all UX work. Backend migrat
 
 ### WP-UX-UA-11 — Accessibility and responsive consolidation audit
 
-- Objective: consolidation gate over all changed surfaces: focus management, ARIA semantics, contrast, heading/landmark structure, viewport evidence consolidation at 360/800/1024/1280 widths, Ukrainian expansion audit, touch-target audit. This consolidates mobile behavior; it is NOT the first time mobile behavior is addressed (every prior frontend package already carries mobile acceptance).
+- Objective: consolidation gate over all changed surfaces: focus management, ARIA semantics, contrast, heading/landmark structure, viewport evidence consolidation at 360/390/768/1280 widths, Ukrainian expansion audit, touch-target audit. This consolidates mobile behavior; it is NOT the first time mobile behavior is addressed (every prior frontend package already carries mobile acceptance).
 - Dependencies: WP-UX-UA-01..08 frontend packages.
 - Likely file scope: hardening edits across changed components, evidence documentation.
 - Acceptance: keyboard-only completion of login → scenario → trace inspection; no focus traps; documented viewport evidence per route.
@@ -318,7 +321,7 @@ All packages are separate PRs. No single PR combines all UX work. Backend migrat
 Decision gate: DEC-059 merged
 │
 ├─ Frontend track (one PR per package):
-│   01 Localization foundation + login/FTUX pilot + mobile login acceptance
+│   01 Localization foundation + authenticated application-shell pilot + responsive shell evidence
 │   → 02 Visual design-system foundation
 │   → 03 Ukrainian translation catalog (broad migration)
 │   → 04 Localized statuses and explanations   (parallel with 05 after 03)
