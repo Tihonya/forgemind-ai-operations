@@ -156,9 +156,9 @@ The Release 1 / Phase 7 deployment contract and controlled decomposition are def
 
 **Bounded work-package order (each separately authorized; no combined UX mega-PR):**
 
-1. WP-UX-UA-01 — localization foundation + localized login/first-time-guidance pilot + mobile login acceptance;
+1. WP-UX-UA-01 — localization foundation + small authenticated application-shell and first-time guidance pilot + responsive shell evidence;
 2. WP-UX-UA-02 — visual design-system foundation (separate from broad translation migration);
-3. WP-UX-UA-03 — Ukrainian translation catalog (broad migration);
+3. WP-UX-UA-03 — broad Ukrainian migration of the complete user-facing application interface (translation catalog);
 4. WP-UX-UA-04 — localized statuses and explanations (parallel with 05 after 03);
 5. WP-UX-UA-05 — navigation, onboarding completion, entity cross-links;
 6. WP-UX-UA-06 — audit/status-transition backend contract + migration (U2; backend track);
