@@ -1,8 +1,8 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-21
+**Last Updated:** 2026-08-24
 **Current Status:** Development in progress — Release 1 NOT READY
-**Reconciliation base snapshot:** main @ `e215b68988ac433c1abab64f520ed761b4fdd26e` (PR #121 merge commit; snapshot semantics per DEC-051)
+**Reconciliation base snapshot:** main @ `7e80e0f3ccb98dcf5685509b6847bc9c193fd599` (PR #125 merge commit; snapshot semantics per DEC-051)
 
 The `Reconciliation base snapshot` field records the immutable base snapshot used to prepare this document's lifecycle state — it is not a current-`main` assertion; current `main` is determined from Git/GitHub (see DEC-051).
 
@@ -80,6 +80,14 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 - GitHub Release/tag publication (WP-P7-11)
 - Final lifecycle reconciliation (WP-P7-12)
 
+### Demo availability versus Release 1 deployment (DEC-059 §9)
+
+A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056; observed serving the ForgeMind frontend, HTTP 200, 2026-08-24; the FQDN is operator configuration, not a committed repository value). This demo fact does NOT make Release 1 deployed, accepted or complete: the formal Release 1 production deployment remains NOT STARTED under the Phase 7 deployment contract (DEC-054, DEC-058 Model C), and no deployment-gated acceptance test is marked PASS on demo availability alone.
+
+### Ukrainian-first product direction (DEC-059)
+
+Accepted 2026-08-24: Ukrainian becomes the default product and demo language with English as the secondary locale; first-time user experience, mobile-first responsiveness (360×800 / 390×844 / 768×1024 / 1280×800) and document traceability are adopted as product requirements. The direction supersedes ONLY the English-first ordering of DEC-054. Planning: `docs/planning/wp_ux_ua_00_product_direction.md` (WP-UX-UA-00, pending merge). No implementation, dependency, migration, or prompt change is authorized by the decision package.
+
 ### Current MVP completion
 
 Four of five condensed MVP milestones now have verified evidence (step 1 verified by passing integration tests; step 2 now has formal AT-006/AT-007 PASS evidence (composite accepted packages `wp-rec-05-vfy-20260814-01` + `wp-rec-05-vfy-20260815-02`, Product Owner acceptance 2026-08-15); step 3 — structured AI recommendation with validation and user retry — is implemented and formally accepted via Phase 5: AT-008 PASS, AT-013 PASS, Phase 5 ACCEPTED; step 4 — approval → procurement → audit — is implemented and formally accepted via Phase 6: AT-009 PASS, AT-010 PASS, AT-011 PASS, AT-012 PASS, Phase 6 CLOSED / ACCEPTED, accepted evidence run `wp-rec-04-vfy-20260816-03`, Product Owner acceptance 2026-08-16). The canonical 13-step Golden Scenario (defined in `forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md` §2) remains incomplete. Step 5 of the condensed milestones (deployment) — repository-owned deployment configuration and runbook work is now implemented (WP-P7-02 configuration, `docs/operations/release_1_runbook.md`); actual staging/production deployment execution and deployment evidence are still pending. Phase 5 delivers the structured AI recommendation workflow and workflow retry; Phase 6 delivers human approval, controlled procurement writes, and the complete correlated audit trace.
@@ -139,6 +147,8 @@ WP-REC-05 implementation → separate WP-REC-05-VFY bounded verification
 - **Formal VFY provider pinning (DEC-048):** DEC-048 specified that the formal WP-REC-05-VFY would run AT-006 and AT-007 against one exact pinned commercial provider/model with automatic provider fallback disabled inside those scenarios; the failover smoke is a separate scenario. The later execution used OpenRouter `qwen/qwen3.7-flash` with automatic fallback disabled.
 
 This is a planning sequence, not an execution authorization. Every future package remains separately authorized. Authorization of one package must not authorize any other.
+
+**UX phase (DEC-059, 2026-08-24):** WP-UX-UA-00 (product decision and planning reconciliation) is PREPARED / PENDING MERGE — documentation-only; it records accepted decisions U1–U6, the first-time user experience contract, the visual direction, the mobile-first contract and the bounded decomposition WP-UX-UA-01 through WP-UX-UA-12 (`docs/planning/wp_ux_ua_00_product_direction.md`). Ukrainian-first supersedes ONLY the English-first ordering of DEC-054; all Phase 7 deployment gates remain intact. The UX sequence is: localization foundation + login/FTUX pilot (01) → visual design system (02) → Ukrainian catalog migration (03) → localized statuses (04) ∥ navigation/onboarding/cross-links (05) → Trace Map UI (08, after backend Trace API 07) → accessibility/responsive consolidation audit (11) → demo verification (12); backend track separate: transition contract + migration (06), Trace API projection (07), source identity schema (10); model-behavior track: provider-output language (09). Responsive/mobile acceptance is required in EVERY frontend package. No WP-UX-UA implementation is authorized yet.
 
 **WP-REC-03 lifecycle (2026-08-14 reconciliation):** WP-REC-03A through WP-REC-03G are COMPLETE (merged via PRs #63, #65, #72, #73, #74, #78, #80). All Phase 5 implementation packages are delivered. **AT-008 PASS; AT-013 PASS; Phase 5 ACCEPTED** (Product Owner acceptance 2026-08-14, DEC-043; accepted evidence run `wp-rec-03h-phase-c-20260813-02`; durable review `docs/reviews/wp_rec_03h_phase_d_independent_evidence_review.md`, durable acceptance declaration `docs/reviews/wp_rec_03h_phase_d_product_owner_acceptance_declaration.md`). WP-REC-03H Phase C and Phase D are complete; Phase E documentation lifecycle reconciliation is complete through PR #86.
 
@@ -217,6 +227,9 @@ See `forgemind_project_source_of_truth/08_DECISION_LOG.md` for full history.
 - DEC-054 (Phase 7 deployment contract and Release 1 controlled decomposition)
 - DEC-055 (WP-P7-02 live embedding evidence acceptance and work-package completion)
 - DEC-056 (Isolated disposable Demo Environment and reset boundary)
+- DEC-057 (Release 1 VPS resource target)
+- DEC-058 (Single-VPS disposable staging to production promotion model, Model C)
+- DEC-059 (Ukrainian-first, first-time user experience, mobile-first and traceability product direction; supersedes ONLY the English-first ordering of DEC-054)
 - SP-0A: Option C approved, repository name `forgemind-agent-runtime` approved
 
 **Proposed (pending PO decision):**

@@ -3,6 +3,7 @@
 **Work package:** WP-P7-01
 **Type:** Documentation-only contract (no application, deployment, infrastructure, or localization changes)
 **Status:** ACCEPTED under DEC-054 (2026-08-17); WP-P7-01 COMPLETE (incorporated via PR #111); WP-P7-02 COMPLETE / ACCEPTED (DEC-055, 2026-08-18); Phase 7 remains OPEN / IN PROGRESS
+**Supersession annotation:** DEC-059 (2026-08-24) supersedes ONLY the English-first language ordering of this contract (PD-11 ordering, §1.1 English-first scope item, §1.2 Ukrainian-localization deferral entry). All deployment-security, gate, promotion (DEC-058) and lifecycle boundaries of this contract remain in force. See `docs/planning/wp_ux_ua_00_product_direction.md` §3.
 **Baseline:** origin/main @ `8e018b2080917c50b5641abbdbd7be0407493677` (PR #111 merge commit)
 **Date:** 2026-08-17
 **Decision:** DEC-054 (Product Owner, 2026-08-17)
@@ -30,7 +31,7 @@ This contract keeps Release 1 NOT READY / NOT DEPLOYED until all required gates 
 
 - Public HTTPS deployment of the existing ForgeMind AI Operations MVP on a single Hostinger VPS.
 - One complete vertical scenario: Production Plan Supply Risk Review (Golden Scenario).
-- English-first UI and operational README.
+- English-first UI and operational README. *(Language ordering superseded by DEC-059, 2026-08-24: Ukrainian becomes the default product language with English as the secondary locale; this scope item remains historically accurate for the initial pre-localization state and for deployment gates.)*
 - Authentication required; bounded demo credentials displayed on the login page.
 - Live RAG with grounded citations.
 - Live chat (OpenRouter) and live embedding (OpenRouter routing to OpenAI) providers.
@@ -41,7 +42,7 @@ This contract keeps Release 1 NOT READY / NOT DEPLOYED until all required gates 
 
 ### 1.2 Release 1 non-scope
 
-- Ukrainian localization (deferred until after deployment stabilization; future target is an EN / UA language switch).
+- Ukrainian localization (deferred until after deployment stabilization; future target is an EN / UA language switch). *(Superseded by DEC-059, 2026-08-24: Ukrainian-first localization is now an active bounded work stream, WP-UX-UA-01 onward; the initial deployment itself still ships the current English-only UI until those packages are implemented and deployed.)*
 - CI/CD deployment automation (deferred until after first stable deployment).
 - Full observability platform (logs, metrics, tracing suite).
 - General enterprise AI platform expansion.
@@ -260,12 +261,12 @@ New PD-7 semantics:
 - bounded deployment verification;
 - no claim of a full observability platform.
 
-### PD-11 — Language: ACCEPTED
+### PD-11 — Language: ACCEPTED (ordering superseded by DEC-059)
 
-- Release 1 UI and operational README are English-first;
-- Ukrainian localization is explicitly deferred until after deployment stabilization;
-- future target is an EN / UA language switch;
-- localization must not block initial Release 1 deployment;
+- Release 1 UI and operational README are English-first; *(ordering superseded by DEC-059, 2026-08-24 — Ukrainian becomes the default product and demo language, English the secondary locale)*
+- Ukrainian localization is explicitly deferred until after deployment stabilization; *(superseded by DEC-059 — Ukrainian-first is now an active bounded work stream, WP-UX-UA-01 onward)*
+- future target is an EN / UA language switch; *(confirmed by DEC-059 as `uk` default / `en` secondary)*
+- localization must not block initial Release 1 deployment; *(preserved by DEC-059 — deployment gates are unchanged)*
 - bilingual CV/portfolio presentation belongs to post-stabilization or Phase 8 work unless separately authorized.
 
 ### PD-12 — Single-VPS deployment model: ACCEPTED (DEC-058, 2026-08-21)
