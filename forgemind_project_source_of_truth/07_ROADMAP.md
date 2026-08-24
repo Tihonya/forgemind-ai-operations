@@ -128,7 +128,7 @@ OPEN / IN PROGRESS — WP-P7-01 (deployment contract, DEC-054) is COMPLETE (inco
 - AT-001, AT-002, AT-014, AT-015 pass on public environment.
 
 ### Authoritative contract
-The Release 1 / Phase 7 deployment contract and controlled decomposition are defined in `docs/planning/phase_7_deployment_contract.md` (WP-P7-01, DEC-054). The contract records Product Owner deployment decisions PD-1 through PD-11, a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12), staging/production/release gates, a VPS security-hardening contract, and a Hostinger and domain input contract. No deployment-gated acceptance test is marked PASS until deployment evidence exists.
+The Release 1 / Phase 7 deployment contract and controlled decomposition are defined in `docs/planning/phase_7_deployment_contract.md` (WP-P7-01, DEC-054). The contract records Product Owner deployment decisions PD-1 through PD-12, a dependency-ordered work-package decomposition (WP-P7-01 through WP-P7-12), staging/production/release gates, a VPS security-hardening contract, and a Hostinger and domain input contract. No deployment-gated acceptance test is marked PASS until deployment evidence exists.
 
 ## Phase 8 — Portfolio release
 

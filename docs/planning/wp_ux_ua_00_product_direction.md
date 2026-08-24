@@ -1,7 +1,7 @@
 # WP-UX-UA-00 — Ukrainian-First, First-Time User Experience, Mobile-First and Traceability Product Direction
 
 **Package:** WP-UX-UA-00 — Product decision application and planning reconciliation (documentation-only)
-**Status:** PLANNING / DECISION PACKAGE — pending merge. This document records accepted Product Owner decisions and the updated bounded implementation order. It authorizes NO implementation.
+**Status:** COMPLETE / INCORPORATED through PR #126 (regular merge commit `1b60d293d05fc76f5610d11fcc9100edd3d8dfb4`, 2026-08-24). This document records accepted Product Owner decisions and the updated bounded implementation order. It authorizes NO implementation.
 **Decision record:** DEC-059 (see `forgemind_project_source_of_truth/08_DECISION_LOG.md`)
 **Date:** 2026-08-24
 **Reconciliation base snapshot:** main @ `7e80e0f3ccb98dcf5685509b6847bc9c193fd599` (PR #125 merge commit; snapshot semantics per DEC-051)
@@ -298,7 +298,7 @@ All packages are separate PRs. No single PR combines all UX work. Backend migrat
 
 ### WP-UX-UA-11 — Accessibility and responsive consolidation audit
 
-- Objective: consolidation gate over all changed surfaces: focus management, ARIA semantics, contrast, heading/landmark structure, viewport evidence consolidation at 360/800/1024/1280 widths, Ukrainian expansion audit, touch-target audit. This consolidates mobile behavior; it is NOT the first time mobile behavior is addressed (every prior frontend package already carries mobile acceptance).
+- Objective: consolidation gate over all changed surfaces: focus management, ARIA semantics, contrast, heading/landmark structure, viewport evidence consolidation at 360/390/768/1280 widths, Ukrainian expansion audit, touch-target audit. This consolidates mobile behavior; it is NOT the first time mobile behavior is addressed (every prior frontend package already carries mobile acceptance).
 - Dependencies: WP-UX-UA-01..08 frontend packages.
 - Likely file scope: hardening edits across changed components, evidence documentation.
 - Acceptance: keyboard-only completion of login → scenario → trace inspection; no focus traps; documented viewport evidence per route.
