@@ -64,7 +64,7 @@ export default function AuthenticatedLayout() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-steel-950 text-steel-100">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-white focus:rounded"
@@ -83,7 +83,7 @@ export default function AuthenticatedLayout() {
         />
         <main
           id="main-content"
-          className="flex-1 overflow-y-auto bg-steel-950 p-4 sm:p-6"
+          className="flex-1 overflow-y-auto bg-background p-4 sm:p-6"
           aria-label={t('a11y.mainContent')}
         >
           <Outlet />

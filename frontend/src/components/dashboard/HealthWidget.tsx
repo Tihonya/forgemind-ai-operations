@@ -105,7 +105,7 @@ export default function HealthWidget() {
   const { data, isLoading, isError, refetch } = useHealth();
 
   return (
-    <Card className="bg-steel-900/60 border-steel-700" data-testid="health-widget">
+    <Card data-testid="health-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Activity className="h-4 w-4 text-steel-500" aria-hidden="true" />

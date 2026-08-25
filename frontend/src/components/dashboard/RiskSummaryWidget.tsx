@@ -94,7 +94,7 @@ export default function RiskSummaryWidget({ planCode }: RiskSummaryWidgetProps) 
   const { summary, isLoading, isError, refetch } = useRiskSummary(planCode);
 
   return (
-    <Card className="bg-steel-900/60 border-steel-700" data-testid="risk-summary-widget">
+    <Card data-testid="risk-summary-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <ShieldAlert className="h-4 w-4 text-steel-500" aria-hidden="true" />

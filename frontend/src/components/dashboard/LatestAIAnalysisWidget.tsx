@@ -65,10 +65,7 @@ export default function LatestAIAnalysisWidget() {
   const ctaDestination = getCtaDestination(latestRun?.id, latestRun?.state);
 
   return (
-    <Card
-      className="bg-steel-900/60 border-steel-700"
-      data-testid="latest-ai-analysis-widget"
-    >
+    <Card data-testid="latest-ai-analysis-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Bot className="h-4 w-4 text-steel-500" aria-hidden="true" />

@@ -1,4 +1,18 @@
 {
   "heading": "Operations Dashboard",
-  "purpose": "Active plan, supply risks, and AI-assisted decisions — in one place"
+  "purpose": "Active plan, supply risks, and AI-assisted decisions — in one place",
+  "sections": {
+    "attention": {
+      "title": "Requires attention now",
+      "description": "The active production plan and detected supply risks."
+    },
+    "analysis": {
+      "title": "AI analysis and decisions",
+      "description": "Latest AI analysis and requests awaiting approval."
+    },
+    "operations": {
+      "title": "Operational status",
+      "description": "System health and demo dataset integrity."
+    }
+  }
 }

@@ -217,4 +217,44 @@ describe('Dashboard — WP-UX-01', () => {
       ).toBeInTheDocument();
     });
   });
+
+  describe('WP-UX-UA-02 section grouping (first-time comprehension)', () => {
+    it('renders three section headings in Ukrainian by default', () => {
+      renderDashboard();
+      expect(
+        screen.getByRole('heading', { name: 'Потребує уваги зараз', level: 2 }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', {
+          name: 'Аналіз ШІ та рішення',
+          level: 2,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Операційний стан', level: 2 }),
+      ).toBeInTheDocument();
+    });
+
+    it('renders the section headings in English after switching to en', () => {
+      act(() => {
+        void i18n.changeLanguage('en');
+      });
+      renderDashboard();
+      expect(
+        screen.getByRole('heading', {
+          name: 'Requires attention now',
+          level: 2,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', {
+          name: 'AI analysis and decisions',
+          level: 2,
+        }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole('heading', { name: 'Operational status', level: 2 }),
+      ).toBeInTheDocument();
+    });
+  });
 });
