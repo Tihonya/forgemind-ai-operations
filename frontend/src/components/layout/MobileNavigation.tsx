@@ -130,7 +130,7 @@ export default function MobileNavigation({
         role="dialog"
         aria-modal="true"
         aria-label={t('mobileMenu.ariaLabel')}
-        className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-steel-700 bg-steel-900 shadow-xl"
+        className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col border-r border-border bg-card shadow-drawer"
       >
         <div className="flex h-16 shrink-0 items-center justify-between border-b border-steel-700 px-4">
           <span className="text-sm font-semibold text-white">ForgeMind</span>

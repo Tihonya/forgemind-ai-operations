@@ -44,8 +44,8 @@ export default function NavigationEntry({ item }: NavigationItemProps) {
         cn(
           'flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors border-l-2',
           navActive
-            ? 'bg-steel-800 text-white border-primary-500'
-            : 'text-steel-400 border-transparent hover:bg-steel-800/50 hover:text-steel-100'
+            ? 'bg-accent text-accent-foreground border-primary'
+            : 'text-muted-foreground border-transparent hover:bg-accent/50 hover:text-foreground'
         )
       }
     >

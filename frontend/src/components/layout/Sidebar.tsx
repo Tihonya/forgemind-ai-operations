@@ -49,7 +49,7 @@ export default function Sidebar({ user }: SidebarProps) {
   return (
     <aside
       aria-label={t('a11y.primaryNav')}
-      className="hidden h-screen w-64 shrink-0 flex-col border-r border-steel-700 bg-steel-900 md:flex"
+      className="hidden h-screen w-64 shrink-0 flex-col border-r border-border bg-card md:flex"
     >
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-steel-700">

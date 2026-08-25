@@ -46,7 +46,7 @@ export default function Header({
 
   return (
     <header
-      className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-steel-700 bg-steel-900 px-3 sm:px-6"
+      className="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-border bg-card px-3 sm:px-6"
       aria-label={t('header.ariaLabel')}
     >
       <div className="flex min-w-0 items-center gap-2">

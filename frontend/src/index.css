@@ -2,27 +2,73 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ForgeMind design-token layer (WP-UX-UA-02).
+ *
+ * Single source of truth for the authenticated visual theme. Every token
+ * below is consumed through Tailwind utilities (see tailwind.config.ts) so
+ * changed surfaces never hardcode one-off hex values or arbitrary spacing.
+ *
+ * Token categories:
+ *   1. page background & surface hierarchy   (--background / --card / --popover)
+ *   2. action colors                         (--primary / --secondary / --destructive)
+ *   3. text hierarchy                        (--foreground / --muted-foreground)
+ *   4. borders & dividers                    (--border / --input)
+ *   5. focus rings                           (--ring)
+ *   6. semantic feedback                     (--success / --warning / --info / --destructive)
+ *   7. spacing                               (Tailwind spacing scale, see config)
+ *   8. border radius                         (--radius)
+ *   9. shadows                               (Tailwind shadow tokens, see config)
+ *  10. typography                            (font family / sizes, see config)
+ *  11. responsive container widths           (--container-* , see config)
+ *  12. motion + reduced-motion               (--motion-* + prefers-reduced-motion)
+ *
+ * Surface hierarchy (dark, steel family):
+ *   background = steel-950  → page canvas
+ *   card       = steel-900  → elevated panel / card
+ *   popover    = steel-800  → floating surface (tooltip, dialog)
+ */
+
 @layer base {
   :root {
+    /* 1. page background & surface hierarchy */
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
+    --card: 222.2 47.4% 11.2%;
     --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
+    --popover: 217.2 32.6% 17.5%;
     --popover-foreground: 210 40% 98%;
-    --primary: 198.7 93% 48%;
+
+    /* 2. action colors */
+    --primary: 199 89% 48%;
     --primary-foreground: 222.2 84% 4.9%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
+
+    /* 3. text hierarchy */
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+
+    /* 4. borders & dividers */
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 198.7 93% 48%;
+
+    /* 5. focus rings */
+    --ring: 199 89% 48%;
+
+    /* 6. semantic feedback */
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --success: 160 84% 39%;
+    --success-foreground: 210 40% 98%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 222.2 84% 4.9%;
+    --info: 199 89% 48%;
+    --info-foreground: 222.2 84% 4.9%;
+
+    /* 8. border radius */
     --radius: 0.5rem;
   }
 }
@@ -32,9 +78,9 @@
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #0f172a;
+  color-scheme: dark;
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -53,4 +99,20 @@ body {
 #root {
   width: 100%;
   margin: 0 auto;
+}
+
+/*
+ * 12. Motion: honor prefers-reduced-motion globally. Users who request
+ * reduced motion get near-instant, non-animated transitions while the
+ * default experience keeps the existing (brief, non-blocking) transitions.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
