@@ -1,9 +1,10 @@
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { AuthUser } from '@/contexts/auth.context'
 import { useNavigationPermissions } from './navigation/useNavigationPermissions'
 import NavigationEntry from './navigation/NavigationItem'
-import { ROLE_LABELS } from './navigation/navigation-config'
+import { ROLE_LABEL_KEYS } from './navigation/navigation-config'
 import { normalizeRoles } from './navigation/useNavigationPermissions'
 
 /**
@@ -25,27 +26,30 @@ interface SidebarProps {
 }
 
 /**
- * Primary navigation sidebar.
+ * Primary navigation sidebar (desktop ≥768px; the mobile surface renders
+ * via ``MobileNavigation`` on narrow viewports).
  *
  * Renders:
  * - ForgeMind logo + product name
- * - Role-aware navigation items (filtered by useNavigationPermissions)
+ * - Role-aware navigation items (filtered by useNavigationPermissions;
+ *   labels localized per WP-UX-UA-01)
  * - User profile summary at the bottom
  */
 export default function Sidebar({ user }: SidebarProps) {
+  const { t } = useTranslation('shell')
   const displayName = user.display_name ?? user.username
   const roleLabel = useMemo(() => {
     const normalized = normalizeRoles(user.roles)
     const primaryRole = Array.from(normalized)[0]
-    return primaryRole ? ROLE_LABELS[primaryRole] : 'User'
-  }, [user.roles])
+    return primaryRole ? t(ROLE_LABEL_KEYS[primaryRole]) : t('roleLabels.unknown')
+  }, [user.roles, t])
 
   const { navigationItems } = useNavigationPermissions(user.roles)
 
   return (
     <aside
-      aria-label="Primary navigation"
-      className="flex h-screen w-64 flex-col bg-steel-900 border-r border-steel-700"
+      aria-label={t('a11y.primaryNav')}
+      className="hidden h-screen w-64 shrink-0 flex-col border-r border-steel-700 bg-steel-900 md:flex"
     >
       {/* Brand */}
       <div className="flex h-16 items-center gap-3 px-5 border-b border-steel-700">
@@ -57,7 +61,7 @@ export default function Sidebar({ user }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
+      <nav aria-label={t('a11y.primaryNav')} className="flex-1 overflow-y-auto px-4 py-6 space-y-1">
         {navigationItems.map((item) => (
           <NavigationEntry key={item.id} item={item} />
         ))}

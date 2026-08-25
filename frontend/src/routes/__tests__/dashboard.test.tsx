@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Dashboard from '@/routes/dashboard';
+import i18n from '@/i18n';
 
 vi.mock('@/hooks/useActivePlan');
 vi.mock('@/hooks/use-workflow-runs');
@@ -32,6 +33,12 @@ function renderDashboard() {
 }
 
 describe('Dashboard — WP-UX-01', () => {
+  afterEach(() => {
+    act(() => {
+      void i18n.changeLanguage('uk');
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
 
@@ -179,10 +186,34 @@ describe('Dashboard — WP-UX-01', () => {
   });
 
   describe('page heading', () => {
-    it('renders Operations Dashboard heading', () => {
+    it('renders Ukrainian Operations Dashboard heading by default', () => {
       renderDashboard();
       expect(
-        screen.getByText('Operations Dashboard'),
+        screen.getByRole('heading', { name: 'Операційний огляд', level: 1 }),
+      ).toBeInTheDocument();
+    });
+
+    it('renders Ukrainian purpose text by default', () => {
+      renderDashboard();
+      expect(
+        screen.getByText(
+          'Активний план, ризики постачання та рішення за участю ШІ — в одному місці.',
+        ),
+      ).toBeInTheDocument();
+    });
+
+    it('renders English heading and purpose after switching to en', () => {
+      act(() => {
+        void i18n.changeLanguage('en');
+      });
+      renderDashboard();
+      expect(
+        screen.getByRole('heading', { name: 'Operations Dashboard', level: 1 }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Active plan, supply risks, and AI-assisted decisions — in one place',
+        ),
       ).toBeInTheDocument();
     });
   });

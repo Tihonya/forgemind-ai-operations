@@ -25,13 +25,21 @@ export type UserRole =
 /**
  * Navigation item definition.
  *
- * - `path` present for active routes (Phase 3 / Phase 6 screens).
- * - `path` undefined for future-phase items (disable, show phase label).
- * - `phase` present → item belongs to a later phase, rendered disabled.
- * - `roles` → set of roles that can see this item.
+ * - `id` — stable internal identifier (routing/permissions/tests). NEVER
+ *   translated, NEVER changed by localization work.
+ * - `path` — present for active routes (Phase 3 / Phase 6 screens); the
+ *   route PATH is machine content and unchanged by localization.
+ * - `phase` — present → item belongs to a later phase, rendered disabled.
+ * - `labelKey` — semantic catalog key (`shell.navigation.<id>`) resolved at
+ *   render time via react-i18next (WP-UX-UA-01). The English literal
+ *   remains available as the safe non-i18n fallback.
+ * - `roles` — set of roles that can see this item (permission model
+ *   unchanged).
  */
 export interface NavigationItem {
   id: string
+  labelKey: string
+  /** English fallback label (used only outside an i18n context). */
   label: string
   path?: string
   phase?: number
@@ -72,6 +80,7 @@ export const AUDIT_READ_ROLES: ReadonlySet<UserRole> = new Set<UserRole>([
 export const NAVIGATION_ITEMS: NavigationItem[] = [
   {
     id: 'dashboard',
+    labelKey: 'shell:navigation.dashboard',
     label: 'Dashboard',
     path: '/',
     icon: LayoutDashboard,
@@ -85,6 +94,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'supply-risk',
+    labelKey: 'shell:navigation.supplyRisks',
     label: 'Supply Risk Analysis',
     path: '/supply-risk',
     icon: ShieldAlert,
@@ -95,6 +105,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'knowledge',
+    labelKey: 'shell:navigation.knowledgeSources',
     label: 'Knowledge Sources',
     phase: 4,
     icon: BookOpen,
@@ -102,6 +113,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'workflows',
+    labelKey: 'shell:navigation.workflowRuns',
     label: 'Workflow Runs',
     phase: 5,
     icon: Workflow,
@@ -113,6 +125,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'approvals',
+    labelKey: 'shell:navigation.approvalCenter',
     label: 'Approval Center',
     path: '/approval-center',
     icon: CheckCircle2,
@@ -124,6 +137,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'audit',
+    labelKey: 'shell:navigation.auditLog',
     label: 'Audit Log',
     path: '/audit-log',
     icon: FileText,
@@ -131,6 +145,7 @@ export const NAVIGATION_ITEMS: NavigationItem[] = [
   },
   {
     id: 'admin',
+    labelKey: 'shell:navigation.admin',
     label: 'Admin / Model Status',
     phase: 7,
     icon: Settings,
@@ -150,7 +165,25 @@ export const ALL_ROLES: UserRole[] = [
 ]
 
 /**
- * Human-readable role labels for display.
+ * Semantic i18n keys for role display labels (WP-UX-UA-01).
+ *
+ * Machine role codes stay English and are never translated (product
+ * language contract). Only the presentation layer maps codes → localized
+ * labels through the catalog.
+ */
+export const ROLE_LABEL_KEYS: Record<UserRole, string> = {
+  production_manager: 'shell:roleLabels.productionManager',
+  procurement_specialist: 'shell:roleLabels.procurementSpecialist',
+  engineer: 'shell:roleLabels.engineer',
+  ai_administrator: 'shell:roleLabels.aiAdministrator',
+  auditor: 'shell:roleLabels.auditor',
+}
+
+/**
+ * Backward-compatible English role label map (non-i18n fallback and
+ * pre-i18n consumers). Localized rendering uses ``ROLE_LABEL_KEYS`` through
+ * the catalogs; this map keeps machine-code → English display parity for
+ * any call site outside a React tree.
  */
 export const ROLE_LABELS: Record<UserRole, string> = {
   production_manager: 'Production Manager',

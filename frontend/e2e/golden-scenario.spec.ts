@@ -78,10 +78,41 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
 
   // Wait for navigation to dashboard
   await expect(page).toHaveURL('/', { timeout: 10000 });
-  await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
+  // WP-UX-UA-01 pilot: Ukrainian heading by default (no saved preference)
+  await expect(page.getByRole('heading', { name: /Операційний огляд/i, level: 1 })).toBeVisible();
+  await expect(page.getByText('Активний план, ризики постачання та рішення за участю ШІ — в одному місці.')).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
-  // Step 2b: Verify live WP-UX-01 Dashboard widget contract
+  // Step 2b: WP-UX-UA-01 locale contract (uk default, en switch, persistence)
+  // ────────────────────────────────────────────────────────────
+
+  // Ukrainian default: navigation, sign-out and role labels are localized
+  await expect(page.getByTestId('nav-link-dashboard')).toContainText('Огляд');
+  await expect(page.getByTestId('nav-link-supply-risk')).toContainText('Ризики постачання');
+  await expect(page.getByTestId('header-logout')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
+
+  // Switch to English: pilot scope must re-render immediately, no reload
+  await page.getByTestId('locale-switch-en').click();
+  await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
+  await expect(page.getByTestId('nav-link-dashboard')).toContainText('Dashboard');
+  await expect(page.getByTestId('nav-link-supply-risk')).toContainText('Supply Risk Analysis');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+  // The selected locale persists across reloads
+  await page.reload();
+  await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+  // Back to Ukrainian (Product Owner default) for the remainder of the
+  // scenario — all subsequent shell assertions use Ukrainian labels
+  await page.getByTestId('locale-switch-uk').click();
+  await expect(page.getByRole('heading', { name: /Операційний огляд/i, level: 1 })).toBeVisible();
+  await expect(page.getByTestId('nav-link-dashboard')).toContainText('Огляд');
+  await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
+
+  // ────────────────────────────────────────────────────────────
+  // Step 2c: Verify live WP-UX-01 Dashboard widget contract
   // ────────────────────────────────────────────────────────────
   // The canonical CI seed creates no workflow runs and no approval
   // requests, so the fresh-state Dashboard must show the truthful
@@ -132,9 +163,9 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(page.getByTestId('severity-low-count')).toHaveText('0');
 
   // ────────────────────────────────────────────────────────────
-  // Step 4: Navigate to Supply Risk Analysis
+  // Step 4: Navigate to Supply Risk Analysis (Ukrainian nav label)
   // ────────────────────────────────────────────────────────────
-  await page.getByRole('link', { name: /Supply Risk Analysis/i }).click();
+  await page.getByTestId('nav-link-supply-risk').click();
   await expect(page).toHaveURL('/supply-risk', { timeout: 5000 });
 
   // Verify page heading
@@ -290,7 +321,8 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // Step 15: Logout
   // ────────────────────────────────────────────────────────────
-  // Header component has data-testid="header-logout" with aria-label="Sign out"
+  // Header button has data-testid="header-logout" (aria-label localized:
+  // «Вийти» in uk). WP-UX-UA-01 leaves the logout behavior unchanged.
   await page.getByTestId('header-logout').click();
 
   // Verify redirect to login

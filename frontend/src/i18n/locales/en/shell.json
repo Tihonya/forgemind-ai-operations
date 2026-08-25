@@ -1,0 +1,36 @@
+{
+  "navigation": {
+    "dashboard": "Dashboard",
+    "supplyRisks": "Supply Risk Analysis",
+    "knowledgeSources": "Knowledge Sources",
+    "workflowRuns": "Workflow Runs",
+    "approvalCenter": "Approval Center",
+    "auditLog": "Audit Log",
+    "admin": "Admin / Model Status"
+  },
+  "phaseMarker": "Phase {{phase}}",
+  "phaseAvailable": "Available in Phase {{phase}}",
+  "roleLabels": {
+    "unknown": "User",
+    "productionManager": "Production Manager",
+    "procurementSpecialist": "Procurement Specialist",
+    "engineer": "Engineer",
+    "aiAdministrator": "AI Administrator",
+    "auditor": "Auditor"
+  },
+  "header": {
+    "ariaLabel": "Application header",
+    "breadcrumbAriaLabel": "Breadcrumb"
+  },
+  "a11y": {
+    "skipToContent": "Skip to main content",
+    "mainContent": "Main content",
+    "primaryNav": "Primary navigation"
+  },
+  "signOut": "Sign out",
+  "mobileMenu": {
+    "ariaLabel": "Main menu",
+    "open": "Open menu",
+    "close": "Close menu"
+  }
+}
