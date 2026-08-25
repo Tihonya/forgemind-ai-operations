@@ -1,5 +1,5 @@
 /**
- * i18n initialization (WP-UX-UA-01).
+ * i18n initialization (WP-UX-UA-01; broadened in WP-UX-UA-03).
  *
  * Bundled translation catalogs only. No remote translation service; no
  * runtime network loading. No browser-language detector: the Product
@@ -18,11 +18,23 @@ import i18n from 'i18next'
 import { initReactI18next } from 'react-i18next'
 
 import enCommon from './locales/en/common.json'
-import enDashboard from './locales/en/dashboard.json'
 import enShell from './locales/en/shell.json'
+import enDashboard from './locales/en/dashboard.json'
+import enLogin from './locales/en/login.json'
+import enSupplyRisk from './locales/en/supplyRisk.json'
+import enRiskDetail from './locales/en/riskDetail.json'
+import enWorkflow from './locales/en/workflow.json'
+import enApproval from './locales/en/approval.json'
+import enAudit from './locales/en/audit.json'
 import ukCommon from './locales/uk/common.json'
-import ukDashboard from './locales/uk/dashboard.json'
 import ukShell from './locales/uk/shell.json'
+import ukDashboard from './locales/uk/dashboard.json'
+import ukLogin from './locales/uk/login.json'
+import ukSupplyRisk from './locales/uk/supplyRisk.json'
+import ukRiskDetail from './locales/uk/riskDetail.json'
+import ukWorkflow from './locales/uk/workflow.json'
+import ukApproval from './locales/uk/approval.json'
+import ukAudit from './locales/uk/audit.json'
 import { resolveInitialLocale } from './locale-service'
 
 export const RESOURCES = {
@@ -30,16 +42,38 @@ export const RESOURCES = {
     common: ukCommon,
     shell: ukShell,
     dashboard: ukDashboard,
+    login: ukLogin,
+    supplyRisk: ukSupplyRisk,
+    riskDetail: ukRiskDetail,
+    workflow: ukWorkflow,
+    approval: ukApproval,
+    audit: ukAudit,
   },
   en: {
     common: enCommon,
     shell: enShell,
     dashboard: enDashboard,
+    login: enLogin,
+    supplyRisk: enSupplyRisk,
+    riskDetail: enRiskDetail,
+    workflow: enWorkflow,
+    approval: enApproval,
+    audit: enAudit,
   },
 } as const
 
 /** Namespaces used by this package's catalogs (registry for tests/parity). */
-export const CATALOG_NAMESPACES = ['common', 'shell', 'dashboard'] as const
+export const CATALOG_NAMESPACES = [
+  'common',
+  'shell',
+  'dashboard',
+  'login',
+  'supplyRisk',
+  'riskDetail',
+  'workflow',
+  'approval',
+  'audit',
+] as const
 
 /**
  * Active locale resolved ONCE, synchronously, BEFORE the React application

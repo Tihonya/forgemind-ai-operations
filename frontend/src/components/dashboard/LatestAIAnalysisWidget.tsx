@@ -6,70 +6,60 @@
  * timestamp, and a state-aware CTA that routes to:
  *   - existing run → /workflow-runs/{run_id}
  *   - no run       → /supply-risk
+ *
+ * Localized per WP-UX-UA-03; the workflow state badge keeps its machine
+ * status label (WP-UX-UA-04 scope), and the timestamp formats with the
+ * active locale.
  */
 
-import { Link } from 'react-router-dom';
-import { Bot, ArrowRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
+import { Bot, ArrowRight } from 'lucide-react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import WorkflowStateBadge from '@/components/dashboard/WorkflowStateBadge';
-import { useWorkflowRuns } from '@/hooks/use-workflow-runs';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import WorkflowStateBadge from '@/components/dashboard/WorkflowStateBadge'
+import { useWorkflowRuns } from '@/hooks/use-workflow-runs'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import {
   isNonterminalState,
   isFailedState,
-} from '@/lib/workflow-state-labels';
+} from '@/lib/workflow-state-labels'
 
 /**
- * Format an ISO timestamp to a short, human-readable date-time.
+ * Determine the CTA label key for a given run state.
  */
-function formatTimestamp(iso: string | null): string | null {
-  if (!iso) return null;
-  try {
-    const date = new Date(iso);
-    return date.toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-/**
- * Determine the CTA label for a given run state.
- */
-function getCtaLabel(state: string | null | undefined): string {
-  if (!state) return 'Review supply risks';
-  if (state === 'COMPLETED') return 'View recommendation';
-  if (isNonterminalState(state)) return 'View progress';
-  if (isFailedState(state)) return 'Review failure';
-  return 'Review supply risks';
+function getCtaLabelKey(state: string | null | undefined): string {
+  if (!state) return 'widgets.latestAiAnalysis.reviewSupplyRisks'
+  if (state === 'COMPLETED') return 'widgets.latestAiAnalysis.viewRecommendation'
+  if (isNonterminalState(state)) return 'widgets.latestAiAnalysis.viewProgress'
+  if (isFailedState(state)) return 'widgets.latestAiAnalysis.reviewFailure'
+  return 'widgets.latestAiAnalysis.reviewSupplyRisks'
 }
 
 /**
  * Determine the CTA destination for a given run.
  */
 function getCtaDestination(runId: string | undefined, state: string | null | undefined): string {
-  if (runId && state) return `/workflow-runs/${runId}`;
-  return '/supply-risk';
+  if (runId && state) return `/workflow-runs/${runId}`
+  return '/supply-risk'
 }
 
 export default function LatestAIAnalysisWidget() {
-  const { runs, isLoading, isError, refetch } = useWorkflowRuns({ limit: 5, offset: 0 });
-  const latestRun = runs.length > 0 ? runs[0] : undefined;
-  const ctaLabel = getCtaLabel(latestRun?.state);
-  const ctaDestination = getCtaDestination(latestRun?.id, latestRun?.state);
+  const { t } = useTranslation('dashboard')
+  const { runs, isLoading, isError, refetch } = useWorkflowRuns({ limit: 5, offset: 0 })
+  const { formatDateTime } = useLocalizedFormatters()
+  const latestRun = runs.length > 0 ? runs[0] : undefined
+  const ctaLabel = t(getCtaLabelKey(latestRun?.state))
+  const ctaDestination = getCtaDestination(latestRun?.id, latestRun?.state)
 
   return (
     <Card data-testid="latest-ai-analysis-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Bot className="h-4 w-4 text-steel-500" aria-hidden="true" />
-          Latest AI Analysis
+          {t('widgets.latestAiAnalysis.title')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -84,18 +74,18 @@ export default function LatestAIAnalysisWidget() {
         {isError && (
           <div className="space-y-2" data-testid="latest-ai-analysis-error">
             <p className="text-sm text-red-400" role="alert">
-              Unable to load AI analysis
+              {t('widgets.latestAiAnalysis.error')}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                void refetch();
+                void refetch()
               }}
               data-testid="latest-ai-analysis-retry"
               className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
             >
-              Retry
+              {t('common:actions.retry')}
             </Button>
           </div>
         )}
@@ -103,7 +93,7 @@ export default function LatestAIAnalysisWidget() {
         {!isLoading && !isError && !latestRun && (
           <div className="space-y-3" data-testid="latest-ai-analysis-empty">
             <p className="text-sm text-steel-400">
-              No AI analysis yet
+              {t('widgets.latestAiAnalysis.empty')}
             </p>
             <Button asChild size="sm" data-testid="latest-ai-analysis-cta">
               <Link to={ctaDestination}>
@@ -136,7 +126,7 @@ export default function LatestAIAnalysisWidget() {
               )}
               {latestRun.created_at && (
                 <span data-testid="latest-ai-analysis-timestamp">
-                  {formatTimestamp(latestRun.created_at)}
+                  {formatDateTime(latestRun.created_at)}
                 </span>
               )}
             </div>
@@ -150,5 +140,5 @@ export default function LatestAIAnalysisWidget() {
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

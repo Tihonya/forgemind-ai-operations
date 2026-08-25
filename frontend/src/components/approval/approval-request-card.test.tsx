@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
 import { LOCALE_STORAGE_KEY } from '@/i18n/locale-service'
@@ -70,7 +70,7 @@ describe('ApprovalRequestCard — locale-connected date formatting', () => {
       await i18n.changeLanguage('uk')
     })
     expect(screen.getByTestId('requested-at')).toHaveTextContent('16 лип. 2026 р.')
-    expect(screen.getByText('on 16 січ. 2026 р.')).toBeInTheDocument()
+    expect(screen.getByText('16 січ. 2026 р.')).toBeInTheDocument()
 
     // Switch to English on the same mounted card.
     await act(async () => {
@@ -78,7 +78,7 @@ describe('ApprovalRequestCard — locale-connected date formatting', () => {
     })
     expect(screen.getByTestId('requested-at')).toHaveTextContent('Jul 16, 2026')
     expect(screen.getByText('on Jan 16, 2026')).toBeInTheDocument()
-    expect(screen.queryByText('on 16 січ. 2026 р.')).not.toBeInTheDocument()
+    expect(screen.queryByText('16 січ. 2026 р.')).not.toBeInTheDocument()
 
     // And back — same mount throughout.
     await act(async () => {
@@ -106,6 +106,11 @@ describe('ApprovalRequestCard — locale-connected date formatting', () => {
 })
 
 describe('ApprovalRequestCard', () => {
+  beforeEach(async () => {
+    localStorage.setItem('forgemind_locale', 'en')
+    await i18n.changeLanguage('en')
+  })
+
   it('renders status, action snapshot, requester, and timestamp', () => {
     renderCard()
     expect(screen.getByTestId('approval-status-badge')).toHaveTextContent(

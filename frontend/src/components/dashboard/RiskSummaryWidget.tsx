@@ -1,10 +1,11 @@
-import { ShieldAlert } from 'lucide-react';
+import { useTranslation } from 'react-i18next'
+import { ShieldAlert } from 'lucide-react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { useRiskSummary } from '@/hooks/useRiskSummary';
-import type { RiskSummary } from '@/lib/risks-api';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { useRiskSummary } from '@/hooks/useRiskSummary'
+import type { RiskSummary } from '@/lib/risks-api'
 
 interface SeverityBadgeProps {
   label: string;
@@ -24,22 +25,22 @@ function SeverityBadge({ label, count, color, testId }: SeverityBadgeProps) {
       </span>
       <span className="text-xs text-steel-400">{label}</span>
     </div>
-  );
+  )
 }
 
-function SummaryContent({ summary }: { summary: RiskSummary }) {
+function SummaryContent({ summary, t }: { summary: RiskSummary; t: (key: string) => string }) {
   if (summary.total === 0) {
     return (
       <p className="text-sm text-steel-400" data-testid="no-risks">
-        No active risks for this plan
+        {t('widgets.riskSummary.noRisks')}
       </p>
-    );
+    )
   }
 
   return (
     <div className="space-y-3">
       <div className="flex items-baseline justify-between">
-        <span className="text-sm text-steel-400">Total risks</span>
+        <span className="text-sm text-steel-400">{t('widgets.riskSummary.totalRisks')}</span>
         <span
           className="text-2xl font-bold text-white"
           data-testid="risk-total"
@@ -51,6 +52,7 @@ function SummaryContent({ summary }: { summary: RiskSummary }) {
         className="grid grid-cols-4 gap-2"
         data-testid="severity-breakdown"
       >
+        {/* Severity labels are machine-status labels owned by WP-UX-UA-04. */}
         <SeverityBadge
           label="Critical"
           count={summary.critical}
@@ -77,7 +79,7 @@ function SummaryContent({ summary }: { summary: RiskSummary }) {
         />
       </div>
     </div>
-  );
+  )
 }
 
 interface RiskSummaryWidgetProps {
@@ -91,14 +93,15 @@ interface RiskSummaryWidgetProps {
  * Fetches risks only when a plan code is provided.
  */
 export default function RiskSummaryWidget({ planCode }: RiskSummaryWidgetProps) {
-  const { summary, isLoading, isError, refetch } = useRiskSummary(planCode);
+  const { t } = useTranslation('dashboard')
+  const { summary, isLoading, isError, refetch } = useRiskSummary(planCode)
 
   return (
     <Card data-testid="risk-summary-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <ShieldAlert className="h-4 w-4 text-steel-500" aria-hidden="true" />
-          Risk Severity Summary
+          {t('widgets.riskSummary.title')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -116,32 +119,32 @@ export default function RiskSummaryWidget({ planCode }: RiskSummaryWidgetProps) 
         {isError && (
           <div className="space-y-2" data-testid="risk-summary-error">
             <p className="text-sm text-red-400" role="alert">
-              Unable to load risk summary
+              {t('widgets.riskSummary.error')}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                void refetch();
+                void refetch()
               }}
               data-testid="risk-summary-retry"
               className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
             >
-              Retry
+              {t('common:actions.retry')}
             </Button>
           </div>
         )}
         {!isLoading && !isError && (
           <div data-testid="risk-summary-content">
-            <SummaryContent summary={summary} />
+            <SummaryContent summary={summary} t={t} />
           </div>
         )}
         {planCode === null && !isLoading && (
           <p className="text-sm text-steel-500" data-testid="risk-no-plan">
-            Select a production plan to view risks
+            {t('widgets.riskSummary.selectPlan')}
           </p>
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

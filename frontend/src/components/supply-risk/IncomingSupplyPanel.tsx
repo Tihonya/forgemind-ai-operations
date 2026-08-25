@@ -1,7 +1,8 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatQuantity } from '@/lib/utils';
-import type { ComponentPurchaseOrder } from '@/lib/risk-detail-api';
+import { useTranslation } from 'react-i18next'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import type { ComponentPurchaseOrder } from '@/lib/risk-detail-api'
 
 interface IncomingSupplyPanelProps {
   purchaseOrders: ComponentPurchaseOrder[];
@@ -11,41 +12,47 @@ interface IncomingSupplyPanelProps {
 /**
  * Incoming supply panel showing purchase orders for the component.
  * Data sourced from /purchase-orders list + per-PO detail, filtered client-side.
+ *
+ * Localized per WP-UX-UA-03; PO/supplier identifiers and line status remain
+ * machine content.
  */
 export function IncomingSupplyPanel({ purchaseOrders, isPartial }: IncomingSupplyPanelProps) {
+  const { t } = useTranslation('riskDetail')
+  const { formatDate, formatQuantity } = useLocalizedFormatters()
+
   if (purchaseOrders.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Incoming Supply</CardTitle>
+          <CardTitle>{t('incomingSupply.title')}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-muted-foreground">No incoming supply orders found for this component.</p>
+          <p className="text-muted-foreground">{t('incomingSupply.empty')}</p>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Incoming Supply</CardTitle>
+        <CardTitle>{t('incomingSupply.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {isPartial && (
           <p className="mb-3 text-xs text-amber-400" role="note">
-            Showing first 200 purchase orders. Some orders may not be displayed.
+            {t('incomingSupply.partial')}
           </p>
         )}
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>PO Number</TableHead>
-              <TableHead>Supplier</TableHead>
-              <TableHead>Expected Delivery</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Ordered</TableHead>
-              <TableHead className="text-right">Received</TableHead>
+              <TableHead>{t('incomingSupply.poNumber')}</TableHead>
+              <TableHead>{t('incomingSupply.supplier')}</TableHead>
+              <TableHead>{t('incomingSupply.expectedDelivery')}</TableHead>
+              <TableHead>{t('incomingSupply.status')}</TableHead>
+              <TableHead className="text-right">{t('incomingSupply.ordered')}</TableHead>
+              <TableHead className="text-right">{t('incomingSupply.received')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -53,7 +60,7 @@ export function IncomingSupplyPanel({ purchaseOrders, isPartial }: IncomingSuppl
               <TableRow key={po.po_number}>
                 <TableCell className="font-medium">{po.po_number}</TableCell>
                 <TableCell>{po.supplier_code}</TableCell>
-                <TableCell>{po.expected_delivery_date}</TableCell>
+                <TableCell>{formatDate(po.expected_delivery_date)}</TableCell>
                 <TableCell>
                   <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
                     po.line_status === 'CONFIRMED'
@@ -77,5 +84,5 @@ export function IncomingSupplyPanel({ purchaseOrders, isPartial }: IncomingSuppl
         </Table>
       </CardContent>
     </Card>
-  );
+  )
 }

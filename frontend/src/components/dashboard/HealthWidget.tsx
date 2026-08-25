@@ -1,10 +1,11 @@
-import { Activity, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next'
+import { Activity, CheckCircle2, AlertCircle, XCircle } from 'lucide-react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useHealth } from '@/hooks/useHealth';
-import type { HealthCheckResponse } from '@/lib/health-api';
-import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useHealth } from '@/hooks/useHealth'
+import type { HealthCheckResponse } from '@/lib/health-api'
+import { Button } from '@/components/ui/button'
 
 interface StatusIconProps {
   status: HealthCheckResponse['status'];
@@ -19,7 +20,7 @@ function StatusIcon({ status }: StatusIconProps) {
           aria-hidden="true"
           data-testid="health-icon-healthy"
         />
-      );
+      )
     case 'degraded':
       return (
         <AlertCircle
@@ -27,7 +28,7 @@ function StatusIcon({ status }: StatusIconProps) {
           aria-hidden="true"
           data-testid="health-icon-degraded"
         />
-      );
+      )
     case 'unhealthy':
       return (
         <XCircle
@@ -35,34 +36,39 @@ function StatusIcon({ status }: StatusIconProps) {
           aria-hidden="true"
           data-testid="health-icon-unhealthy"
         />
-      );
+      )
   }
 }
 
+/**
+ * Health status labels ("Healthy"/"Degraded"/"Unhealthy") are machine-status
+ * labels owned by WP-UX-UA-04; they remain English here and are inventoried
+ * as intentional machine-code exceptions.
+ */
 function statusLabel(status: HealthCheckResponse['status']): string {
   switch (status) {
     case 'healthy':
-      return 'Healthy';
+      return 'Healthy'
     case 'degraded':
-      return 'Degraded';
+      return 'Degraded'
     case 'unhealthy':
-      return 'Unhealthy';
+      return 'Unhealthy'
   }
 }
 
 function statusColor(status: HealthCheckResponse['status']): string {
   switch (status) {
     case 'healthy':
-      return 'text-emerald-400';
+      return 'text-emerald-400'
     case 'degraded':
-      return 'text-amber-400';
+      return 'text-amber-400'
     case 'unhealthy':
-      return 'text-red-400';
+      return 'text-red-400'
   }
 }
 
 function DependencyRow({ name, value }: { name: string; value: string }) {
-  const isOk = value === 'ok' || (name === 'alembic_revision' && value !== 'unknown');
+  const isOk = value === 'ok' || (name === 'alembic_revision' && value !== 'unknown')
 
   return (
     <div className="flex items-center justify-between py-1" data-testid={`health-dep-${name}`}>
@@ -71,11 +77,11 @@ function DependencyRow({ name, value }: { name: string; value: string }) {
         {value}
       </span>
     </div>
-  );
+  )
 }
 
 function HealthContent({ data }: { data: HealthCheckResponse }) {
-  const checks = data.checks;
+  const checks = data.checks
 
   return (
     <div className="space-y-3" data-testid="health-content">
@@ -92,7 +98,7 @@ function HealthContent({ data }: { data: HealthCheckResponse }) {
         <DependencyRow name="alembic_revision" value={checks.alembic_revision} />
       </div>
     </div>
-  );
+  )
 }
 
 /**
@@ -102,14 +108,15 @@ function HealthContent({ data }: { data: HealthCheckResponse }) {
  * Uses the public /health endpoint (no authentication required).
  */
 export default function HealthWidget() {
-  const { data, isLoading, isError, refetch } = useHealth();
+  const { t } = useTranslation('dashboard')
+  const { data, isLoading, isError, refetch } = useHealth()
 
   return (
     <Card data-testid="health-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Activity className="h-4 w-4 text-steel-500" aria-hidden="true" />
-          System Health
+          {t('widgets.health.title')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -125,7 +132,7 @@ export default function HealthWidget() {
         {isError && (
           <div className="space-y-2" data-testid="health-error">
             <p className="text-sm text-red-400" role="alert">
-              Health check unavailable
+              {t('widgets.health.error')}
             </p>
             <Button
               variant="outline"
@@ -134,12 +141,12 @@ export default function HealthWidget() {
               data-testid="health-retry"
               className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
             >
-              Retry
+              {t('common:actions.retry')}
             </Button>
           </div>
         )}
         {!isLoading && !isError && data && <HealthContent data={data} />}
       </CardContent>
     </Card>
-  );
+  )
 }

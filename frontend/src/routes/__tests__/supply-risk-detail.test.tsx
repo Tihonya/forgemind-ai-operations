@@ -1,8 +1,18 @@
+import { beforeEach } from 'vitest'
+import i18n from '@/i18n'
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import SupplyRiskDetail from '../supply-risk-detail';
 import { createRisk, createMutatedRisk } from '@/test/fixtures/risk-contract';
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 // Mock hooks with fixture support for AT-005
 vi.mock('@/hooks/useActivePlan', () => ({

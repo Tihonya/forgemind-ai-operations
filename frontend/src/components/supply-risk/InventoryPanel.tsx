@@ -1,8 +1,9 @@
-import { Warehouse } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { formatQuantity } from '@/lib/utils';
-import type { InventoryDetail } from '@/lib/risk-detail-api';
+import { useTranslation } from 'react-i18next'
+import { Warehouse } from 'lucide-react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import type { InventoryDetail } from '@/lib/risk-detail-api'
 
 interface InventoryPanelProps {
   inventory: InventoryDetail;
@@ -10,26 +11,31 @@ interface InventoryPanelProps {
 
 /**
  * Inventory panel showing warehouse balances and reservations.
+ *
+ * Localized per WP-UX-UA-03; warehouse/order codes remain machine content.
  */
 export function InventoryPanel({ inventory }: InventoryPanelProps) {
+  const { t } = useTranslation('riskDetail')
+  const { formatQuantity } = useLocalizedFormatters()
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Warehouse className="h-5 w-5" />
-          Inventory
+          {t('inventory.title')}
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {inventory.balances.length > 0 && (
             <div>
-              <div className="text-sm font-medium mb-2">Warehouse Balances</div>
+              <div className="text-sm font-medium mb-2">{t('inventory.warehouseBalances')}</div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Warehouse</TableHead>
-                    <TableHead className="text-right">On Hand</TableHead>
+                    <TableHead>{t('inventory.warehouse')}</TableHead>
+                    <TableHead className="text-right">{t('inventory.onHand')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -45,13 +51,13 @@ export function InventoryPanel({ inventory }: InventoryPanelProps) {
           )}
           {inventory.reservations.length > 0 && (
             <div>
-              <div className="text-sm font-medium mb-2">Reservations</div>
+              <div className="text-sm font-medium mb-2">{t('inventory.reservations')}</div>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Work Order</TableHead>
-                    <TableHead>Warehouse</TableHead>
-                    <TableHead className="text-right">Reserved</TableHead>
+                    <TableHead>{t('inventory.workOrder')}</TableHead>
+                    <TableHead>{t('inventory.warehouse')}</TableHead>
+                    <TableHead className="text-right">{t('inventory.reserved')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -69,5 +75,5 @@ export function InventoryPanel({ inventory }: InventoryPanelProps) {
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }

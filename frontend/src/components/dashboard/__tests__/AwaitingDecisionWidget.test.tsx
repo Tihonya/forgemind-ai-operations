@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -5,6 +6,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AwaitingDecisionWidget from '../AwaitingDecisionWidget';
 import * as useApprovalRequestsModule from '@/hooks/use-approval-requests';
 import type { ApprovalRequestResponse } from '@/lib/approval-api';
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 vi.mock('@/hooks/use-approval-requests');
 

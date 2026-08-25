@@ -8,11 +8,58 @@
     },
     "analysis": {
       "title": "AI analysis and decisions",
-      "description": "Latest AI analysis and requests awaiting approval."
+      "description": "The latest AI analysis and pending approval requests."
     },
     "operations": {
       "title": "Operational status",
       "description": "System health and demo dataset integrity."
+    }
+  },
+  "widgets": {
+    "activePlan": {
+      "title": "Active Production Plan",
+      "error": "Unable to load production plans",
+      "noActivePlan": "No active production plan",
+      "multipleActive": "Multiple active plans detected. Showing the most recent."
+    },
+    "awaitingDecision": {
+      "title": "Awaiting Decision",
+      "error": "Unable to load approval requests",
+      "zero": "No decisions waiting",
+      "waiting_one": "approval request waiting",
+      "waiting_few": "approval requests waiting",
+      "waiting_many": "approval requests waiting",
+      "waiting_other": "approval requests waiting",
+      "review": "Review"
+    },
+    "datasetStatus": {
+      "title": "Dataset Status",
+      "error": "Dataset status unavailable",
+      "version": "Dataset version",
+      "algorithm": "Algorithm",
+      "checksumMatch": "Checksum match",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "health": {
+      "title": "System Health",
+      "error": "Health check unavailable"
+    },
+    "latestAiAnalysis": {
+      "title": "Latest AI Analysis",
+      "error": "Unable to load AI analysis",
+      "empty": "No AI analysis yet",
+      "reviewSupplyRisks": "Review supply risks",
+      "viewRecommendation": "View recommendation",
+      "viewProgress": "View progress",
+      "reviewFailure": "Review failure"
+    },
+    "riskSummary": {
+      "title": "Risk Severity Summary",
+      "error": "Unable to load risk summary",
+      "noRisks": "No active risks for this plan",
+      "totalRisks": "Total risks",
+      "selectPlan": "Select a production plan to view risks"
     }
   }
 }

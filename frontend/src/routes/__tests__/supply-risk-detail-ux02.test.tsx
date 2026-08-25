@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 /**
  * WP-UX-02 — Supply Risk Detail: Restoration, Completed Moment, Status/Copy
  *
@@ -125,6 +126,14 @@ vi.mock('@/hooks/useRiskDetail', () => ({
 }));
 
 import * as workflowApi from '@/lib/workflow-api';
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 // ---------------------------------------------------------------------------
 // Auth context mock

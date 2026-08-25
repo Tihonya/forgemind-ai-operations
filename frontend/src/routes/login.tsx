@@ -1,12 +1,36 @@
 import { FormEvent, useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { Eye, EyeOff, KeyRound, Users } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import { DEMO_ACCOUNTS } from '@/config/demo-accounts'
 import { useAuth } from '@/contexts/auth.context'
 
+/**
+ * Localized demo-account display mapping (WP-UX-UA-03).
+ *
+ * The demo-account module is the machine source of truth for credentials
+ * (username / role code / password) and carries English role labels and
+ * descriptions only as a non-i18n fallback. Rendering resolves the role
+ * label through the shared ``shell:roleLabels`` catalog and the per-role
+ * description through ``login:demo.*``, so the login page is fully localized
+ * in both locales.
+ */
+const DEMO_ROLE_LABEL_KEYS: Record<string, string> = {
+  PRODUCTION_MANAGER: 'shell:roleLabels.productionManager',
+  PROCUREMENT_SPECIALIST: 'shell:roleLabels.procurementSpecialist',
+  AUDITOR: 'shell:roleLabels.auditor',
+}
+
+const DEMO_DESCRIPTION_KEYS: Record<string, string> = {
+  PRODUCTION_MANAGER: 'login:demo.manager.description',
+  PROCUREMENT_SPECIALIST: 'login:demo.procurement.description',
+  AUDITOR: 'login:demo.auditor.description',
+}
+
 export default function Login() {
   const { user, isAuthenticated, isLoading, error, login, clearError } = useAuth()
+  const { t } = useTranslation('login')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [passwordVisible, setPasswordVisible] = useState(false)
@@ -28,7 +52,7 @@ export default function Login() {
     clearError()
   }
 
-  const errorMessage = formatError(error)
+  const errorMessage = formatError(error, t)
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-steel-900 to-steel-800 px-4 py-8">
@@ -40,7 +64,7 @@ export default function Login() {
 
         <div className="bg-steel-800/50 border border-steel-700 rounded-lg p-8 space-y-6">
           <h2 className="text-xl font-semibold text-white text-center">
-            Sign in
+            {t('heading')}
           </h2>
 
           {errorMessage && (
@@ -59,7 +83,7 @@ export default function Login() {
                 htmlFor="username"
                 className="block text-sm font-medium text-steel-300"
               >
-                Username
+                {t('username')}
               </label>
               <input
                 id="username"
@@ -80,7 +104,7 @@ export default function Login() {
                 htmlFor="password"
                 className="block text-sm font-medium text-steel-300"
               >
-                Password
+                {t('password')}
               </label>
               <div className="relative">
                 <input
@@ -98,7 +122,7 @@ export default function Login() {
                 <button
                   type="button"
                   onClick={() => setPasswordVisible((visible) => !visible)}
-                  aria-label={passwordVisible ? 'Hide password' : 'Show password'}
+                  aria-label={passwordVisible ? t('hidePassword') : t('showPassword')}
                   className="absolute inset-y-0 right-0 flex items-center px-3 text-steel-400 hover:text-steel-200 focus:outline-none focus:ring-2 focus:ring-primary-500 rounded-r-md"
                   data-testid="login-password-visibility"
                 >
@@ -117,7 +141,7 @@ export default function Login() {
               className="w-full bg-primary-600 hover:bg-primary-500 text-white font-medium py-2 px-4 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="login-submit"
             >
-              {isLoading ? 'Signing in…' : 'Sign in'}
+              {isLoading ? t('signingIn') : t('signIn')}
             </button>
           </form>
         </div>
@@ -133,7 +157,7 @@ export default function Login() {
               className="text-sm font-semibold uppercase tracking-wide text-steel-400 flex items-center gap-2"
             >
               <Users className="h-4 w-4" aria-hidden="true" />
-              Try the Demo
+              {t('tryDemo')}
             </h2>
           </div>
 
@@ -146,9 +170,11 @@ export default function Login() {
               >
                 <div className="min-w-0 space-y-1">
                   <h3 className="text-sm font-semibold text-white">
-                    {account.roleLabel}
+                    {t(DEMO_ROLE_LABEL_KEYS[account.roleCode] ?? 'shell:roleLabels.unknown')}
                   </h3>
-                  <p className="text-xs text-steel-400">{account.description}</p>
+                  <p className="text-xs text-steel-400">
+                    {t(DEMO_DESCRIPTION_KEYS[account.roleCode] ?? '')}
+                  </p>
                   <p className="text-xs font-mono text-primary-400">
                     {account.username}
                   </p>
@@ -163,39 +189,35 @@ export default function Login() {
                   data-testid={`demo-use-${account.username}`}
                 >
                   <KeyRound className="h-3.5 w-3.5" aria-hidden="true" />
-                  Use this account
+                  {t('useThisAccount')}
                 </button>
               </div>
             ))}
           </div>
 
-          <p className="text-xs text-steel-500">
-            The Demo uses separate roles to demonstrate authorization and
-            independent approval: the Manager initiates, the Procurement
-            Specialist approves, and the Auditor observes.
-          </p>
+          <p className="text-xs text-steel-500">{t('rolesNote')}</p>
         </section>
 
-        <p className="text-center text-xs text-steel-500">
-          Demo credentials are provided for evaluation. Authentication is
-          still required.
-        </p>
+        <p className="text-center text-xs text-steel-500">{t('credentialsNote')}</p>
       </div>
     </div>
   )
 }
 
-function formatError(error: ReturnType<typeof useAuth>['error']): string | null {
+function formatError(
+  error: ReturnType<typeof useAuth>['error'],
+  t: (key: string) => string,
+): string | null {
   if (!error) return null
   switch (error) {
     case 'invalid_credentials':
-      return 'Invalid username or password.'
+      return t('errors.invalidCredentials')
     case 'backend_unavailable':
-      return 'Authentication service is unavailable. Please try again later.'
+      return t('errors.backendUnavailable')
     case 'session_invalid':
-      return 'Your session has expired. Please sign in again.'
+      return t('errors.sessionInvalid')
     case 'unknown':
     default:
-      return 'An unexpected error occurred. Please try again.'
+      return t('errors.unexpected')
   }
 }

@@ -1,14 +1,16 @@
-import { useParams, Link } from 'react-router-dom';
-import { AlertCircle } from 'lucide-react';
-import axios from 'axios';
+import { useParams, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { AlertCircle } from 'lucide-react'
+import axios from 'axios'
 
-import { useWorkflowRun } from '@/hooks/use-workflow-run';
+import { useWorkflowRun } from '@/hooks/use-workflow-run'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import type {
   AttemptHistoryRecord,
   RecommendationContent,
   WorkflowStep,
-} from '@/lib/workflow-api';
-import { Button } from '@/components/ui/button';
+} from '@/lib/workflow-api'
+import { Button } from '@/components/ui/button'
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -16,12 +18,14 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
+} from '@/components/ui/breadcrumb'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
 
 // ---------------------------------------------------------------------------
-// State label styling (locally styled — no Badge component in repo)
+// State label styling (locally styled — no Badge component in repo).
+// Raw state enum values are machine content and remain untranslated
+// (WP-UX-UA-04 scope).
 // ---------------------------------------------------------------------------
 
 const STATE_STYLES: Record<string, string> = {
@@ -33,18 +37,18 @@ const STATE_STYLES: Record<string, string> = {
   FAILED_PROVIDER: 'bg-red-600/20 text-red-300 border-red-600/40',
   FAILED_INTERNAL: 'bg-red-600/20 text-red-300 border-red-600/40',
   FAILED_RETRIEVAL: 'bg-red-600/20 text-red-300 border-red-600/40',
-};
+}
 
 const STEP_STATUS_STYLES: Record<string, string> = {
   started: 'bg-blue-600/20 text-blue-300 border-blue-600/40',
   completed: 'bg-green-600/20 text-green-300 border-green-600/40',
   failed: 'bg-red-600/20 text-red-300 border-red-600/40',
-};
+}
 
-const FALLBACK_STYLE = 'bg-steel-600/20 text-steel-300 border-steel-600/40';
+const FALLBACK_STYLE = 'bg-steel-600/20 text-steel-300 border-steel-600/40'
 
 function StateLabel({ state }: { state: string }) {
-  const style = STATE_STYLES[state] ?? FALLBACK_STYLE;
+  const style = STATE_STYLES[state] ?? FALLBACK_STYLE
   return (
     <span
       className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${style}`}
@@ -53,11 +57,11 @@ function StateLabel({ state }: { state: string }) {
     >
       {state}
     </span>
-  );
+  )
 }
 
 function StepStatusLabel({ status }: { status: string }) {
-  const style = STEP_STATUS_STYLES[status] ?? FALLBACK_STYLE;
+  const style = STEP_STATUS_STYLES[status] ?? FALLBACK_STYLE
   return (
     <span
       className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${style}`}
@@ -66,7 +70,7 @@ function StepStatusLabel({ status }: { status: string }) {
     >
       {status}
     </span>
-  );
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -74,11 +78,11 @@ function StepStatusLabel({ status }: { status: string }) {
 // ---------------------------------------------------------------------------
 
 function isNumber(v: unknown): v is number {
-  return typeof v === 'number';
+  return typeof v === 'number'
 }
 
 function isString(v: unknown): v is string {
-  return typeof v === 'string';
+  return typeof v === 'string'
 }
 
 function isAttemptRecord(v: unknown): v is AttemptHistoryRecord {
@@ -89,30 +93,36 @@ function isAttemptRecord(v: unknown): v is AttemptHistoryRecord {
     'outcome' in v &&
     'error_type' in v &&
     'backoff_delay_seconds' in v
-  );
+  )
 }
 
-function RetryInfo({ metadata }: { metadata: Record<string, unknown> }) {
-  const retryCount = metadata.retry_count;
-  const attemptHistory = metadata.attempt_history;
-  const showRetryCount = isNumber(retryCount) && retryCount > 0;
+function RetryInfo({
+  metadata,
+  t,
+}: {
+  metadata: Record<string, unknown>;
+  t: (key: string) => string;
+}) {
+  const retryCount = metadata.retry_count
+  const attemptHistory = metadata.attempt_history
+  const showRetryCount = isNumber(retryCount) && retryCount > 0
   const history: AttemptHistoryRecord[] = Array.isArray(attemptHistory)
     ? attemptHistory.filter(isAttemptRecord)
-    : [];
+    : []
 
-  if (!showRetryCount && history.length === 0) return null;
+  if (!showRetryCount && history.length === 0) return null
 
   return (
     <div className="mt-2 space-y-1 text-sm text-muted-foreground" data-testid="retry-info">
       {showRetryCount && (
         <div>
-          <span className="font-medium">Retries:</span>{' '}
+          <span className="font-medium">{t('retry.retries')}</span>{' '}
           <span data-testid="retry-count">{retryCount}</span>
         </div>
       )}
       {history.length > 0 && (
         <div className="space-y-1" data-testid="attempt-history">
-          <div className="font-medium">Attempt History:</div>
+          <div className="font-medium">{t('retry.attemptHistory')}</div>
           {history.map((attempt, idx) => (
             <div
               key={idx}
@@ -120,7 +130,7 @@ function RetryInfo({ metadata }: { metadata: Record<string, unknown> }) {
               data-testid={`attempt-${idx}`}
             >
               <span>
-                Attempt{' '}
+                {t('retry.attempt')}{' '}
                 <span data-testid="attempt-number">{attempt.attempt_number}</span>
               </span>
               {' — '}
@@ -144,14 +154,14 @@ function RetryInfo({ metadata }: { metadata: Record<string, unknown> }) {
         </div>
       )}
     </div>
-  );
+  )
 }
 
 // ---------------------------------------------------------------------------
 // Step rendering
 // ---------------------------------------------------------------------------
 
-function StepRow({ step }: { step: WorkflowStep }) {
+function StepRow({ step, t }: { step: WorkflowStep; t: (key: string) => string }) {
   return (
     <div
       className="border-b border-border pb-3 last:border-b-0 last:pb-0"
@@ -165,17 +175,17 @@ function StepRow({ step }: { step: WorkflowStep }) {
       <div className="mt-1 flex flex-wrap gap-4 text-sm text-muted-foreground">
         {step.model_name && (
           <span>
-            <span className="font-medium">Model:</span> {step.model_name}
+            <span className="font-medium">{t('steps.model')}</span> {step.model_name}
           </span>
         )}
         {step.latency_ms !== null && step.latency_ms !== undefined && (
           <span>
-            <span className="font-medium">Latency:</span> {step.latency_ms}ms
+            <span className="font-medium">{t('steps.latency')}</span> {step.latency_ms}ms
           </span>
         )}
         {step.token_usage && (
           <span>
-            <span className="font-medium">Tokens:</span>{' '}
+            <span className="font-medium">{t('steps.tokens')}</span>{' '}
             {JSON.stringify(step.token_usage)}
           </span>
         )}
@@ -184,23 +194,23 @@ function StepRow({ step }: { step: WorkflowStep }) {
         <div className="mt-2 space-y-0.5 text-sm text-red-300" data-testid="step-errors">
           {step.error_code && (
             <div>
-              <span className="font-medium">Error Code:</span>{' '}
+              <span className="font-medium">{t('steps.errorCode')}</span>{' '}
               <span data-testid="step-error-code">{step.error_code}</span>
             </div>
           )}
           {step.error_detail && (
             <div>
-              <span className="font-medium">Error Detail:</span>{' '}
+              <span className="font-medium">{t('steps.errorDetail')}</span>{' '}
               <span data-testid="step-error-detail">{step.error_detail}</span>
             </div>
           )}
         </div>
       )}
       {step.step_metadata && typeof step.step_metadata === 'object' && (
-        <RetryInfo metadata={step.step_metadata} />
+        <RetryInfo metadata={step.step_metadata} t={t} />
       )}
     </div>
-  );
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -209,39 +219,41 @@ function StepRow({ step }: { step: WorkflowStep }) {
 
 function RecommendationSection({
   recommendation,
+  t,
 }: {
   recommendation: NonNullable<ReturnType<typeof useWorkflowRun>['run']>['recommendation'];
+  t: (key: string) => string;
 }) {
   if (recommendation === null) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Recommendation</CardTitle>
+          <CardTitle>{t('recommendation.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground" data-testid="no-recommendation">
-            No recommendation
+            {t('recommendation.empty')}
           </p>
         </CardContent>
       </Card>
-    );
+    )
   }
 
-  const content: RecommendationContent | null = recommendation.content;
+  const content: RecommendationContent | null = recommendation.content
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Recommendation</CardTitle>
+        <CardTitle>{t('recommendation.title')}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex gap-4 text-sm text-muted-foreground">
           <span>
-            <span className="font-medium">Status:</span> {recommendation.status}
+            <span className="font-medium">{t('fields.status')}</span> {recommendation.status}
           </span>
           {recommendation.schema_version && (
             <span>
-              <span className="font-medium">Schema:</span>{' '}
+              <span className="font-medium">{t('fields.schema')}</span>{' '}
               {recommendation.schema_version}
             </span>
           )}
@@ -251,7 +263,7 @@ function RecommendationSection({
             className="text-muted-foreground"
             data-testid="no-validated-content"
           >
-            No validated content available
+            {t('recommendation.noValidatedContent')}
           </p>
         )}
         {content !== null && (
@@ -260,28 +272,28 @@ function RecommendationSection({
               <div key={risk.risk_id} className="space-y-2" data-testid={`risk-${risk.risk_id}`}>
                 <div className="font-medium">{risk.risk_id}</div>
                 <div>
-                  <span className="text-xs font-medium text-muted-foreground">Summary:</span>{' '}
+                  <span className="text-xs font-medium text-muted-foreground">{t('recommendation.summary')}</span>{' '}
                   {risk.summary}
                 </div>
                 <div>
-                  <span className="text-xs font-medium text-muted-foreground">Business Impact:</span>{' '}
+                  <span className="text-xs font-medium text-muted-foreground">{t('recommendation.businessImpact')}</span>{' '}
                   {risk.business_impact}
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Recommended Actions:</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('recommendation.recommendedActions')}</span>
                   {risk.recommended_actions.map((action, idx) => (
                     <div key={idx} className="ml-4 text-sm">
                       <span className="font-medium">{action.title}</span>{' '}
                       <span className="text-xs text-muted-foreground">({action.action_type})</span>
                       <div className="text-xs text-muted-foreground">{action.rationale}</div>
                       {action.requires_approval && (
-                        <div className="text-xs text-amber-300">Requires approval</div>
+                        <div className="text-xs text-amber-300">{t('recommendation.requiresApproval')}</div>
                       )}
                     </div>
                   ))}
                 </div>
                 <div className="space-y-1">
-                  <span className="text-xs font-medium text-muted-foreground">Sources:</span>
+                  <span className="text-xs font-medium text-muted-foreground">{t('recommendation.sources')}</span>
                   {risk.sources.map((source, idx) => (
                     <div key={idx} className="ml-4 text-xs text-muted-foreground">
                       {source.document_id} (v{source.version})
@@ -294,7 +306,7 @@ function RecommendationSection({
         )}
       </CardContent>
     </Card>
-  );
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -305,13 +317,13 @@ function computeDuration(
   startedAt: string | null,
   completedAt: string | null,
 ): string | null {
-  if (!startedAt || !completedAt) return null;
-  const start = new Date(startedAt).getTime();
-  const end = new Date(completedAt).getTime();
-  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null;
-  const diff = end - start;
-  if (diff < 1000) return `${diff}ms`;
-  return `${(diff / 1000).toFixed(1)}s`;
+  if (!startedAt || !completedAt) return null
+  const start = new Date(startedAt).getTime()
+  const end = new Date(completedAt).getTime()
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return null
+  const diff = end - start
+  if (diff < 1000) return `${diff}ms`
+  return `${(diff / 1000).toFixed(1)}s`
 }
 
 // ---------------------------------------------------------------------------
@@ -319,14 +331,16 @@ function computeDuration(
 // ---------------------------------------------------------------------------
 
 export default function WorkflowRunDetail() {
-  const { runId } = useParams<{ runId: string }>();
-  const { run, isLoading, isError, error, refetch } = useWorkflowRun(runId);
+  const { t } = useTranslation('workflow')
+  const { formatDateTime } = useLocalizedFormatters()
+  const { runId } = useParams<{ runId: string }>()
+  const { run, isLoading, isError, error, refetch } = useWorkflowRun(runId)
 
   // Not-found detection via Axios contract
   const isNotFound =
     error !== null &&
     axios.isAxiosError(error) &&
-    error.response?.status === 404;
+    error.response?.status === 404
 
   // Loading state
   if (isLoading && !run) {
@@ -338,7 +352,7 @@ export default function WorkflowRunDetail() {
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />
       </div>
-    );
+    )
   }
 
   // Not-found state (404 via Axios contract)
@@ -346,12 +360,12 @@ export default function WorkflowRunDetail() {
     return (
       <div className="flex flex-col items-center gap-4 p-8" data-testid="not-found-state">
         <AlertCircle className="h-12 w-12 text-muted-foreground" />
-        <p className="text-lg text-muted-foreground">Workflow run not found</p>
+        <p className="text-lg text-muted-foreground">{t('notFound')}</p>
         <Link to="/">
-          <Button variant="outline">Back to Dashboard</Button>
+          <Button variant="outline">{t('backToDashboard')}</Button>
         </Link>
       </div>
-    );
+    )
   }
 
   // Error state (non-404)
@@ -362,19 +376,17 @@ export default function WorkflowRunDetail() {
         data-testid="error-state"
       >
         <AlertCircle className="h-12 w-12 text-destructive" />
-        <p className="text-lg text-destructive">
-          Failed to load workflow run details.
-        </p>
+        <p className="text-lg text-destructive">{t('loadFailed')}</p>
         <Button onClick={() => refetch()} data-testid="reload-button">
-          Reload details
+          {t('reload')}
         </Button>
       </div>
-    );
+    )
   }
 
-  if (!run) return null;
+  if (!run) return null
 
-  const duration = computeDuration(run.started_at, run.completed_at);
+  const duration = computeDuration(run.started_at, run.completed_at)
 
   return (
     <div className="space-y-4 p-4" data-testid="run-detail">
@@ -383,12 +395,12 @@ export default function WorkflowRunDetail() {
         <BreadcrumbList>
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link to="/">Dashboard</Link>
+              <Link to="/">{t('breadcrumb.dashboard')}</Link>
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>Workflow Run {run.id}</BreadcrumbPage>
+            <BreadcrumbPage>{t('breadcrumb.run', { runId: run.id })}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
@@ -397,40 +409,40 @@ export default function WorkflowRunDetail() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-3">
-            <CardTitle>Workflow Run</CardTitle>
+            <CardTitle>{t('title')}</CardTitle>
             <StateLabel state={run.state} />
           </div>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">
           <div>
-            <span className="font-medium">Run ID:</span> {run.id}
+            <span className="font-medium">{t('fields.runId')}</span> {run.id}
           </div>
           <div>
-            <span className="font-medium">Correlation ID:</span>{' '}
+            <span className="font-medium">{t('fields.correlationId')}</span>{' '}
             {run.correlation_id}
           </div>
           <div>
-            <span className="font-medium">Plan ID:</span> {run.plan_id}
+            <span className="font-medium">{t('fields.planId')}</span> {run.plan_id}
           </div>
           {run.triggered_by && (
             <div>
-              <span className="font-medium">Triggered By:</span>{' '}
+              <span className="font-medium">{t('fields.triggeredBy')}</span>{' '}
               {run.triggered_by}
             </div>
           )}
           {run.started_at && (
             <div>
-              <span className="font-medium">Started:</span> {run.started_at}
+              <span className="font-medium">{t('fields.started')}</span> {formatDateTime(run.started_at)}
             </div>
           )}
           {run.completed_at && (
             <div>
-              <span className="font-medium">Completed:</span> {run.completed_at}
+              <span className="font-medium">{t('fields.completed')}</span> {formatDateTime(run.completed_at)}
             </div>
           )}
           {duration && (
             <div>
-              <span className="font-medium">Duration:</span> {duration}
+              <span className="font-medium">{t('fields.duration')}</span> {duration}
             </div>
           )}
         </CardContent>
@@ -440,17 +452,17 @@ export default function WorkflowRunDetail() {
       {(run.error_code || run.error_detail) && (
         <Card>
           <CardHeader>
-            <CardTitle>Error</CardTitle>
+            <CardTitle>{t('error.title')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-red-300" data-testid="run-error-banner">
             {run.error_code && (
               <div>
-                <span className="font-medium">Error Code:</span> {run.error_code}
+                <span className="font-medium">{t('error.errorCode')}</span> {run.error_code}
               </div>
             )}
             {run.error_detail && (
               <div>
-                <span className="font-medium">Error Detail:</span> {run.error_detail}
+                <span className="font-medium">{t('error.errorDetail')}</span> {run.error_detail}
               </div>
             )}
           </CardContent>
@@ -460,19 +472,19 @@ export default function WorkflowRunDetail() {
       {/* Steps */}
       <Card>
         <CardHeader>
-          <CardTitle>Steps</CardTitle>
+          <CardTitle>{t('steps.title')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {run.steps.length === 0 ? (
-            <p className="text-muted-foreground">No steps recorded</p>
+            <p className="text-muted-foreground">{t('steps.empty')}</p>
           ) : (
-            run.steps.map((step) => <StepRow key={step.id} step={step} />)
+            run.steps.map((step) => <StepRow key={step.id} step={step} t={t} />)
           )}
         </CardContent>
       </Card>
 
       {/* Recommendation */}
-      <RecommendationSection recommendation={run.recommendation} />
+      <RecommendationSection recommendation={run.recommendation} t={t} />
     </div>
-  );
+  )
 }

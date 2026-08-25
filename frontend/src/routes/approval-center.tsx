@@ -6,11 +6,11 @@
  * approve/reject controls. Role visibility is a usability mirror of the
  * backend authorization boundary — the backend remains authoritative.
  *
- * Procurement-task execution UI is intentionally absent: it is owned by
- * WP-REC-04C backend / WP-REC-04-VFY acceptance, not by this package.
+ * Localized per WP-UX-UA-03.
  */
 
 import { useQueryClient } from '@tanstack/react-query'
+import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 
 import { ApprovalRequestCard } from '@/components/approval/approval-request-card'
@@ -41,6 +41,7 @@ function hasRole(roles: string[], roleCode: string): boolean {
 }
 
 export default function ApprovalCenter() {
+  const { t } = useTranslation('approval')
   const { user } = useAuth()
   const roles = user?.roles ?? []
 
@@ -75,11 +76,8 @@ export default function ApprovalCenter() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Approval Center</h1>
-        <p className="mt-1 text-sm text-steel-400">
-          Review and decide human-approval requests for controlled procurement
-          actions.
-        </p>
+        <h1 className="text-2xl font-semibold text-white">{t('title')}</h1>
+        <p className="mt-1 text-sm text-steel-400">{t('subtitle')}</p>
       </div>
 
       {canCreate && <CreateApprovalRequestForm onCreate={handleCreate} />}
@@ -96,17 +94,15 @@ export default function ApprovalCenter() {
           data-testid="error-state"
         >
           <AlertCircle className="h-12 w-12 text-destructive" />
-          <p className="text-lg text-destructive">
-            Failed to load approval requests.
-          </p>
+          <p className="text-lg text-destructive">{t('loadFailed')}</p>
           <Button onClick={() => refetch()} data-testid="reload-button">
-            Reload requests
+            {t('reload')}
           </Button>
         </div>
       ) : requests.length === 0 ? (
         <DataEmptyState
-          primaryText="No approval requests"
-          secondaryText="Approval requests you create or can decide will appear here."
+          primaryText={t('emptyTitle')}
+          secondaryText={t('emptyDescription')}
           icon={
             <CheckCircle2
               className="mb-3 h-10 w-10 text-steel-500"
@@ -117,7 +113,7 @@ export default function ApprovalCenter() {
       ) : (
         <div className="space-y-3" data-testid="approval-list">
           <p className="text-xs text-steel-500">
-            {total} approval request{total === 1 ? '' : 's'}
+            {t('requestCount', { count: total })}
           </p>
           {requests.map((request) => (
             <ApprovalRequestCard

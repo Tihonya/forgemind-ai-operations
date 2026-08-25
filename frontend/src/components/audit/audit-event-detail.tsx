@@ -7,32 +7,33 @@
  * renderer. It exposes NO edit, delete, retry, approve, reject, or
  * procurement-execute control — the panel is strictly read-only.
  *
- * The backend ``[REDACTED]`` sentinel is preserved verbatim (rendered by
- * SafeMetadata). The ``binding_hash`` field that the audit wire schema
- * legitimately carries inside structured metadata is suppressed at the
- * centralized display-sanitization boundary (SafeMetadata), so neither the
- * key nor its value ever reaches the DOM.
+ * Localized per WP-UX-UA-03: field labels, headings and actions are localized;
+ * the event/entity type badges, entity IDs, actor, correlation ID and raw
+ * metadata remain machine content.
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Check, Copy, X } from 'lucide-react'
 
 import {
   formatEntityType,
-  formatTimestamp,
-  getAuditErrorMessage,
+  getAuditErrorKey,
 } from '@/lib/audit-api'
 import { useAuditEvent } from '@/hooks/use-audit-events'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import { AuditEventTypeBadge } from './audit-event-type-badge'
 import { SafeMetadata } from './audit-metadata-view'
 import { Button } from '@/components/ui/button'
 
 interface AuditEventDetailProps {
-  eventId: string | null
-  onClose: () => void
+  eventId: string | null;
+  onClose: () => void;
 }
 
 export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
+  const { t } = useTranslation('audit')
+  const { formatDateTime } = useLocalizedFormatters()
   const { event, isLoading, isError, error, refetch } = useAuditEvent(eventId)
 
   const panelRef = useRef<HTMLDivElement>(null)
@@ -106,7 +107,7 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Audit event detail"
+        aria-label={t('detail.ariaLabel')}
         ref={panelRef}
         tabIndex={-1}
         className="h-full w-full max-w-xl overflow-y-auto border-l border-steel-700 bg-steel-900 p-6"
@@ -114,12 +115,12 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Event detail</h2>
+          <h2 className="text-lg font-semibold text-white">{t('detail.title')}</h2>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            aria-label="Close event detail"
+            aria-label={t('detail.closeAria')}
             data-testid="audit-detail-close"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -143,10 +144,10 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
             data-testid="audit-detail-error"
           >
             <p className="text-sm font-medium text-red-300">
-              Unable to load event details.
+              {t('detail.loadFailed')}
             </p>
             <p className="mt-1 text-xs text-red-400">
-              {error ? getAuditErrorMessage(error) : 'The event could not be loaded.'}
+              {error ? t(getAuditErrorKey(error)) : t('detail.loadFailedFallback')}
             </p>
             <Button
               variant="outline"
@@ -155,54 +156,62 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
               className="mt-3 border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
               data-testid="audit-detail-reload"
             >
-              Reload details
+              {t('detail.reload')}
             </Button>
           </div>
         ) : (
           <dl className="mt-6 space-y-4 text-sm" data-testid="audit-detail-content">
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-steel-500">
-                Event
+                {t('detail.event')}
               </dt>
               <dd className="mt-1">
                 <AuditEventTypeBadge eventType={event.event_type} />
               </dd>
             </div>
 
-            <Field label="Occurred at">
+            <Field label={t('detail.occurredAt')}>
               <span data-testid="detail-created-at">
-                {formatTimestamp(event.created_at)}
+                {formatDateTime(event.created_at)}
               </span>
             </Field>
 
-            <Field label="Actor">
+            <Field label={t('detail.actor')}>
               <span data-testid="detail-actor">
-                {event.actor_username ?? 'System'}
+                {event.actor_username ?? t('system')}
               </span>
             </Field>
 
-            <Field label="Entity type">
+            <Field label={t('detail.entityType')}>
               <span data-testid="detail-entity-type">
                 {formatEntityType(event.entity_type)}
               </span>
             </Field>
 
-            <Field label="Entity ID">
+            <Field label={t('detail.entityId')}>
               <span className="break-all" data-testid="detail-entity-id">
                 {event.entity_id}
               </span>
-              <CopyButton value={event.entity_id} label="entity ID" />
+              <CopyButton
+                value={event.entity_id}
+                label={t('detail.entityId')}
+                slug="entity-ID"
+              />
             </Field>
 
-            <Field label="Correlation ID">
+            <Field label={t('detail.correlationId')}>
               <span className="break-all" data-testid="detail-correlation-id">
                 {event.correlation_id}
               </span>
-              <CopyButton value={event.correlation_id} label="correlation ID" />
+              <CopyButton
+                value={event.correlation_id}
+                label={t('detail.correlationId')}
+                slug="correlation-ID"
+              />
             </Field>
 
             {event.workflow_run_id && (
-              <Field label="Workflow run ID">
+              <Field label={t('detail.workflowRunId')}>
                 <span className="break-all" data-testid="detail-workflow-run-id">
                   {event.workflow_run_id}
                 </span>
@@ -210,30 +219,30 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
             )}
 
             {event.risk_id && (
-              <Field label="Risk">
+              <Field label={t('detail.risk')}>
                 <span data-testid="detail-risk-id">{event.risk_id}</span>
               </Field>
             )}
 
             <StructuredSection
-              title="Before"
+              title={t('detail.before')}
               value={event.before_summary}
               testId="detail-before-summary"
             />
             <StructuredSection
-              title="After"
+              title={t('detail.after')}
               value={event.after_summary}
               testId="detail-after-summary"
             />
             <StructuredSection
-              title="Metadata"
+              title={t('detail.metadata')}
               value={event.event_metadata}
               testId="detail-event-metadata"
             />
 
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-steel-500">
-                Event ID
+                {t('detail.eventId')}
               </dt>
               <dd className="mt-1 break-all text-xs text-steel-400">
                 {event.id}
@@ -247,8 +256,8 @@ export function AuditEventDetail({ eventId, onClose }: AuditEventDetailProps) {
 }
 
 interface FieldProps {
-  label: string
-  children: React.ReactNode
+  label: string;
+  children: React.ReactNode;
 }
 
 /**
@@ -279,12 +288,13 @@ function Field({ label, children }: FieldProps) {
 }
 
 interface StructuredSectionProps {
-  title: string
-  value: Record<string, unknown> | null
-  testId: string
+  title: string;
+  value: Record<string, unknown> | null;
+  testId: string;
 }
 
 function StructuredSection({ title, value, testId }: StructuredSectionProps) {
+  const { t } = useTranslation('audit')
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-steel-500">
@@ -294,7 +304,7 @@ function StructuredSection({ title, value, testId }: StructuredSectionProps) {
         {value ? (
           <SafeMetadata value={value} testId={testId} />
         ) : (
-          <span className="text-xs text-steel-500">None</span>
+          <span className="text-xs text-steel-500">{t('detail.none')}</span>
         )}
       </dd>
     </div>
@@ -302,11 +312,13 @@ function StructuredSection({ title, value, testId }: StructuredSectionProps) {
 }
 
 interface CopyButtonProps {
-  value: string
-  label: string
+  value: string;
+  label: string;
+  slug: string;
 }
 
-function CopyButton({ value, label }: CopyButtonProps) {
+function CopyButton({ value, label, slug }: CopyButtonProps) {
+  const { t } = useTranslation('audit')
   const [copied, setCopied] = useState(false)
 
   function handleCopy() {
@@ -322,9 +334,9 @@ function CopyButton({ value, label }: CopyButtonProps) {
     <button
       type="button"
       onClick={handleCopy}
-      aria-label={`Copy ${label}`}
+      aria-label={t('detail.copyAria', { label })}
       className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-steel-400 hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      data-testid={`copy-${label.replace(/\s+/g, '-')}`}
+      data-testid={`copy-${slug}`}
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-green-400" aria-hidden="true" />

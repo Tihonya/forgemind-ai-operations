@@ -3,14 +3,18 @@
  *
  * Renders a table of supply risks with fixed severity-descending ordering.
  * No row navigation, no clickable rows, no sortable headers.
+ *
+ * Localized per WP-UX-UA-03; severity values and component/risk identifiers
+ * remain machine content (severity labels are WP-UX-UA-04 scope).
  */
 
-import { Link } from 'react-router-dom';
-import { Package } from 'lucide-react';
+import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { Package } from 'lucide-react'
 
-import { SeverityBadge } from './SeverityBadge';
-import { DataErrorState } from '@/components/common/DataErrorState';
-import { DataEmptyState } from '@/components/common/DataEmptyState';
+import { SeverityBadge } from './SeverityBadge'
+import { DataErrorState } from '@/components/common/DataErrorState'
+import { DataEmptyState } from '@/components/common/DataEmptyState'
 import {
   Table,
   TableBody,
@@ -18,11 +22,11 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { RiskRecordWithId } from '@/lib/risks-api';
-import { formatQuantity } from '@/lib/utils';
+} from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import type { RiskRecordWithId } from '@/lib/risks-api'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 
 interface RiskListProps {
   risks: RiskRecordWithId[];
@@ -38,7 +42,7 @@ interface RiskListProps {
  * Render the risk list with loading, empty, error, and filtered-empty states.
  *
  * Columns: Severity, Risk ID, Component Code, Component Name, Shortage, Available, Required.
- * Quantity values are formatted using formatQuantity() for display.
+ * Quantity values are formatted with the active locale.
  */
 export function RiskList({
   risks,
@@ -49,6 +53,9 @@ export function RiskList({
   totalCount,
   visibleCount,
 }: RiskListProps) {
+  const { t } = useTranslation('supplyRisk')
+  const { formatQuantity } = useLocalizedFormatters()
+
   if (isLoading) {
     return (
       <div className="space-y-3" data-testid="risk-list-loading">
@@ -56,60 +63,60 @@ export function RiskList({
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-10 w-full" />
       </div>
-    );
+    )
   }
 
   if (isError) {
     return (
       <DataErrorState
-        title="Unable to load risks"
-        message={error?.message ?? 'An error occurred'}
+        title={t('list.loadError')}
+        message={error?.message ?? t('list.errorFallback')}
         onRetry={onRetry}
         testId="risk-list-error"
       />
-    );
+    )
   }
 
   if (totalCount === 0) {
     return (
       <DataEmptyState
-        primaryText="No risks calculated"
-        secondaryText="The risk engine has not identified any supply risks for this plan."
+        primaryText={t('list.emptyTitle')}
+        secondaryText={t('list.emptyDescription')}
         testId="risk-list-empty"
       />
-    );
+    )
   }
 
   if (visibleCount === 0) {
     return (
       <DataEmptyState
-        primaryText="No risks match the selected filters"
-        secondaryText="Adjust your filters to see more results."
+        primaryText={t('list.filteredEmptyTitle')}
+        secondaryText={t('list.filteredEmptyDescription')}
         icon={<Package className="mb-3 h-10 w-10 text-steel-500" aria-hidden="true" />}
         testId="risk-list-filtered-empty"
       />
-    );
+    )
   }
 
   return (
     <div className="space-y-3" data-testid="risk-list">
       <div className="flex items-center justify-between text-sm text-steel-400">
         <span data-testid="risk-count">
-          Showing {visibleCount} of {totalCount} risks
+          {t('list.showingCount', { count: totalCount, visible: visibleCount, total: totalCount })}
         </span>
       </div>
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Severity</TableHead>
-              <TableHead>Risk ID</TableHead>
-              <TableHead>Component Code</TableHead>
-              <TableHead>Component Name</TableHead>
-              <TableHead className="text-right">Shortage</TableHead>
-              <TableHead className="text-right">Available</TableHead>
-              <TableHead className="text-right">Required</TableHead>
-              <TableHead>View</TableHead>
+              <TableHead>{t('columns.severity')}</TableHead>
+              <TableHead>{t('columns.riskId')}</TableHead>
+              <TableHead>{t('columns.componentCode')}</TableHead>
+              <TableHead>{t('columns.componentName')}</TableHead>
+              <TableHead className="text-right">{t('columns.shortage')}</TableHead>
+              <TableHead className="text-right">{t('columns.available')}</TableHead>
+              <TableHead className="text-right">{t('columns.required')}</TableHead>
+              <TableHead>{t('columns.view')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -138,8 +145,8 @@ export function RiskList({
                 </TableCell>
                 <TableCell>
                   <Link to={`/supply-risk/${risk.risk_id}`}>
-                    <Button variant="ghost" size="sm" aria-label={`View ${risk.risk_id}`}>
-                      View
+                    <Button variant="ghost" size="sm" aria-label={t('list.viewAria', { riskId: risk.risk_id })}>
+                      {t('columns.view')}
                     </Button>
                   </Link>
                 </TableCell>
@@ -149,5 +156,5 @@ export function RiskList({
         </Table>
       </div>
     </div>
-  );
+  )
 }

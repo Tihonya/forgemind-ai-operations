@@ -10,35 +10,37 @@
  * are listed for every incomplete trace, using the backend-supplied set in
  * canonical order; no placeholder item is fabricated.
  *
- * Strictly read-only: no create/edit/delete, approve/reject, retry, or
- * procurement-execute control. Structured summaries render through the shared
- * ``SafeMetadata`` renderer, which already suppresses ``binding_hash`` at
- * every nesting depth, so neither the key nor its value reaches the DOM.
+ * Localized per WP-UX-UA-03: interface chrome is localized; trace-category
+ * labels, final state, actor, correlation/workflow-run IDs and raw metadata
+ * remain machine content.
  */
 
 import { useEffect, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
 import {
   formatShortId,
-  formatTimestamp,
   formatTraceCategory,
-  getAuditErrorMessage,
+  getAuditErrorKey,
 } from '@/lib/audit-api'
 import { useAuditTrace } from '@/hooks/use-audit-events'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import { TraceCategoryBadge } from './trace-category-badge'
 import { SafeMetadata } from './audit-metadata-view'
 import { Button } from '@/components/ui/button'
 
 interface AuditTraceDialogProps {
-  correlationId: string | null
-  onClose: () => void
+  correlationId: string | null;
+  onClose: () => void;
 }
 
 export function AuditTraceDialog({
   correlationId,
   onClose,
 }: AuditTraceDialogProps) {
+  const { t } = useTranslation('audit')
+  const { formatDateTime } = useLocalizedFormatters()
   const { trace, isLoading, isError, error, refetch } =
     useAuditTrace(correlationId)
 
@@ -107,7 +109,7 @@ export function AuditTraceDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Audit trace"
+        aria-label={t('trace.ariaLabel')}
         ref={panelRef}
         tabIndex={-1}
         className="h-full w-full max-w-2xl overflow-y-auto border-l border-steel-700 bg-steel-900 p-6"
@@ -115,12 +117,12 @@ export function AuditTraceDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Audit trace</h2>
+          <h2 className="text-lg font-semibold text-white">{t('trace.title')}</h2>
           <Button
             variant="ghost"
             size="icon"
             onClick={onClose}
-            aria-label="Close audit trace"
+            aria-label={t('trace.closeAria')}
             data-testid="audit-trace-close"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -144,10 +146,10 @@ export function AuditTraceDialog({
             data-testid="audit-trace-error"
           >
             <p className="text-sm font-medium text-red-300">
-              Unable to load the audit trace.
+              {t('trace.loadFailed')}
             </p>
             <p className="mt-1 text-xs text-red-400">
-              {error ? getAuditErrorMessage(error) : 'The trace could not be loaded.'}
+              {error ? t(getAuditErrorKey(error)) : t('trace.loadFailedFallback')}
             </p>
             <Button
               variant="outline"
@@ -156,25 +158,25 @@ export function AuditTraceDialog({
               className="mt-3 border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
               data-testid="audit-trace-reload"
             >
-              Reload trace
+              {t('trace.reload')}
             </Button>
           </div>
         ) : (
           <div className="mt-6 space-y-5" data-testid="audit-trace-content">
             <dl className="space-y-2 text-sm">
               <SummaryField
-                label="Correlation ID"
+                label={t('trace.correlationId')}
                 value={trace.correlation_id}
                 testId="trace-correlation-id"
               />
               <SummaryField
-                label="Workflow run ID"
+                label={t('trace.workflowRunId')}
                 value={trace.workflow_run_id}
                 testId="trace-workflow-run-id"
               />
               <div className="flex items-center gap-2">
                 <dt className="text-xs font-medium uppercase tracking-wide text-steel-500">
-                  Final state
+                  {t('trace.finalState')}
                 </dt>
                 <dd className="text-steel-200" data-testid="trace-final-state">
                   {trace.final_state}
@@ -187,22 +189,21 @@ export function AuditTraceDialog({
                 className="rounded-md border border-green-600/30 bg-green-600/10 px-4 py-2 text-sm text-green-300"
                 data-testid="trace-complete-label"
               >
-                Complete trace — all nine categories captured.
+                {t('trace.complete')}
               </div>
             ) : trace.is_legacy ? (
               <div
                 className="rounded-md border border-amber-600/30 bg-amber-600/10 px-4 py-2 text-sm text-amber-300"
                 data-testid="trace-incomplete-label"
               >
-                Legacy incomplete trace — created before complete trace capture
-                was introduced.
+                {t('trace.legacyIncomplete')}
               </div>
             ) : (
               <div
                 className="rounded-md border border-amber-600/30 bg-amber-600/10 px-4 py-2 text-sm text-amber-300"
                 data-testid="trace-incomplete-label"
               >
-                Incomplete trace — {trace.items.length} of 9 categories captured.
+                {t('trace.incomplete', { count: trace.items.length })}
               </div>
             )}
 
@@ -212,7 +213,7 @@ export function AuditTraceDialog({
                 data-testid="trace-missing-categories"
               >
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-steel-400">
-                  Missing categories
+                  {t('trace.missingCategories')}
                 </h3>
                 <ul className="mt-2 space-y-1 text-sm text-steel-300">
                   {trace.missing_categories.map((category) => (
@@ -244,23 +245,23 @@ export function AuditTraceDialog({
                       <TraceCategoryBadge category={item.category} />
                     </div>
                     <span className="text-xs text-steel-500">
-                      {formatTimestamp(item.occurred_at)}
+                      {formatDateTime(item.occurred_at)}
                     </span>
                   </div>
 
                   <dl className="mt-2 space-y-1 text-xs text-steel-400">
                     {item.actor && (
                       <div>
-                        <dt className="sr-only">Actor</dt>
+                        <dt className="sr-only">{t('trace.actor')}</dt>
                         <dd data-testid="trace-item-actor">
-                          Actor: {item.actor}
+                          {t('trace.actorValue', { actor: item.actor })}
                         </dd>
                       </div>
                     )}
                     {item.risk_id && (
                       <div>
-                        <dt className="sr-only">Risk</dt>
-                        <dd>Risk: {item.risk_id}</dd>
+                        <dt className="sr-only">{t('trace.risk')}</dt>
+                        <dd>{t('trace.riskValue', { riskId: item.risk_id })}</dd>
                       </div>
                     )}
                   </dl>
@@ -296,9 +297,9 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
 }
 
 interface SummaryFieldProps {
-  label: string
-  value: string
-  testId: string
+  label: string;
+  value: string;
+  testId: string;
 }
 
 function SummaryField({ label, value, testId }: SummaryFieldProps) {

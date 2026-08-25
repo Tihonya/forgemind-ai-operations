@@ -1,4 +1,5 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 interface PartialFailurePlaceholderProps {
   label: string;
@@ -10,13 +11,17 @@ interface PartialFailurePlaceholderProps {
  * Placeholder for enrichment panels that failed to load.
  * Shows an "unavailable" message with optional retry button.
  * Does not hide the whole page — only the failed panel.
+ *
+ * Localized per WP-UX-UA-03: the label is passed already-localized by the
+ * caller; the failure phrasing and Retry control resolve through ``common``.
  */
 export function PartialFailurePlaceholder({
   label,
   error,
   onRetry,
 }: PartialFailurePlaceholderProps) {
-  const testId = `partial-failure-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  const { t } = useTranslation('common')
+  const testId = `partial-failure-${label.toLowerCase().replace(/\s+/g, '-')}`
 
   return (
     <div
@@ -30,7 +35,7 @@ export function PartialFailurePlaceholder({
       />
       <div className="flex-1">
         <p className="text-sm font-medium text-amber-300">
-          {label} unavailable
+          {t('partialLoadFailed', { label })}
         </p>
         {error && (
           <p className="mt-1 text-xs text-amber-400">{error.message}</p>
@@ -43,9 +48,9 @@ export function PartialFailurePlaceholder({
           onClick={onRetry}
           data-testid={`retry-${label.toLowerCase().replace(/\s+/g, '-')}`}
         >
-          Retry
+          {t('actions.retry')}
         </button>
       )}
     </div>
-  );
+  )
 }

@@ -1,9 +1,18 @@
+import i18n from '@/i18n'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuditEventDetail } from './audit-event-detail'
 import { useAuditEvent } from '@/hooks/use-audit-events'
 import { createAuditEvent } from '@/test/fixtures/audit-contract'
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 vi.mock('@/hooks/use-audit-events', () => ({
   useAuditEvent: vi.fn(),
@@ -157,7 +166,7 @@ describe('AuditEventDetail', () => {
     })
     render(<AuditEventDetail eventId="evt-1" onClose={vi.fn()} />)
     const button = screen.getByTestId('copy-correlation-ID')
-    expect(button).toHaveAccessibleName('Copy correlation ID')
+    expect(button).toHaveAccessibleName('Copy Correlation ID')
     fireEvent.click(button)
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
       '11111111-2222-3333-4444-555555555555',

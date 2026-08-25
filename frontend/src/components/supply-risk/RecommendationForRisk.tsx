@@ -11,17 +11,22 @@
  * B. AI recommendation (summary, impact, actions, rationale, approval)
  * C. Evidence used (RAG source references)
  * D. Human control (approval-required boundary)
+ *
+ * Localized per WP-UX-UA-03: interface chrome (labels, headings, actions) is
+ * localized; provider/model-generated summary, impact, action title/rationale
+ * and document identifiers remain untranslated (U5 owns model-output language).
  */
 
-import { AlertCircle, ShieldCheck, FileText } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useTranslation } from 'react-i18next'
+import { AlertCircle, ShieldCheck, FileText } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type {
   RecommendationContent,
   RecommendationResponse,
   RecommendationRisk,
-} from '@/lib/workflow-api';
+} from '@/lib/workflow-api'
 
 interface RecommendationForRiskProps {
   /** The full recommendation response from the workflow run detail. */
@@ -41,10 +46,10 @@ function findRiskRecommendation(
   recommendation: RecommendationResponse | null,
   riskId: string,
 ): RecommendationRisk | null {
-  if (recommendation === null) return null;
-  const content: RecommendationContent | null = recommendation.content;
-  if (content === null) return null;
-  return content.risks.find((r) => r.risk_id === riskId) ?? null;
+  if (recommendation === null) return null
+  const content: RecommendationContent | null = recommendation.content
+  if (content === null) return null
+  return content.risks.find((r) => r.risk_id === riskId) ?? null
 }
 
 export default function RecommendationForRisk({
@@ -52,28 +57,30 @@ export default function RecommendationForRisk({
   riskId,
   runId,
 }: RecommendationForRiskProps) {
+  const { t } = useTranslation('riskDetail')
+
   // COMPLETED + recommendation null — controlled integrity/absence state.
   if (recommendation === null) {
     return (
       <Card data-testid="recommendation-panel">
         <CardHeader>
-          <CardTitle>AI Recommendation</CardTitle>
+          <CardTitle>{t('recommendation.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p
             className="text-sm text-muted-foreground"
             data-testid="no-recommendation-row"
           >
-            Analysis completed, but no recommendation was produced.
+            {t('recommendation.noRecommendation')}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
             <Link to={`/workflow-runs/${runId}`} data-testid="view-full-analysis-no-rec">
-              View full AI analysis
+              {t('recommendation.viewFullAnalysis')}
             </Link>
           </Button>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   // COMPLETED + content null — validated row exists but content is empty.
@@ -81,80 +88,80 @@ export default function RecommendationForRisk({
     return (
       <Card data-testid="recommendation-panel">
         <CardHeader>
-          <CardTitle>AI Recommendation</CardTitle>
+          <CardTitle>{t('recommendation.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p
             className="text-sm text-muted-foreground"
             data-testid="no-validated-content"
           >
-            Analysis completed, but no validated recommendation content is available.
+            {t('recommendation.noValidatedContent')}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
             <Link to={`/workflow-runs/${runId}`} data-testid="view-full-analysis-no-content">
-              View full AI analysis
+              {t('recommendation.viewFullAnalysis')}
             </Link>
           </Button>
         </CardContent>
       </Card>
-    );
+    )
   }
 
-  const riskRec = findRiskRecommendation(recommendation, riskId);
+  const riskRec = findRiskRecommendation(recommendation, riskId)
 
   // COMPLETED + recommendation exists but does NOT contain the current risk.
   if (riskRec === null) {
     return (
       <Card data-testid="recommendation-panel">
         <CardHeader>
-          <CardTitle>AI Recommendation</CardTitle>
+          <CardTitle>{t('recommendation.title')}</CardTitle>
         </CardHeader>
         <CardContent>
           <p
             className="text-sm text-muted-foreground"
             data-testid="no-recommendation-for-risk"
           >
-            Analysis completed, but no AI recommendation was produced for this risk.
+            {t('recommendation.noRecommendationForRisk')}
           </p>
           <Button asChild variant="outline" size="sm" className="mt-3">
             <Link to={`/workflow-runs/${runId}`} data-testid="view-full-analysis-absent">
-              View full AI analysis
+              {t('recommendation.viewFullAnalysis')}
             </Link>
           </Button>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   // COMPLETED + matching current-risk recommendation — full presentation.
   const hasApprovalAction = riskRec.recommended_actions.some(
     (a) => a.requires_approval,
-  );
+  )
 
   return (
     <Card data-testid="recommendation-panel">
       <CardHeader>
-        <CardTitle>AI Recommendation</CardTitle>
+        <CardTitle>{t('recommendation.title')}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* A. Deterministic fact — contextual line */}
         <div className="text-xs text-muted-foreground" data-testid="deterministic-context">
           <AlertCircle className="inline h-3 w-3 mr-1" aria-hidden="true" />
-          Calculated supply risk — the shortage is determined by ForgeMind's deterministic business logic.
+          {t('recommendation.deterministicContext')}
         </div>
 
         {/* B. AI Recommendation */}
         <div className="space-y-3" data-testid="ai-recommendation-content">
           <div>
-            <span className="text-xs font-medium text-muted-foreground">AI Summary:</span>{' '}
+            <span className="text-xs font-medium text-muted-foreground">{t('recommendation.aiSummary')}</span>{' '}
             <span className="text-sm" data-testid="rec-summary">{riskRec.summary}</span>
           </div>
           <div>
-            <span className="text-xs font-medium text-muted-foreground">Business Impact:</span>{' '}
+            <span className="text-xs font-medium text-muted-foreground">{t('recommendation.businessImpact')}</span>{' '}
             <span className="text-sm" data-testid="rec-business-impact">{riskRec.business_impact}</span>
           </div>
           <div className="space-y-1">
-            <span className="text-xs font-medium text-muted-foreground">Recommended Actions:</span>
+            <span className="text-xs font-medium text-muted-foreground">{t('recommendation.recommendedActions')}</span>
             {riskRec.recommended_actions.map((action, idx) => (
               <div
                 key={idx}
@@ -168,7 +175,7 @@ export default function RecommendationForRisk({
                 </div>
                 {action.requires_approval && (
                   <div className="text-xs text-amber-300" data-testid={`rec-action-approval-${idx}`}>
-                    Human approval required before procurement
+                    {t('recommendation.humanApprovalRequired')}
                   </div>
                 )}
               </div>
@@ -181,7 +188,7 @@ export default function RecommendationForRisk({
           <div className="space-y-1" data-testid="evidence-used">
             <span className="text-xs font-medium text-muted-foreground flex items-center gap-1">
               <FileText className="h-3 w-3" aria-hidden="true" />
-              Evidence used:
+              {t('recommendation.evidenceUsed')}
             </span>
             {riskRec.sources.map((source, idx) => (
               <div
@@ -204,10 +211,10 @@ export default function RecommendationForRisk({
             <ShieldCheck className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-400" aria-hidden="true" />
             <div className="flex-1">
               <p className="text-sm font-medium text-amber-300">
-                Human approval required before procurement
+                {t('recommendation.humanApprovalRequired')}
               </p>
               <p className="mt-0.5 text-xs text-amber-400/80">
-                This is a recommendation boundary. Approval and procurement actions are managed separately.
+                {t('recommendation.approvalBoundary')}
               </p>
             </div>
           </div>
@@ -216,10 +223,10 @@ export default function RecommendationForRisk({
         {/* Next action — View full AI analysis */}
         <Button asChild variant="outline" size="sm">
           <Link to={`/workflow-runs/${runId}`} data-testid="view-full-analysis">
-            View full AI analysis
+            {t('recommendation.viewFullAnalysis')}
           </Link>
         </Button>
       </CardContent>
     </Card>
-  );
+  )
 }

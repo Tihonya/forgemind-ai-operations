@@ -1,0 +1,38 @@
+{
+  "title": "Supply Risk Analysis",
+  "subtitle": "Identify and prioritize supply risks for the active production plan.",
+  "activePlan": "Active Production Plan",
+  "noActivePlan": "No active production plan",
+  "requiresActivePlan": "Supply risk analysis requires an active production plan.",
+  "multipleActive": "Multiple active plans detected. Showing the most recent.",
+  "supplyRisks": "Supply Risks",
+  "list": {
+    "loadError": "Unable to load risks",
+    "errorFallback": "An error occurred",
+    "emptyTitle": "No risks calculated",
+    "emptyDescription": "The risk engine has not identified any supply risks for this plan.",
+    "filteredEmptyTitle": "No risks match the selected filters",
+    "filteredEmptyDescription": "Adjust your filters to see more results.",
+    "showingCount_one": "Showing {{visible}} of {{total}} risk",
+    "showingCount_few": "Showing {{visible}} of {{total}} risks",
+    "showingCount_many": "Showing {{visible}} of {{total}} risks",
+    "showingCount_other": "Showing {{visible}} of {{total}} risks",
+    "viewAria": "View {{riskId}}"
+  },
+  "filters": {
+    "severity": "Severity:",
+    "component": "Component:",
+    "componentPlaceholder": "Search by component code…",
+    "reset": "Reset"
+  },
+  "columns": {
+    "severity": "Severity",
+    "riskId": "Risk ID",
+    "componentCode": "Component Code",
+    "componentName": "Component Name",
+    "shortage": "Shortage",
+    "available": "Available",
+    "required": "Required",
+    "view": "View"
+  }
+}

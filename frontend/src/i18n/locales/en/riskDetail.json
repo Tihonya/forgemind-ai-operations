@@ -1,0 +1,126 @@
+{
+  "breadcrumb": {
+    "supplyRisks": "Supply Risks",
+    "loading": "Loading risk...",
+    "error": "Error",
+    "noActivePlan": "No Active Plan",
+    "notFound": "Risk Not Found"
+  },
+  "heading": "Risk {{riskId}}",
+  "backToRisks": "Back to Supply Risks",
+  "errors": {
+    "planLoadFailed": "Failed to load active plan",
+    "risksLoadFailed": "Failed to load risks",
+    "noActivePlan": "No active production plan",
+    "noActivePlanBody": "Please select a production plan from the Supply Risks page.",
+    "notFoundTitle": "Risk not found",
+    "notFoundBody": "Risk ID \"{{riskId}}\" does not exist in the current production plan, or the plan data has changed."
+  },
+  "workflow": {
+    "title": "AI Analysis",
+    "updatesAutomatically": "(updates automatically)",
+    "checkingExisting": "Checking for existing analysis…",
+    "checkFailedTitle": "Couldn't check for an existing AI analysis",
+    "checkFailedBody": "We couldn't check for an existing AI analysis. Try again before starting a new analysis.",
+    "tryAgain": "Try again",
+    "progress": {
+      "pending": "Analysis is queued and will start shortly.",
+      "running": "AI analysis is in progress for this production plan.",
+      "awaitingValidation": "Analysis result is being validated."
+    },
+    "start": "Analyze production plan",
+    "starting": "Starting…",
+    "startScope": "Analyzes all supply risks in {{planCode}} using deterministic evidence and AI.",
+    "startFailed": "Failed to start AI analysis",
+    "retry": "Retry",
+    "retrying": "Retrying…",
+    "retryFailed": "Failed to retry workflow",
+    "statusLoadFailed": "Failed to load workflow status",
+    "statusLoadFailedBody": "The workflow status could not be loaded. The page remains usable.",
+    "failure": {
+      "provider": "The AI service was unavailable. Please retry when the service is restored.",
+      "validation": "The analysis result failed validation. Please retry.",
+      "retrieval": "Evidence retrieval failed. Please retry.",
+      "internal": "The analysis encountered an internal error. Please retry."
+    }
+  },
+  "panels": {
+    "component": "Component Details",
+    "inventory": "Inventory",
+    "incomingSupply": "Incoming Supply",
+    "productionOrder": "Production Order",
+    "productionPlan": "Production Plan"
+  },
+  "fields": {
+    "component": "Component:",
+    "workOrder": "Work Order:",
+    "needDate": "Need Date:",
+    "shortage": "Shortage:",
+    "code": "Code",
+    "description": "Description",
+    "status": "Status",
+    "quantity": "Quantity",
+    "product": "Product",
+    "plan": "Plan",
+    "required": "Required",
+    "available": "Available",
+    "confirmedEarly": "Confirmed (early)",
+    "confirmedLate": "Confirmed (late)",
+    "alternatives": "Alternatives"
+  },
+  "evidence": {
+    "title": "Evidence & Calculation",
+    "shortage": "Shortage",
+    "formula": "Shortage = max(0, required − available − confirmed_early)"
+  },
+  "inventory": {
+    "title": "Inventory",
+    "warehouseBalances": "Warehouse Balances",
+    "reservations": "Reservations",
+    "warehouse": "Warehouse",
+    "onHand": "On Hand",
+    "workOrder": "Work Order",
+    "reserved": "Reserved"
+  },
+  "incomingSupply": {
+    "title": "Incoming Supply",
+    "empty": "No incoming supply orders found for this component.",
+    "partial": "Showing first 200 purchase orders. Some orders may not be displayed.",
+    "poNumber": "PO Number",
+    "supplier": "Supplier",
+    "expectedDelivery": "Expected Delivery",
+    "status": "Status",
+    "ordered": "Ordered",
+    "received": "Received"
+  },
+  "productionOrder": {
+    "title": "Production Order",
+    "orderCode": "Order Code",
+    "status": "Status",
+    "product": "Product",
+    "quantity": "Quantity",
+    "needDate": "Need Date",
+    "plan": "Plan"
+  },
+  "planContext": {
+    "title": "Production Plan Context",
+    "planCode": "Plan Code",
+    "status": "Status",
+    "periodStart": "Period Start",
+    "periodEnd": "Period End"
+  },
+  "recommendation": {
+    "title": "AI Recommendation",
+    "viewFullAnalysis": "View full AI analysis",
+    "noRecommendation": "Analysis completed, but no recommendation was produced.",
+    "noValidatedContent": "Analysis completed, but no validated recommendation content is available.",
+    "noRecommendationForRisk": "Analysis completed, but no AI recommendation was produced for this risk.",
+    "deterministicContext": "Calculated supply risk — the shortage is determined by ForgeMind's deterministic business logic.",
+    "aiSummary": "AI Summary:",
+    "businessImpact": "Business Impact:",
+    "recommendedActions": "Recommended Actions:",
+    "evidenceUsed": "Evidence used:",
+    "humanApprovalRequired": "Human approval required before procurement",
+    "approvalBoundary": "This is a recommendation boundary. Approval and procurement actions are managed separately."
+  }
+}

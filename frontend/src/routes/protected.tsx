@@ -1,4 +1,5 @@
 import { Navigate, Outlet } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 
 import { useAuth } from '@/contexts/auth.context'
 
@@ -11,13 +12,14 @@ import { useAuth } from '@/contexts/auth.context'
  */
 export default function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth()
+  const { t } = useTranslation('common')
 
   if (isLoading) {
     return (
       <div
         className="min-h-screen bg-steel-900 flex items-center justify-center"
         data-testid="auth-loading"
-        aria-label="Loading session"
+        aria-label={t('status.loading')}
       />
     )
   }

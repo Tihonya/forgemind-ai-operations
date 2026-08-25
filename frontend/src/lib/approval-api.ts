@@ -174,47 +174,49 @@ export function getApprovalErrorCode(error: unknown): string | null {
 }
 
 /**
- * Bounded, safe human-readable messages for backend validation/conflict
- * responses. 404 scoped-out and missing records are indistinguishable by
- * design; both surface the same "not found" wording without disclosing
- * whether a record exists.
+ * Bounded, safe human-readable message KEYS for backend validation/conflict
+ * responses (WP-UX-UA-03). Each entry maps a stable backend error code to a
+ * semantic i18n key resolved by the caller through ``t()`` so the message
+ * follows the active locale. 404 scoped-out and missing records are
+ * indistinguishable by design; both surface the same "not found" wording
+ * without disclosing whether a record exists.
  */
-const ERROR_MESSAGES: Record<string, string> = {
-  recommendation_not_found: 'The selected recommendation could not be found.',
-  invalid_recommendation_content: 'The recommendation data is not valid.',
-  recommendation_not_validated: 'The recommendation has not been validated.',
+const ERROR_KEY_MAP: Record<string, string> = {
+  recommendation_not_found: 'approval:errors.recommendationNotFound',
+  invalid_recommendation_content: 'approval:errors.invalidRecommendationContent',
+  recommendation_not_validated: 'approval:errors.recommendationNotValidated',
   risk_not_found_in_recommendation:
-    'The risk is not part of the selected recommendation.',
+    'approval:errors.riskNotFoundInRecommendation',
   action_not_found_in_recommendation:
-    'The action is not part of the selected recommendation.',
-  action_not_requiring_approval: 'This action does not require approval.',
-  unsupported_action_type: 'This action type is not supported.',
+    'approval:errors.actionNotFoundInRecommendation',
+  action_not_requiring_approval: 'approval:errors.actionNotRequiringApproval',
+  unsupported_action_type: 'approval:errors.unsupportedActionType',
   risk_action_parameters_mismatch:
-    'The action parameters do not match the current risk.',
-  approval_request_not_found: 'The approval request was not found.',
-  approval_request_not_pending: 'This request has already been decided.',
-  approval_request_duplicate:
-    'A pending request already exists for this action.',
-  self_decision_forbidden: 'You cannot decide your own request.',
-  approval_service_error: 'The approval service could not complete the request.',
+    'approval:errors.riskActionParametersMismatch',
+  approval_request_not_found: 'approval:errors.approvalRequestNotFound',
+  approval_request_not_pending: 'approval:errors.approvalRequestNotPending',
+  approval_request_duplicate: 'approval:errors.approvalRequestDuplicate',
+  self_decision_forbidden: 'approval:errors.selfDecisionForbidden',
+  approval_service_error: 'approval:errors.approvalServiceError',
 }
 
 /**
- * Map an arbitrary error to a safe, human-readable message. Never exposes raw
- * backend identifiers, error details, or whether a scoped-out record exists.
+ * Map an arbitrary error to a safe, localized i18n message key. Never exposes
+ * raw backend identifiers, error details, or whether a scoped-out record
+ * exists. The returned value is a semantic key resolved with ``t()``.
  */
-export function getApprovalErrorMessage(error: unknown): string {
+export function getApprovalErrorKey(error: unknown): string {
   const code = getApprovalErrorCode(error)
-  if (code && ERROR_MESSAGES[code]) {
-    return ERROR_MESSAGES[code]
+  if (code && ERROR_KEY_MAP[code]) {
+    return ERROR_KEY_MAP[code]
   }
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 404) {
-      return 'The requested record was not found.'
+      return 'common:errors.notFound'
     }
     if (!error.response) {
-      return 'Unable to reach the server. Please try again.'
+      return 'common:errors.serverUnreachable'
     }
   }
-  return 'An unexpected error occurred. Please try again.'
+  return 'common:errors.unexpected'
 }

@@ -1,8 +1,17 @@
+import i18n from '@/i18n'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import App from './App'
 import { ACCESS_TOKEN_STORAGE_KEY } from '@/lib/storage'
 import * as authApiModule from '@/lib/auth-api'
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 describe('App', () => {
   beforeEach(() => {

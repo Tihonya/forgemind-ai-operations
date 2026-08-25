@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +8,14 @@ import { useAuth } from '@/contexts/auth.context'
 import { useAuditEvents } from '@/hooks/use-audit-events'
 import AuditLog from '../audit-log'
 import RequireRole from '../require-role'
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 vi.mock('@/contexts/auth.context', () => ({ useAuth: vi.fn() }))
 vi.mock('@/hooks/use-audit-events', () => ({
