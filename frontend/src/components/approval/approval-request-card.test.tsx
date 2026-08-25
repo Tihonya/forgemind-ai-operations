@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import i18n from '@/i18n'
+import { LOCALE_STORAGE_KEY } from '@/i18n/locale-service'
 import { ApprovalRequestCard } from './approval-request-card'
 import { createApprovalRequest } from '@/test/fixtures/approval-contract'
 
@@ -19,6 +22,88 @@ function renderCard(
     />,
   )
 }
+
+// Deterministic locale-isolated instants for date assertions. The fixture's
+// real timestamps are overridden so the locale strings are pinned
+// independent of the fixture defaults (F-1 regression coverage).
+const REQUESTED_AT = '2026-07-15T22:00:00Z'  // Kyiv: 2026-07-16 01:00 (UTC+3)
+const DECIDED_AT = '2026-01-15T22:00:00Z'    // Kyiv: 2026-01-16 00:00 (UTC+2)
+
+describe('ApprovalRequestCard — locale-connected date formatting', () => {
+  afterEach(() => {
+    window.localStorage.removeItem(LOCALE_STORAGE_KEY)
+    act(() => {
+      void i18n.changeLanguage('uk')
+    })
+  })
+
+  it('Ukrainian active → Ukrainian requested date', async () => {
+    renderCard({}, createApprovalRequest({ requested_at: REQUESTED_AT }))
+    await act(async () => {
+      await i18n.changeLanguage('uk')
+    })
+    expect(screen.getByTestId('requested-at')).toHaveTextContent('16 лип. 2026 р.')
+  })
+
+  it('English active → English requested date', async () => {
+    renderCard({}, createApprovalRequest({ requested_at: REQUESTED_AT }))
+    await act(async () => {
+      await i18n.changeLanguage('en')
+    })
+    expect(screen.getByTestId('requested-at')).toHaveTextContent('Jul 16, 2026')
+  })
+
+  it('locale switch rerenders the SAME mounted card (requested + decided dates)', async () => {
+    renderCard(
+      {},
+      createApprovalRequest({
+        status: 'APPROVED',
+        decided_by: 'decider-1',
+        decided_by_username: 'procurement.demo',
+        decided_at: DECIDED_AT,
+        decision_comment: 'Approved after review.',
+        requested_at: REQUESTED_AT,
+      }),
+    )
+    // Ukrainian first.
+    await act(async () => {
+      await i18n.changeLanguage('uk')
+    })
+    expect(screen.getByTestId('requested-at')).toHaveTextContent('16 лип. 2026 р.')
+    expect(screen.getByText('on 16 січ. 2026 р.')).toBeInTheDocument()
+
+    // Switch to English on the same mounted card.
+    await act(async () => {
+      await i18n.changeLanguage('en')
+    })
+    expect(screen.getByTestId('requested-at')).toHaveTextContent('Jul 16, 2026')
+    expect(screen.getByText('on Jan 16, 2026')).toBeInTheDocument()
+    expect(screen.queryByText('on 16 січ. 2026 р.')).not.toBeInTheDocument()
+
+    // And back — same mount throughout.
+    await act(async () => {
+      await i18n.changeLanguage('uk')
+    })
+    expect(screen.getByTestId('requested-at')).toHaveTextContent('16 лип. 2026 р.')
+  })
+
+  it('approval status, actions and permissions remain unchanged across the switch', async () => {
+    renderCard({ canDecide: true }, createApprovalRequest({ requested_at: REQUESTED_AT }))
+    await act(async () => {
+      await i18n.changeLanguage('uk')
+    })
+    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('PENDING')
+    expect(screen.getByTestId('approve-button')).toBeInTheDocument()
+    expect(screen.getByTestId('reject-button')).toBeInTheDocument()
+
+    await act(async () => {
+      await i18n.changeLanguage('en')
+    })
+    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('PENDING')
+    expect(screen.getByTestId('approve-button')).toBeInTheDocument()
+    expect(screen.getByTestId('reject-button')).toBeInTheDocument()
+  })
+})
 
 describe('ApprovalRequestCard', () => {
   it('renders status, action snapshot, requester, and timestamp', () => {

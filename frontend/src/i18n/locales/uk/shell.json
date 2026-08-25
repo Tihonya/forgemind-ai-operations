@@ -1,0 +1,36 @@
+{
+  "navigation": {
+    "dashboard": "Огляд",
+    "supplyRisks": "Ризики постачання",
+    "knowledgeSources": "Джерела знань",
+    "workflowRuns": "Запуски аналізу",
+    "approvalCenter": "Центр погодження",
+    "auditLog": "Журнал аудиту",
+    "admin": "Адміністрування"
+  },
+  "phaseMarker": "Фаза {{phase}}",
+  "phaseAvailable": "Доступно у фазі {{phase}}",
+  "roleLabels": {
+    "unknown": "Користувач",
+    "productionManager": "Керівник виробництва",
+    "procurementSpecialist": "Фахівець із закупівель",
+    "engineer": "Інженер",
+    "aiAdministrator": "Адміністратор ШІ",
+    "auditor": "Аудитор"
+  },
+  "header": {
+    "ariaLabel": "Заголовок застосунку",
+    "breadcrumbAriaLabel": "Навігаційний шлях"
+  },
+  "a11y": {
+    "skipToContent": "Перейти до основного вмісту",
+    "mainContent": "Основний вміст",
+    "primaryNav": "Основна навігація"
+  },
+  "signOut": "Вийти",
+  "mobileMenu": {
+    "ariaLabel": "Головне меню",
+    "open": "Відкрити меню",
+    "close": "Закрити меню"
+  }
+}

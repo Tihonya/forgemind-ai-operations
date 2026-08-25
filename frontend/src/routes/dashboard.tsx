@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next';
+
 import { useActivePlan } from '@/hooks/useActivePlan';
 import ActivePlanWidget from '@/components/dashboard/ActivePlanWidget';
 import RiskSummaryWidget from '@/components/dashboard/RiskSummaryWidget';
@@ -19,18 +21,22 @@ import AwaitingDecisionWidget from '@/components/dashboard/AwaitingDecisionWidge
  *
  * No stale Phase placeholders. No invented metrics.
  * All values come from real backend responses.
+ *
+ * WP-UX-UA-01 pilot boundary: the page heading and purpose text are
+ * localized (dashboard.* catalog). Widget content remains English — that
+ * surface belongs to WP-UX-UA-03 and is an expected transitional state,
+ * not a defect.
  */
 export default function Dashboard() {
+  const { t } = useTranslation('dashboard');
   const { activePlan } = useActivePlan();
 
   return (
     <div className="space-y-6" data-testid="dashboard-page">
-      {/* Page heading */}
+      {/* Page heading (localized pilot copy) */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Operations Dashboard</h1>
-        <p className="text-sm text-steel-400">
-          Active plan, supply risks, and AI-assisted decisions — in one place
-        </p>
+        <h1 className="text-2xl font-bold text-white">{t('heading')}</h1>
+        <p className="text-sm text-steel-400">{t('purpose')}</p>
       </div>
 
       {/* Primary widgets — full width */}
