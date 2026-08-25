@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useActivePlan } from '@/hooks/useActivePlan';
 import { useRisks } from '@/hooks/useRisks';
-import { formatDate } from '@/lib/format';
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters';
 import type { ProductionPlanSummary } from '@/lib/production-plans-api';
 
 /**
@@ -33,10 +33,12 @@ function ActivePlanBanner({
   plan,
   hasMultipleActive,
   isLoading,
+  formatDate,
 }: {
   plan: ProductionPlanSummary | null;
   hasMultipleActive: boolean;
   isLoading: boolean;
+  formatDate: (isoDate: string) => string;
 }) {
   if (isLoading) {
     return (
@@ -122,6 +124,7 @@ export default function SupplyRisk() {
   const { activePlan, hasMultipleActive, isLoading: planLoading } = useActivePlan();
   const planCode = activePlan?.code ?? null;
   const { risks, isLoading: risksLoading, isError: risksError, error, refetch } = useRisks(planCode);
+  const { formatDate } = useLocalizedFormatters();
 
   const [selectedSeverities, setSelectedSeverities] = useState<string[]>([]);
   const [componentCodeFilter, setComponentCodeFilter] = useState('');
@@ -149,7 +152,7 @@ export default function SupplyRisk() {
         </p>
       </div>
 
-      <ActivePlanBanner plan={activePlan} hasMultipleActive={hasMultipleActive} isLoading={planLoading} />
+      <ActivePlanBanner plan={activePlan} hasMultipleActive={hasMultipleActive} isLoading={planLoading} formatDate={formatDate} />
 
       {planCode ? (
         <Card className="bg-steel-900/60 border-steel-700">

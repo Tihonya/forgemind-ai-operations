@@ -11,12 +11,12 @@
 import { useState } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { formatDate } from '@/lib/format'
 import {
   getApprovalErrorMessage,
   type ApprovalRequestResponse,
 } from '@/lib/approval-api'
 import type { ApprovalDecisionKind } from '@/hooks/use-approval-decision'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import { ApprovalActionSnapshot } from './approval-action-snapshot'
 import { ApprovalStatusBadge } from './approval-status-badge'
 
@@ -37,6 +37,10 @@ export function ApprovalRequestCard({
   const [comment, setComment] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Date rendering follows the ACTIVE locale (WP-UX-UA-01 remediation F-1):
+  // the localized formatter is bound to the reactive active locale, so a
+  // mounted card re-renders its dates when the user switches languages.
+  const { formatDate } = useLocalizedFormatters()
 
   const isPendingRequest = request.status === 'PENDING'
   const canAct = canDecide && isPendingRequest

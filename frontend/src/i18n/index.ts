@@ -23,7 +23,6 @@ import enShell from './locales/en/shell.json'
 import ukCommon from './locales/uk/common.json'
 import ukDashboard from './locales/uk/dashboard.json'
 import ukShell from './locales/uk/shell.json'
-import { DEFAULT_LOCALE } from './types'
 import { resolveInitialLocale } from './locale-service'
 
 export const RESOURCES = {
@@ -42,9 +41,22 @@ export const RESOURCES = {
 /** Namespaces used by this package's catalogs (registry for tests/parity). */
 export const CATALOG_NAMESPACES = ['common', 'shell', 'dashboard'] as const
 
+/**
+ * Active locale resolved ONCE, synchronously, BEFORE the React application
+ * renders (WP-UX-UA-01 remediation F-2):
+ * - a valid persisted selection (``uk`` | ``en``) is restored;
+ * - absent, invalid, malformed or storage-failing values resolve to ``uk``
+ *   (see ``resolveInitialLocale``) — the browser language is never consulted.
+ *
+ * Both the i18next activation language and the pre-React ``<html lang>``
+ * attribute derive from this SAME resolution, so a persisted-English user
+ * renders English from the very first paint (no Ukrainian default flash).
+ */
+const initialLocale = resolveInitialLocale()
+
 i18n.use(initReactI18next).init({
   resources: RESOURCES,
-  lng: DEFAULT_LOCALE,
+  lng: initialLocale,
   // Missing Ukrainian keys fall back to English. English falls back to
   // itself only (a missing en key surfaces the key string, never uk text).
   fallbackLng: {
@@ -65,11 +77,13 @@ i18n.use(initReactI18next).init({
   },
 })
 
-// Synchronize the document locale attribute once at application start so
-// it matches the active locale even before the authenticated shell (and the
-// locale switcher) mounts — e.g. on the Login route.
+// Synchronize the document locale attribute once at application start —
+// synchronously, from the SAME resolution used for i18next activation — so
+// the document is already ``lang="en"`` before the React application renders
+// (e.g. on the Login route or a persisted-English authenticated boot). The
+// locale hook keeps the attribute in sync for later runtime switches.
 if (typeof document !== 'undefined') {
-  document.documentElement.lang = resolveInitialLocale()
+  document.documentElement.lang = initialLocale
 }
 
 export default i18n

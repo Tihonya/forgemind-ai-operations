@@ -104,9 +104,41 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 
-  // Back to Ukrainian (Product Owner default) for the remainder of the
-  // scenario — all subsequent shell assertions use Ukrainian labels
+  // ────────────────────────────────────────────────────────────
+  // Step 2b-R1: WP-UX-UA-01-R1 — active locale reaches formatDate at
+  // real call sites (F-1 remediation regression). While ENGLISH is
+  // active, the Supply Risk banner must render en-US dates — the same
+  // dates that render Ukrainian when uk is active.
+  // ────────────────────────────────────────────────────────────
+  await page.getByTestId('nav-link-supply-risk').click();
+  await expect(page).toHaveURL('/supply-risk', { timeout: 5000 });
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+
+  // Active production plan banner: PLAN-2026-W31 period 2026-07-31 →
+  // 2026-08-06. English month formatting, no Ukrainian abreviations.
+  await expect(page.getByText('Jul 31, 2026 — Aug 6, 2026')).toBeVisible();
+  await expect(page.getByText(/лип\. \d{4}/)).not.toBeVisible();
+  await expect(page.getByText(/серп\. \d{4}/)).not.toBeVisible();
+
+  // Persisted English survives a reload ON the format screen too.
+  await page.reload();
+  await expect(page).toHaveURL('/supply-risk', { timeout: 5000 });
+  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  await expect(page.getByTestId('locale-switch-en')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('Jul 31, 2026 — Aug 6, 2026')).toBeVisible();
+
+  // Switch back to Ukrainian on the same screen (no navigation): the
+  // same mounted banner re-renders dates reactively.
   await page.getByTestId('locale-switch-uk').click();
+  await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
+  await expect(page.getByTestId('locale-switch-uk')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('31 лип. 2026 р. — 6 серп. 2026 р.')).toBeVisible();
+  await expect(page.getByText('Jul 31, 2026 — Aug 6, 2026')).not.toBeVisible();
+
+  // Return to the Dashboard (Ukrainian default) for the remainder of the
+  // scenario — all subsequent shell assertions use Ukrainian labels
+  await page.getByTestId('nav-link-dashboard').click();
+  await expect(page).toHaveURL('/', { timeout: 5000 });
   await expect(page.getByRole('heading', { name: /Операційний огляд/i, level: 1 })).toBeVisible();
   await expect(page.getByTestId('nav-link-dashboard')).toContainText('Огляд');
   await expect(page.locator('html')).toHaveAttribute('lang', 'uk');

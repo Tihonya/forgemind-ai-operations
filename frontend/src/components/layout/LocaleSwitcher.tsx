@@ -42,7 +42,7 @@ export default function LocaleSwitcher() {
             onClick={() => setLocale(code as SupportedLocale)}
             data-testid={`locale-switch-${code}`}
             className={cn(
-              'inline-flex items-center justify-center gap-1.5 rounded px-3 py-2.5 text-sm font-medium',
+              'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded px-3 py-2.5 text-sm font-medium',
               'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500',
               active
                 ? 'bg-primary-600 text-white'
