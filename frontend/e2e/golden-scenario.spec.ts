@@ -60,21 +60,21 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   await page.goto('/');
   await expect(page).toHaveTitle(/ForgeMind/);
-  await expect(page.getByRole('heading', { name: /Sign in/i, level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Увійти', level: 2 })).toBeVisible();
   await expect(page.getByText(/Supply Risk Intelligence/i)).toBeVisible();
 
   // Verify login form elements (data-testid selectors: stable with the
   // demo-account UX; broad label regex collides with the visibility toggle)
   await expect(page.getByTestId('login-username')).toBeVisible();
   await expect(page.getByTestId('login-password')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Sign in/i })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Увійти' })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 2: Authenticate as manager.demo
   // ────────────────────────────────────────────────────────────
   await page.getByTestId('login-username').fill('manager.demo');
   await page.getByTestId('login-password').fill('ManagerPass123!');
-  await page.getByRole('button', { name: /Sign in/i }).click();
+  await page.getByRole('button', { name: 'Увійти' }).click();
 
   // Wait for navigation to dashboard
   await expect(page).toHaveURL('/', { timeout: 10000 });
@@ -155,21 +155,21 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
 
   // Latest AI Analysis widget is visible
   await expect(page.getByTestId('latest-ai-analysis-widget')).toBeVisible();
-  await expect(page.getByText('Latest AI Analysis')).toBeVisible();
+  await expect(page.getByText('Останній аналіз ШІ', { exact: true })).toBeVisible();
 
   // Fresh seed: no workflow runs → "No AI analysis yet" + CTA link
   await expect(page.getByTestId('latest-ai-analysis-empty')).toBeVisible();
-  await expect(page.getByText('No AI analysis yet')).toBeVisible();
+  await expect(page.getByText('Аналізу ШІ ще немає')).toBeVisible();
   await expect(page.getByTestId('latest-ai-analysis-cta')).toBeVisible();
-  await expect(page.getByTestId('latest-ai-analysis-cta')).toContainText(/Review supply risks/i);
+  await expect(page.getByTestId('latest-ai-analysis-cta')).toContainText('Переглянути ризики постачання');
 
   // Awaiting Decision widget is visible
   await expect(page.getByTestId('awaiting-decision-widget')).toBeVisible();
-  await expect(page.getByText('Awaiting Decision')).toBeVisible();
+  await expect(page.getByText('Очікують рішення')).toBeVisible();
 
   // Fresh seed: no pending approval requests → "No decisions waiting"
   await expect(page.getByTestId('awaiting-decision-zero')).toBeVisible();
-  await expect(page.getByText('No decisions waiting')).toBeVisible();
+  await expect(page.getByText('Немає очікуваних рішень')).toBeVisible();
 
   // Stale user-facing text from removed placeholders must be absent
   await expect(page.getByText(/Unavailable/i)).not.toBeVisible();
@@ -201,7 +201,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(page).toHaveURL('/supply-risk', { timeout: 5000 });
 
   // Verify page heading
-  await expect(page.getByRole('heading', { name: /Supply Risk Analysis/i, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ризики постачання', level: 1 })).toBeVisible();
 
   // Verify active plan banner (reuses useActivePlan hook)
   await expect(page.getByText(/PLAN-2026-W31/i)).toBeVisible();
@@ -211,7 +211,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // AT-004: Verify exact risk data and severity ordering
   await expect(page.getByTestId('risk-list')).toBeVisible();
-  await expect(page.getByTestId('risk-count')).toContainText('Showing 3 of 3 risks');
+  await expect(page.getByTestId('risk-count')).toContainText('Показано 3 із 3 ризиків');
 
   // Verify RISK-001 - CTRL-X4 - CRITICAL - scoped to risk-list container
   const riskList = page.getByTestId('risk-list');
@@ -220,7 +220,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(risk001Row.getByText('CTRL-X4')).toBeVisible();
   await expect(risk001Row.getByText('CRITICAL', { exact: true })).toBeVisible();
   await expect(risk001Row.getByRole('cell', { name: '8', exact: true })).toBeVisible(); // shortage
-  await expect(risk001Row.getByRole('link', { name: /View RISK-001/i })).toBeVisible();
+  await expect(risk001Row.getByRole('link', { name: 'Переглянути RISK-001' })).toBeVisible();
 
   // Verify RISK-002 - MOTOR-M2 - HIGH
   const risk002Row = riskList.getByRole('row', { name: /RISK-002/i });
@@ -228,7 +228,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(risk002Row.getByText('MOTOR-M2')).toBeVisible();
   await expect(risk002Row.getByText('HIGH', { exact: true })).toBeVisible();
   await expect(risk002Row.getByRole('cell', { name: '6', exact: true })).toBeVisible(); // shortage
-  await expect(risk002Row.getByRole('link', { name: /View RISK-002/i })).toBeVisible();
+  await expect(risk002Row.getByRole('link', { name: 'Переглянути RISK-002' })).toBeVisible();
 
   // Verify RISK-003 - SENSOR-L9 - MEDIUM
   const risk003Row = riskList.getByRole('row', { name: /RISK-003/i });
@@ -236,7 +236,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(risk003Row.getByText('SENSOR-L9')).toBeVisible();
   await expect(risk003Row.getByText('MEDIUM', { exact: true })).toBeVisible();
   await expect(risk003Row.getByRole('cell', { name: '5', exact: true })).toBeVisible(); // shortage
-  await expect(risk003Row.getByRole('link', { name: /View RISK-003/i })).toBeVisible();
+  await expect(risk003Row.getByRole('link', { name: 'Переглянути RISK-003' })).toBeVisible();
 
   // Verify severity ordering (CRITICAL first, then HIGH, then MEDIUM)
   // Get all rows in order and check their severity badges
@@ -255,26 +255,26 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // Step 6: Navigate to RISK-001 detail
   // ────────────────────────────────────────────────────────────
-  await risk001Row.getByRole('link', { name: /View RISK-001/i }).click();
+  await risk001Row.getByRole('link', { name: 'Переглянути RISK-001' }).click();
   await expect(page).toHaveURL('/supply-risk/RISK-001', { timeout: 5000 });
 
   // Verify breadcrumb
-  await expect(page.getByText(/Supply Risks/i)).toBeVisible();
+  await expect(page.getByRole('navigation', { name: 'breadcrumb' }).getByText('Ризики постачання')).toBeVisible();
   await expect(page.getByRole('link', { name: /RISK-001/i })).toBeVisible();
 
   // Verify page heading
-  await expect(page.getByRole('heading', { name: /Risk RISK-001/i, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ризик RISK-001', level: 1 })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 7: Verify Risk Summary
   // ────────────────────────────────────────────────────────────
   // AT-004: Verify component and work order context (scoped via label→parent container)
   await expect(
-    page.getByText(/^Component:$/).locator('xpath=..').getByText('CTRL-X4', { exact: true }),
+    page.getByText(/^Компонент:$/).locator('xpath=..').getByText('CTRL-X4', { exact: true }),
   ).toBeVisible();
   await expect(page.getByText(/CRITICAL/i)).toBeVisible();
   await expect(
-    page.getByText(/^Work Order:$/).locator('xpath=..').getByText('WO-2026-0142'),
+    page.getByText(/^Виробниче замовлення:$/).locator('xpath=..').getByText('WO-2026-0142'),
   ).toBeVisible();
   await expect(page.getByText('8', { exact: true }).first()).toBeVisible(); // shortage in summary
 
@@ -286,37 +286,37 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // in the Evidence & Calculation card), then navigate from label → parent → value.
   // In EvidencePanel each label/value pair shares a parent <div>, so `..` yields a
   // stable 1-step relationship. No production data-testid added.
-  await expect(page.getByText(/^Evidence & Calculation$/i)).toBeVisible();
+  await expect(page.getByText(/^Докази та розрахунок$/i)).toBeVisible();
 
   // Required: 20  — parent <div> contains label + value as sibling children
-  await expect(page.getByText(/^Required$/).locator('xpath=..').getByText(/^20$/)).toBeVisible();
+  await expect(page.getByText(/^Потрібно$/).locator('xpath=..').getByText(/^20$/)).toBeVisible();
 
   // Available: 12
-  await expect(page.getByText(/^Available$/).locator('xpath=..').getByText(/^12$/)).toBeVisible();
+  await expect(page.getByText(/^Доступно$/).locator('xpath=..').getByText(/^12$/)).toBeVisible();
 
   // Confirmed early: 0
-  await expect(page.getByText(/^Confirmed \(early\)$/).locator('xpath=..').getByText(/^0$/)).toBeVisible();
+  await expect(page.getByText(/^Підтверджено \(достроково\)$/).locator('xpath=..').getByText(/^0$/)).toBeVisible();
 
   // Confirmed late: 0
-  await expect(page.getByText(/^Confirmed \(late\)$/).locator('xpath=..').getByText(/^0$/)).toBeVisible();
+  await expect(page.getByText(/^Підтверджено \(пізно\)$/).locator('xpath=..').getByText(/^0$/)).toBeVisible();
 
   // Shortage: 8  — layout is <span>Shortage</span> + <span>8</span> in a sibling flex row
-  await expect(page.getByText(/^Shortage$/).locator('xpath=..').getByText(/^8$/)).toBeVisible();
+  await expect(page.getByText(/^Дефіцит$/).locator('xpath=..').getByText(/^8$/)).toBeVisible();
 
   // Verify formula explanation
-  await expect(page.getByText(/Shortage.*max.*0.*required.*available.*confirmed_early/i)).toBeVisible();
+  await expect(page.getByText(/Дефіцит.*max.*0.*required.*available.*confirmed_early/i)).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 9: Verify Component Panel
   // ────────────────────────────────────────────────────────────
-  await expect(page.getByText(/Component Details/i)).toBeVisible();
+  await expect(page.getByText(/Деталі компонента/i)).toBeVisible();
   await expect(page.getByText('CTRL-X4').first()).toBeVisible();
   // Component panel should render (exact content depends on seed data)
 
   // ────────────────────────────────────────────────────────────
   // Step 10: Verify Inventory Panel
   // ────────────────────────────────────────────────────────────
-  await expect(page.getByText(/Inventory/i)).toBeVisible();
+  await expect(page.getByText(/Запаси/i)).toBeVisible();
   // Inventory panel should render (exact content depends on seed data)
 
   // ────────────────────────────────────────────────────────────
@@ -324,30 +324,30 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // ────────────────────────────────────────────────────────────
   // Scoped via exact CardTitle text to avoid matching the empty-state paragraph
   // that also contains "incoming supply".
-  await expect(page.getByText('Incoming Supply', { exact: true })).toBeVisible();
+  await expect(page.getByText('Вхідні постачання', { exact: true })).toBeVisible();
   // Incoming supply may be empty or have data - just verify panel renders
 
   // ────────────────────────────────────────────────────────────
   // Step 12: Verify Production Order Panel
   // ────────────────────────────────────────────────────────────
-  await expect(page.getByText(/Production Order/).first()).toBeVisible();
+  await expect(page.getByText(/Виробниче замовлення/).first()).toBeVisible();
   await expect(page.getByText(/WO-2026-0142/).first()).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 13: Verify Plan Context Panel
   // ────────────────────────────────────────────────────────────
-  await expect(page.getByText(/Production Plan Context/).first()).toBeVisible();
+  await expect(page.getByText(/Контекст виробничого плану/).first()).toBeVisible();
   await expect(page.getByText(/PLAN-2026-W31/).first()).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 14: Navigate back to Supply Risk Analysis
   // ────────────────────────────────────────────────────────────
   // Breadcrumb uses clickable <a> tag via BreadcrumbLink
-  await page.getByRole('link', { name: /Supply Risks/i }).click();
+  await page.getByRole('navigation', { name: 'breadcrumb' }).getByRole('link', { name: 'Ризики постачання' }).click();
   await expect(page).toHaveURL('/supply-risk', { timeout: 5000 });
 
   // Verify we're back on the list page
-  await expect(page.getByRole('heading', { name: /Supply Risk Analysis/i, level: 1 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Ризики постачання', level: 1 })).toBeVisible();
   await expect(page.getByTestId('risk-list')).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
@@ -359,7 +359,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
 
   // Verify redirect to login
   await expect(page).toHaveURL('/login', { timeout: 5000 });
-  await expect(page.getByRole('heading', { name: /Sign in/i, level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Увійти', level: 2 })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 16: Verify access control - protected content inaccessible
@@ -369,7 +369,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(page).toHaveURL('/login', { timeout: 5000 });
 
   // Verify login page is shown
-  await expect(page.getByRole('heading', { name: /Sign in/i, level: 2 })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Увійти', level: 2 })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Final validation: Console, page errors, and failed responses
