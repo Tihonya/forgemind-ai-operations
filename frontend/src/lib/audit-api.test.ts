@@ -12,9 +12,8 @@ import {
   formatEntityType,
   formatEventType,
   formatShortId,
-  formatTimestamp,
   getAuditErrorCode,
-  getAuditErrorMessage,
+  getAuditErrorKey,
 } from '@/lib/audit-api'
 
 vi.mock('./api', () => ({
@@ -105,18 +104,6 @@ describe('formatShortId', () => {
   })
 })
 
-describe('formatTimestamp', () => {
-  it('formats an ISO timestamp consistently', () => {
-    const out = formatTimestamp('2026-08-16T08:00:00Z')
-    expect(out).toContain('2026')
-    expect(out).toContain('Aug')
-  })
-
-  it('falls back to the raw value on parse failure', () => {
-    expect(formatTimestamp('not-a-date')).toBe('not-a-date')
-  })
-})
-
 describe('fetchAuditEvents (read-only list)', () => {
   it('sends only limit and offset query parameters', async () => {
     mockApi.get.mockResolvedValue({
@@ -188,41 +175,41 @@ describe('getAuditErrorCode', () => {
   })
 })
 
-describe('getAuditErrorMessage', () => {
-  it('maps 401 to a session message', () => {
-    expect(getAuditErrorMessage(axiosError(401))).toBe(
-      'Your session has expired. Please sign in again.',
+describe('getAuditErrorKey', () => {
+  it('maps 401 to the session-expired key', () => {
+    expect(getAuditErrorKey(axiosError(401))).toBe(
+      'common:errors.sessionExpired',
     )
   })
 
-  it('maps 403 to a permission message without leaking detail', () => {
-    const message = getAuditErrorMessage(axiosError(403, { error: 'insufficient_permissions' }))
-    expect(message).toBe('You do not have permission to view the audit log.')
-    expect(message).not.toMatch(/role|allowed|AUDITOR|AI_ADMINISTRATOR/i)
+  it('maps 403 to a permission key without leaking detail', () => {
+    const key = getAuditErrorKey(axiosError(403, { error: 'insufficient_permissions' }))
+    expect(key).toBe('audit:errors.permissionDenied')
+    expect(key).not.toMatch(/role|allowed|AUDITOR|AI_ADMINISTRATOR/i)
   })
 
   it('maps scoped-out/missing 404 without disclosing existence', () => {
-    const message = getAuditErrorMessage(axiosError(404, { error: 'audit_event_not_found' }))
-    expect(message).toBe('The audit event was not found.')
-    expect(message).not.toMatch(/uuid|exists|id=/i)
+    const key = getAuditErrorKey(axiosError(404, { error: 'audit_event_not_found' }))
+    expect(key).toBe('audit:errors.eventNotFound')
+    expect(key).not.toMatch(/uuid|exists|id=/i)
   })
 
   it('maps the trace 404 error code safely', () => {
-    const message = getAuditErrorMessage(axiosError(404, { error: 'audit_trace_not_found' }))
-    expect(message).toBe('The trace was not found.')
-    expect(message).not.toMatch(/uuid|exists|id=/i)
+    const key = getAuditErrorKey(axiosError(404, { error: 'audit_trace_not_found' }))
+    expect(key).toBe('audit:errors.traceNotFound')
+    expect(key).not.toMatch(/uuid|exists|id=/i)
   })
 
-  it('maps a network error to a reachability message', () => {
+  it('maps a network error to a reachability key', () => {
     const error = { isAxiosError: true, response: undefined } as unknown as AxiosError
-    expect(getAuditErrorMessage(error)).toBe(
-      'Unable to reach the server. Please try again.',
+    expect(getAuditErrorKey(error)).toBe(
+      'common:errors.serverUnreachable',
     )
   })
 
-  it('falls back to a generic message for unknown errors', () => {
-    expect(getAuditErrorMessage(new Error('boom'))).toBe(
-      'An unexpected error occurred. Please try again.',
+  it('falls back to a generic key for unknown errors', () => {
+    expect(getAuditErrorKey(new Error('boom'))).toBe(
+      'common:errors.unexpected',
     )
   })
 })

@@ -17,7 +17,8 @@ import * as useWorkflowRunsModule from '@/hooks/use-workflow-runs';
 import * as useApprovalRequestsModule from '@/hooks/use-approval-requests';
 import * as useHealthModule from '@/hooks/useHealth';
 import * as useDatasetStatusModule from '@/hooks/useDatasetStatus';
-import * as useRiskSummaryModule from '@/hooks/useRiskSummary';
+import * as useRiskSummaryModule from '@/hooks/useRiskSummary'
+
 
 function renderDashboard() {
   const queryClient = new QueryClient({
@@ -145,7 +146,7 @@ describe('Dashboard — WP-UX-01', () => {
       expect(
         screen.getByTestId('latest-ai-analysis-widget'),
       ).toBeInTheDocument();
-      expect(screen.getByText('Latest AI Analysis')).toBeInTheDocument();
+      expect(screen.getByText('Останній аналіз ШІ')).toBeInTheDocument();
     });
 
     it('renders Awaiting Decision widget', () => {
@@ -153,7 +154,7 @@ describe('Dashboard — WP-UX-01', () => {
       expect(
         screen.getByTestId('awaiting-decision-widget'),
       ).toBeInTheDocument();
-      expect(screen.getByText('Awaiting Decision')).toBeInTheDocument();
+      expect(screen.getByText('Очікують рішення')).toBeInTheDocument();
     });
   });
 
@@ -204,6 +205,7 @@ describe('Dashboard — WP-UX-01', () => {
 
     it('renders English heading and purpose after switching to en', () => {
       act(() => {
+        localStorage.setItem('forgemind_locale', 'en');
         void i18n.changeLanguage('en');
       });
       renderDashboard();
@@ -237,6 +239,7 @@ describe('Dashboard — WP-UX-01', () => {
 
     it('renders the section headings in English after switching to en', () => {
       act(() => {
+        localStorage.setItem('forgemind_locale', 'en');
         void i18n.changeLanguage('en');
       });
       renderDashboard();

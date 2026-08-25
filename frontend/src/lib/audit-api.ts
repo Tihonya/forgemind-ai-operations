@@ -179,24 +179,13 @@ export function formatShortId(value: string): string {
 }
 
 /**
- * Format an ISO timestamp for consistent, human-readable display
- * (``Aug 16, 2026, 08:00:00``). Falls back to the raw value on parse failure.
+ * Format an ISO timestamp for consistent, human-readable display.
+ *
+ * REMOVED in WP-UX-UA-03: the previous ad-hoc ``en-US`` ``toLocaleString``
+ * implementation is replaced by the locale-aware ``formatDateTime`` helper in
+ * ``@/lib/format`` (Europe/Kyiv, ``uk-UA`` / ``en-US``). Display call sites
+ * obtain the bound formatter through ``useLocalizedFormatters()``.
  */
-export function formatTimestamp(iso: string): string {
-  const date = new Date(iso)
-  if (Number.isNaN(date.getTime())) {
-    return iso
-  }
-  return date.toLocaleString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  })
-}
 
 /**
  * Fetch a single page of audit events.
@@ -256,37 +245,41 @@ export function getAuditErrorCode(error: unknown): string | null {
 }
 
 /**
- * Bounded, safe human-readable messages for audit-read failures. 404 scoped
- * out/missing detail is indistinguishable by design; both surface the same
- * "not found" wording without disclosing whether an event exists.
+ * Bounded, safe human-readable message KEYS for audit-read failures
+ * (WP-UX-UA-03). Each entry maps a stable backend error code to a semantic
+ * i18n key resolved by the caller through ``t()`` so the message follows the
+ * active locale. 404 scoped out/missing detail is indistinguishable by design;
+ * both surface the same "not found" wording without disclosing whether an
+ * event exists.
  */
-const ERROR_MESSAGES: Record<string, string> = {
-  audit_event_not_found: 'The audit event was not found.',
-  audit_trace_not_found: 'The trace was not found.',
+const ERROR_KEY_MAP: Record<string, string> = {
+  audit_event_not_found: 'audit:errors.eventNotFound',
+  audit_trace_not_found: 'audit:errors.traceNotFound',
 }
 
 /**
- * Map an arbitrary error to a safe, human-readable message. Never exposes raw
- * backend identifiers, error details, or whether a scoped-out record exists.
+ * Map an arbitrary error to a safe, localized i18n message key. Never exposes
+ * raw backend identifiers, error details, or whether a scoped-out record
+ * exists. The returned value is a semantic key resolved with ``t()``.
  */
-export function getAuditErrorMessage(error: unknown): string {
+export function getAuditErrorKey(error: unknown): string {
   const code = getAuditErrorCode(error)
-  if (code && ERROR_MESSAGES[code]) {
-    return ERROR_MESSAGES[code]
+  if (code && ERROR_KEY_MAP[code]) {
+    return ERROR_KEY_MAP[code]
   }
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 401) {
-      return 'Your session has expired. Please sign in again.'
+      return 'common:errors.sessionExpired'
     }
     if (error.response?.status === 403) {
-      return 'You do not have permission to view the audit log.'
+      return 'audit:errors.permissionDenied'
     }
     if (error.response?.status === 404) {
-      return 'The requested record was not found.'
+      return 'common:errors.notFound'
     }
     if (!error.response) {
-      return 'Unable to reach the server. Please try again.'
+      return 'common:errors.serverUnreachable'
     }
   }
-  return 'An unexpected error occurred. Please try again.'
+  return 'common:errors.unexpected'
 }

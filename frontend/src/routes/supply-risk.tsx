@@ -8,21 +8,25 @@
  * - All UX states: loading, error, empty, filtered-empty, no-active-plan
  *
  * No row navigation, no risk detail, no backend changes.
+ *
+ * Localized per WP-UX-UA-03; plan status codes and period dates remain
+ * machine content (the plan status badge keeps its raw machine value).
  */
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
-import { AlertTriangle, Calendar, Package } from 'lucide-react';
+import { AlertTriangle, Calendar, Package } from 'lucide-react'
 
-import { RiskFilters } from '@/components/supply-risk/RiskFilters';
-import { RiskList } from '@/components/supply-risk/RiskList';
-import { filterRisks, sortRisksBySeverity } from '@/components/supply-risk/riskFilterUtils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useActivePlan } from '@/hooks/useActivePlan';
-import { useRisks } from '@/hooks/useRisks';
-import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters';
-import type { ProductionPlanSummary } from '@/lib/production-plans-api';
+import { RiskFilters } from '@/components/supply-risk/RiskFilters'
+import { RiskList } from '@/components/supply-risk/RiskList'
+import { filterRisks, sortRisksBySeverity } from '@/components/supply-risk/riskFilterUtils'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { useActivePlan } from '@/hooks/useActivePlan'
+import { useRisks } from '@/hooks/useRisks'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import type { ProductionPlanSummary } from '@/lib/production-plans-api'
 
 /**
  * Active production plan banner.
@@ -40,13 +44,15 @@ function ActivePlanBanner({
   isLoading: boolean;
   formatDate: (isoDate: string) => string;
 }) {
+  const { t } = useTranslation('supplyRisk')
+
   if (isLoading) {
     return (
       <Card className="bg-steel-900/60 border-steel-700">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
             <Package className="h-4 w-4 text-steel-500" aria-hidden="true" />
-            Active Production Plan
+            {t('activePlan')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -56,7 +62,7 @@ function ActivePlanBanner({
           </div>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   if (!plan) {
@@ -65,14 +71,14 @@ function ActivePlanBanner({
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
             <Package className="h-4 w-4 text-steel-500" aria-hidden="true" />
-            Active Production Plan
+            {t('activePlan')}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-steel-400">No active production plan</p>
+          <p className="text-sm text-steel-400">{t('noActivePlan')}</p>
         </CardContent>
       </Card>
-    );
+    )
   }
 
   return (
@@ -80,7 +86,7 @@ function ActivePlanBanner({
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Package className="h-4 w-4 text-steel-500" aria-hidden="true" />
-          Active Production Plan
+          {t('activePlan')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -106,50 +112,47 @@ function ActivePlanBanner({
                 className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500"
                 aria-hidden="true"
               />
-              <p className="text-xs text-amber-300">
-                Multiple active plans detected. Showing the most recent.
-              </p>
+              <p className="text-xs text-amber-300">{t('multipleActive')}</p>
             </div>
           )}
         </div>
       </CardContent>
     </Card>
-  );
+  )
 }
 
 /**
  * Supply Risk Analysis page.
  */
 export default function SupplyRisk() {
-  const { activePlan, hasMultipleActive, isLoading: planLoading } = useActivePlan();
-  const planCode = activePlan?.code ?? null;
-  const { risks, isLoading: risksLoading, isError: risksError, error, refetch } = useRisks(planCode);
-  const { formatDate } = useLocalizedFormatters();
+  const { t } = useTranslation('supplyRisk')
+  const { activePlan, hasMultipleActive, isLoading: planLoading } = useActivePlan()
+  const planCode = activePlan?.code ?? null
+  const { risks, isLoading: risksLoading, isError: risksError, error, refetch } = useRisks(planCode)
+  const { formatDate } = useLocalizedFormatters()
 
-  const [selectedSeverities, setSelectedSeverities] = useState<string[]>([]);
-  const [componentCodeFilter, setComponentCodeFilter] = useState('');
+  const [selectedSeverities, setSelectedSeverities] = useState<string[]>([])
+  const [componentCodeFilter, setComponentCodeFilter] = useState('')
 
   const filteredRisks = useMemo(
     () => filterRisks(risks, selectedSeverities, componentCodeFilter),
     [risks, selectedSeverities, componentCodeFilter],
-  );
+  )
 
-  const sortedRisks = useMemo(() => sortRisksBySeverity(filteredRisks), [filteredRisks]);
+  const sortedRisks = useMemo(() => sortRisksBySeverity(filteredRisks), [filteredRisks])
 
-  const hasActiveFilters = selectedSeverities.length > 0 || componentCodeFilter.trim() !== '';
+  const hasActiveFilters = selectedSeverities.length > 0 || componentCodeFilter.trim() !== ''
 
   function handleReset() {
-    setSelectedSeverities([]);
-    setComponentCodeFilter('');
+    setSelectedSeverities([])
+    setComponentCodeFilter('')
   }
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Supply Risk Analysis</h1>
-        <p className="mt-1 text-sm text-steel-400">
-          Identify and prioritize supply risks for the active production plan.
-        </p>
+        <h1 className="text-2xl font-semibold text-white">{t('title')}</h1>
+        <p className="mt-1 text-sm text-steel-400">{t('subtitle')}</p>
       </div>
 
       <ActivePlanBanner plan={activePlan} hasMultipleActive={hasMultipleActive} isLoading={planLoading} formatDate={formatDate} />
@@ -158,7 +161,7 @@ export default function SupplyRisk() {
         <Card className="bg-steel-900/60 border-steel-700">
           <CardHeader>
             <CardTitle className="text-sm font-medium text-steel-300">
-              Supply Risks
+              {t('supplyRisks')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -188,10 +191,10 @@ export default function SupplyRisk() {
               <div className="flex flex-col items-center justify-center text-center">
                 <Package className="mb-3 h-10 w-10 text-steel-500" aria-hidden="true" />
                 <p className="text-sm font-medium text-steel-300">
-                  No active production plan
+                  {t('noActivePlan')}
                 </p>
                 <p className="mt-1 text-xs text-steel-500">
-                  Supply risk analysis requires an active production plan.
+                  {t('requiresActivePlan')}
                 </p>
               </div>
             </CardContent>
@@ -199,5 +202,5 @@ export default function SupplyRisk() {
         )
       )}
     </div>
-  );
+  )
 }

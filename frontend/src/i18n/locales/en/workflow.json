@@ -1,0 +1,51 @@
+{
+  "title": "Workflow Run",
+  "breadcrumb": {
+    "dashboard": "Dashboard",
+    "run": "Workflow Run {{runId}}"
+  },
+  "notFound": "Workflow run not found",
+  "backToDashboard": "Back to Dashboard",
+  "loadFailed": "Failed to load workflow run details.",
+  "reload": "Reload details",
+  "fields": {
+    "runId": "Run ID:",
+    "correlationId": "Correlation ID:",
+    "planId": "Plan ID:",
+    "triggeredBy": "Triggered By:",
+    "started": "Started:",
+    "completed": "Completed:",
+    "duration": "Duration:",
+    "status": "Status:",
+    "schema": "Schema:"
+  },
+  "error": {
+    "title": "Error",
+    "errorCode": "Error Code:",
+    "errorDetail": "Error Detail:"
+  },
+  "steps": {
+    "title": "Steps",
+    "empty": "No steps recorded",
+    "model": "Model:",
+    "latency": "Latency:",
+    "tokens": "Tokens:",
+    "errorCode": "Error Code:",
+    "errorDetail": "Error Detail:"
+  },
+  "retry": {
+    "retries": "Retries:",
+    "attemptHistory": "Attempt History:",
+    "attempt": "Attempt"
+  },
+  "recommendation": {
+    "title": "Recommendation",
+    "empty": "No recommendation",
+    "noValidatedContent": "No validated content available",
+    "summary": "Summary:",
+    "businessImpact": "Business Impact:",
+    "recommendedActions": "Recommended Actions:",
+    "sources": "Sources:",
+    "requiresApproval": "Requires approval"
+  }
+}

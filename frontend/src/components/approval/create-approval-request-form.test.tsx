@@ -1,8 +1,18 @@
+import { beforeEach } from 'vitest'
+import i18n from '@/i18n'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import { CreateApprovalRequestForm } from './create-approval-request-form'
 import { SUPPORTED_ACTION_TYPE } from '@/lib/approval-api'
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 const VALID_UUID = '11111111-2222-3333-4444-555555555555'
 

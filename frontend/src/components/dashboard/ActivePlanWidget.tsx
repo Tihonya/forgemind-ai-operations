@@ -1,26 +1,12 @@
-import { Calendar, AlertTriangle, Package } from 'lucide-react';
+import { useTranslation } from 'react-i18next'
+import { Calendar, AlertTriangle, Package } from 'lucide-react'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Button } from '@/components/ui/button';
-import { useActivePlan } from '@/hooks/useActivePlan';
-import type { ProductionPlanSummary } from '@/lib/production-plans-api';
-
-/**
- * Formats an ISO date string to a human-readable short date.
- */
-function formatDate(isoDate: string): string {
-  try {
-    const date = new Date(isoDate);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return isoDate;
-  }
-}
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { useActivePlan } from '@/hooks/useActivePlan'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import type { ProductionPlanSummary } from '@/lib/production-plans-api'
 
 function StatusBadge({ status }: { status: string }) {
   const colorMap: Record<string, string> = {
@@ -29,9 +15,9 @@ function StatusBadge({ status }: { status: string }) {
     APPROVED: 'bg-emerald-600/20 text-emerald-300 border-emerald-600/40',
     COMPLETED: 'bg-steel-700/40 text-steel-400 border-steel-600/40',
     CLOSED: 'bg-steel-700/40 text-steel-400 border-steel-600/40',
-  };
+  }
 
-  const classes = colorMap[status] ?? 'bg-steel-700/40 text-steel-300 border-steel-600/40';
+  const classes = colorMap[status] ?? 'bg-steel-700/40 text-steel-300 border-steel-600/40'
 
   return (
     <span
@@ -40,10 +26,16 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
-  );
+  )
 }
 
-function PlanContent({ plan }: { plan: ProductionPlanSummary }) {
+function PlanContent({
+  plan,
+  formatDate,
+}: {
+  plan: ProductionPlanSummary;
+  formatDate: (isoDate: string) => string;
+}) {
   return (
     <div className="space-y-3" data-testid="active-plan-content">
       <div className="flex items-center justify-between">
@@ -59,10 +51,10 @@ function PlanContent({ plan }: { plan: ProductionPlanSummary }) {
         </span>
       </div>
     </div>
-  );
+  )
 }
 
-function MultipleActiveWarning() {
+function MultipleActiveWarning({ message }: { message: string }) {
   return (
     <div
       className="mt-3 flex items-start gap-2 rounded-md border border-amber-600/30 bg-amber-600/10 px-3 py-2"
@@ -73,11 +65,9 @@ function MultipleActiveWarning() {
         className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500"
         aria-hidden="true"
       />
-      <p className="text-xs text-amber-300">
-        Multiple active plans detected. Showing the most recent.
-      </p>
+      <p className="text-xs text-amber-300">{message}</p>
     </div>
-  );
+  )
 }
 
 /**
@@ -85,16 +75,21 @@ function MultipleActiveWarning() {
  *
  * Displays the currently executing production plan with its code,
  * status badge, and date period. Handles loading, empty, and error states.
+ *
+ * Localized per WP-UX-UA-03; the plan code and raw status value remain
+ * machine content.
  */
 export default function ActivePlanWidget() {
-  const { activePlan, hasMultipleActive, isLoading, isError, refetch } = useActivePlan();
+  const { t } = useTranslation('dashboard')
+  const { activePlan, hasMultipleActive, isLoading, isError, refetch } = useActivePlan()
+  const { formatDate } = useLocalizedFormatters()
 
   return (
     <Card data-testid="active-plan-widget">
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
           <Package className="h-4 w-4 text-steel-500" aria-hidden="true" />
-          Active Production Plan
+          {t('widgets.activePlan.title')}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -107,33 +102,33 @@ export default function ActivePlanWidget() {
         {isError && (
           <div className="space-y-2" data-testid="plan-error">
             <p className="text-sm text-red-400" role="alert">
-              Unable to load production plans
+              {t('widgets.activePlan.error')}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={() => {
-                void refetch();
+                void refetch()
               }}
               data-testid="plan-retry"
               className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
             >
-              Retry
+              {t('common:actions.retry')}
             </Button>
           </div>
         )}
         {!isLoading && !isError && activePlan === null && (
           <p className="text-sm text-steel-400" data-testid="no-active-plan">
-            No active production plan
+            {t('widgets.activePlan.noActivePlan')}
           </p>
         )}
         {!isLoading && !isError && activePlan !== null && (
           <>
-            <PlanContent plan={activePlan} />
-            {hasMultipleActive && <MultipleActiveWarning />}
+            <PlanContent plan={activePlan} formatDate={formatDate} />
+            {hasMultipleActive && <MultipleActiveWarning message={t('widgets.activePlan.multipleActive')} />}
           </>
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

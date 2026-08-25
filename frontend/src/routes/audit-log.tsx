@@ -7,12 +7,13 @@
  * approve/reject, retry, or procurement-execute control anywhere on this
  * route.
  *
- * Authorization is enforced by the backend (AUDITOR / AI_ADMINISTRATOR); the
- * sidebar already limits navigation visibility to those roles. This route
- * renders whatever the backend returns and surfaces 401/403/404 safely.
+ * Localized per WP-UX-UA-03; event/entity type badges, entity IDs, actor,
+ * correlation IDs and timestamps remain machine content (timestamps format
+ * with the active locale).
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertCircle, FileText, Search } from 'lucide-react'
 
 import { AuditEventDetail } from '@/components/audit/audit-event-detail'
@@ -31,17 +32,19 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { useAuditEvents } from '@/hooks/use-audit-events'
+import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import {
   AUDIT_DEFAULT_PAGE_SIZE,
   AUDIT_PAGE_SIZE_OPTIONS,
   formatEntityType,
   formatEventType,
   formatShortId,
-  formatTimestamp,
-  getAuditErrorMessage,
+  getAuditErrorKey,
 } from '@/lib/audit-api'
 
 export default function AuditLog() {
+  const { t } = useTranslation('audit')
+  const { formatDateTime } = useLocalizedFormatters()
   const [limit, setLimit] = useState(AUDIT_DEFAULT_PAGE_SIZE)
   const [offset, setOffset] = useState(0)
   const [query, setQuery] = useState('')
@@ -93,11 +96,8 @@ export default function AuditLog() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-white">Audit Log</h1>
-        <p className="mt-1 text-sm text-steel-400">
-          Read-only chronological trace of approval and procurement audit
-          events. Events are immutable through this interface.
-        </p>
+        <h1 className="text-2xl font-semibold text-white">{t('title')}</h1>
+        <p className="mt-1 text-sm text-steel-400">{t('subtitle')}</p>
       </div>
 
       {/* Bounded client-side page filter */}
@@ -106,7 +106,7 @@ export default function AuditLog() {
           htmlFor="audit-filter"
           className="block text-sm font-medium text-steel-300"
         >
-          Filter current page
+          {t('filter.label')}
         </label>
         <div className="relative max-w-md">
           <Search
@@ -118,15 +118,14 @@ export default function AuditLog() {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Event type, entity, actor, correlation ID, risk…"
+            placeholder={t('filter.placeholder')}
             className="w-full rounded-md border border-steel-600 bg-steel-900 py-2 pl-9 pr-3 text-sm text-white placeholder-steel-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             data-testid="audit-filter-input"
           />
         </div>
         {isFiltering && (
           <p className="text-xs text-steel-500" data-testid="audit-filter-note">
-            Filtering the current page only ({filtered.length} of {events.length}{' '}
-            events on this page). It does not search the full audit history.
+            {t('filter.note', { filtered: filtered.length, total: events.length })}
           </p>
         )}
       </div>
@@ -145,22 +144,18 @@ export default function AuditLog() {
           role="alert"
         >
           <AlertCircle className="h-12 w-12 text-destructive" />
-          <p className="text-lg text-destructive">
-            Failed to load the audit log.
-          </p>
+          <p className="text-lg text-destructive">{t('loadFailed')}</p>
           {error && (
-            <p className="text-sm text-steel-400">
-              {getAuditErrorMessage(error)}
-            </p>
+            <p className="text-sm text-steel-400">{t(getAuditErrorKey(error))}</p>
           )}
           <Button onClick={() => refetch()} data-testid="reload-button">
-            Reload audit log
+            {t('reload')}
           </Button>
         </div>
       ) : total === 0 ? (
         <DataEmptyState
-          primaryText="No audit events"
-          secondaryText="Audit events will appear here once approval and procurement actions occur."
+          primaryText={t('emptyTitle')}
+          secondaryText={t('emptyDescription')}
           icon={
             <FileText
               className="mb-3 h-10 w-10 text-steel-500"
@@ -176,10 +171,10 @@ export default function AuditLog() {
           <AlertCircle className="h-10 w-10 text-steel-500" aria-hidden="true" />
           <div>
             <p className="text-sm font-medium text-steel-300">
-              No events on this page.
+              {t('outOfRangeTitle')}
             </p>
             <p className="mt-1 text-xs text-steel-500">
-              This page is outside the available range. Showing the first page.
+              {t('outOfRangeDescription')}
             </p>
           </div>
           <Button
@@ -188,7 +183,7 @@ export default function AuditLog() {
             onClick={() => setOffset(0)}
             data-testid="reset-page-button"
           >
-            Go to first page
+            {t('goToFirstPage')}
           </Button>
         </div>
       ) : filtered.length === 0 ? (
@@ -199,38 +194,37 @@ export default function AuditLog() {
           <Search className="h-10 w-10 text-steel-500" aria-hidden="true" />
           <div>
             <p className="text-sm font-medium text-steel-300">
-              No events match your filter on this page.
+              {t('filteredEmptyTitle')}
             </p>
             <p className="mt-1 text-xs text-steel-500">
-              The filter only searches the current page. Try a broader term or
-              navigate to another page.
+              {t('filteredEmptyDescription')}
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => setQuery('')} data-testid="clear-filter-button">
-            Clear filter
+            {t('filter.clear')}
           </Button>
         </div>
       ) : (
         <div data-testid="audit-list">
           <div className="flex items-center justify-between">
             <p className="text-xs text-steel-500">
-              Showing {firstItem}–{lastItem} of {total} events
-              {isFetching ? ' (refreshing…)' : ''}
+              {t('showingCount', { first: firstItem, last: lastItem, total })}
+              {isFetching ? t('refreshing') : ''}
             </p>
           </div>
 
           <Table>
-            <caption className="sr-only">Audit events (newest first)</caption>
+            <caption className="sr-only">{t('caption')}</caption>
             <TableHeader>
               <TableRow>
-                <TableHead>Occurred at</TableHead>
-                <TableHead>Event</TableHead>
-                <TableHead>Entity</TableHead>
-                <TableHead>Actor</TableHead>
-                <TableHead>Risk</TableHead>
-                <TableHead>Correlation</TableHead>
+                <TableHead>{t('columns.occurredAt')}</TableHead>
+                <TableHead>{t('columns.event')}</TableHead>
+                <TableHead>{t('columns.entity')}</TableHead>
+                <TableHead>{t('columns.actor')}</TableHead>
+                <TableHead>{t('columns.risk')}</TableHead>
+                <TableHead>{t('columns.correlation')}</TableHead>
                 <TableHead>
-                  <span className="sr-only">Details</span>
+                  <span className="sr-only">{t('columns.details')}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -238,7 +232,7 @@ export default function AuditLog() {
               {filtered.map((event) => (
                 <TableRow key={event.id} data-testid="audit-event-row">
                   <TableCell className="whitespace-nowrap text-steel-300">
-                    {formatTimestamp(event.created_at)}
+                    {formatDateTime(event.created_at)}
                   </TableCell>
                   <TableCell>
                     <AuditEventTypeBadge eventType={event.event_type} />
@@ -257,7 +251,7 @@ export default function AuditLog() {
                     </div>
                   </TableCell>
                   <TableCell className="text-steel-300">
-                    {event.actor_username ?? 'System'}
+                    {event.actor_username ?? t('system')}
                   </TableCell>
                   <TableCell className="text-steel-300">
                     {event.risk_id ?? '—'}
@@ -267,8 +261,8 @@ export default function AuditLog() {
                       type="button"
                       onClick={() => handleTrace(event.correlation_id)}
                       className="text-xs text-primary-400 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      title={`Filter current page by correlation ID ${event.correlation_id}`}
-                      aria-label={`Filter by correlation ID ${event.correlation_id}`}
+                      title={t('filter.byCorrelationTitle', { correlationId: event.correlation_id })}
+                      aria-label={t('filter.byCorrelationAria', { correlationId: event.correlation_id })}
                       data-testid={`trace-correlation-${event.id}`}
                     >
                       {formatShortId(event.correlation_id)}
@@ -280,19 +274,19 @@ export default function AuditLog() {
                         variant="outline"
                         size="sm"
                         onClick={() => setTraceCorrelationId(event.correlation_id)}
-                        aria-label={`View trace for ${formatEventType(event.event_type)}`}
+                        aria-label={t('viewTraceAria', { eventType: formatEventType(event.event_type) })}
                         data-testid={`trace-event-${event.id}`}
                       >
-                        Trace
+                        {t('trace')}
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => setSelectedId(event.id)}
-                        aria-label={`View details for ${formatEventType(event.event_type)}`}
+                        aria-label={t('viewDetailsAria', { eventType: formatEventType(event.event_type) })}
                         data-testid={`view-event-${event.id}`}
                       >
-                        View
+                        {t('view')}
                       </Button>
                     </div>
                   </TableCell>
@@ -310,7 +304,7 @@ export default function AuditLog() {
           data-testid="pagination"
         >
           <div className="flex items-center gap-2 text-xs text-steel-400">
-            <label htmlFor="audit-page-size">Rows per page</label>
+            <label htmlFor="audit-page-size">{t('pagination.rowsPerPage')}</label>
             <select
               id="audit-page-size"
               value={limit}
@@ -334,10 +328,10 @@ export default function AuditLog() {
               disabled={!canPrev}
               data-testid="prev-page"
             >
-              Previous
+              {t('pagination.previous')}
             </Button>
             <span className="text-xs text-steel-400" data-testid="page-indicator">
-              Page {currentPage + 1} of {totalPages}
+              {t('pagination.pageIndicator', { current: currentPage + 1, total: totalPages })}
             </span>
             <Button
               variant="outline"
@@ -346,7 +340,7 @@ export default function AuditLog() {
               disabled={!canNext}
               data-testid="next-page"
             >
-              Next
+              {t('pagination.next')}
             </Button>
           </div>
         </div>

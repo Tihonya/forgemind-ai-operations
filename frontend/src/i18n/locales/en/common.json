@@ -3,5 +3,39 @@
     "uk": "Українська",
     "en": "English",
     "ariaLabel": "Select language"
+  },
+  "actions": {
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "close": "Close",
+    "view": "View",
+    "reload": "Reload",
+    "back": "Back",
+    "clear": "Clear",
+    "reset": "Reset"
+  },
+  "loading": "Loading…",
+  "breadcrumb": {
+    "more": "More"
+  },
+  "status": {
+    "loading": "Loading…",
+    "empty": "No data",
+    "unavailable": "unavailable",
+    "system": "System"
+  },
+  "errors": {
+    "unexpected": "An unexpected error occurred. Please try again.",
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "permissionDenied": "You do not have permission to view this page.",
+    "notFound": "The requested record was not found.",
+    "serverUnreachable": "Unable to reach the server. Please try again.",
+    "genericLoadFailed": "Unable to load data"
+  },
+  "partialLoadFailed": "Unable to load: {{label}}",
+  "notFound": {
+    "title": "404",
+    "message": "Page not found",
+    "backHome": "Return to home"
   }
 }

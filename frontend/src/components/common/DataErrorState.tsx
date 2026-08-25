@@ -1,6 +1,7 @@
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button'
 
 interface DataErrorStateProps {
   title?: string;
@@ -13,13 +14,20 @@ interface DataErrorStateProps {
  * Shared error state component for data loading failures.
  * Displays an error message with optional retry button.
  * Uses role="alert" for accessibility.
+ *
+ * Localized per WP-UX-UA-03: the default title and the Retry control are
+ * resolved through the shared ``common`` catalog; callers pass already-
+ * localized title/message strings.
  */
 export function DataErrorState({
-  title = 'Unable to load data',
+  title,
   message,
   onRetry,
   testId = 'data-error-state',
 }: DataErrorStateProps) {
+  const { t } = useTranslation('common')
+  const resolvedTitle = title ?? t('errors.genericLoadFailed')
+
   return (
     <div
       className="flex items-start gap-3 rounded-md border border-red-600/30 bg-red-600/10 px-4 py-3"
@@ -31,7 +39,7 @@ export function DataErrorState({
         aria-hidden="true"
       />
       <div className="flex-1">
-        <p className="text-sm font-medium text-red-300">{title}</p>
+        <p className="text-sm font-medium text-red-300">{resolvedTitle}</p>
         <p className="mt-1 text-xs text-red-400">{message}</p>
       </div>
       {onRetry && (
@@ -42,9 +50,9 @@ export function DataErrorState({
           data-testid={`${testId}-retry`}
           className="border-red-600/40 bg-red-600/20 text-red-300 hover:bg-red-600/30 hover:text-red-200"
         >
-          Retry
+          {t('actions.retry')}
         </Button>
       )}
     </div>
-  );
+  )
 }

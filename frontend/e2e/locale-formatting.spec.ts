@@ -33,10 +33,15 @@ const VIEWPORTS = [
   { width: 1280, height: 800, name: 'desktop-1280' },
 ] as const;
 
-async function login(page: Page) {
+async function login(page: Page, locale: 'uk' | 'en' = 'uk') {
+  // The localized sign-in label is the locale-state proof: the heading and
+  // submit button must both read 'Увійти' under the Ukrainian default, and
+  // 'Sign in' only when English was explicitly persisted before first render.
+  const signInLabel = locale === 'uk' ? 'Увійти' : 'Sign in';
+  await expect(page.getByRole('heading', { name: signInLabel, level: 2 })).toBeVisible();
   await page.getByTestId('login-username').fill('manager.demo');
   await page.getByTestId('login-password').fill('ManagerPass123!');
-  await page.getByRole('button', { name: /Sign in/i }).click();
+  await page.getByRole('button', { name: signInLabel }).click();
   await expect(page).toHaveURL('/', { timeout: 10000 });
 }
 
@@ -80,7 +85,7 @@ test.describe('WP-UX-UA-01-R1 — locale-connected date formatting (focused)', (
       });
     });
 
-    await login(page);
+    await login(page, 'en');
 
     // First stable authenticated Dashboard heading is English.
     await expect(page.getByRole('heading', { name: /Operations Dashboard/i, level: 1 })).toBeVisible();
@@ -106,7 +111,7 @@ test.describe('WP-UX-UA-01-R1 — locale-connected date formatting (focused)', (
 
   test('supply-risk dates follow the active locale in place, survive reload, and return to uk', async ({ page }) => {
     await page.goto('/');
-    await login(page);
+    await login(page, 'uk');
     // Product-Owner Ukrainian default shell.
     await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
 
@@ -136,7 +141,7 @@ test.describe('WP-UX-UA-01-R1 — locale-connected date formatting (focused)', (
 
   test('approval-center card dates follow the active locale (synthetic fixture)', async ({ page }) => {
     await page.goto('/');
-    await login(page);
+    await login(page, 'uk');
 
     await page.getByTestId('nav-link-approvals').click();
     await expect(page).toHaveURL('/approval-center', { timeout: 5000 });
@@ -176,7 +181,7 @@ test.describe('WP-UX-UA-01-R1 — locale-connected date formatting (focused)', (
       });
       const page = await context.newPage();
       await page.goto('/');
-      await login(page);
+      await login(page, 'uk');
       await expect(page.locator('html')).toHaveAttribute('lang', 'uk');
 
       for (const code of ['uk', 'en']) {

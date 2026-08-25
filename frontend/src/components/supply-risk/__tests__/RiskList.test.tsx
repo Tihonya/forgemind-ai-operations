@@ -1,3 +1,5 @@
+import { beforeEach } from 'vitest'
+import i18n from '@/i18n'
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
@@ -5,6 +7,14 @@ import { describe, expect, it } from 'vitest';
 import { RiskList } from '../RiskList';
 import type { RiskRecordWithId } from '@/lib/risks-api';
 import { canonicalRisks, createMutatedRisk, createRisk } from '@/test/fixtures/risk-contract';
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 const mockRisks: RiskRecordWithId[] = [
   {

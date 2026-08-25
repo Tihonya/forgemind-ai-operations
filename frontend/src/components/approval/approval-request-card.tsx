@@ -6,13 +6,18 @@
  * only when the current user may decide this request (PROCUREMENT_SPECIALIST
  * on a PENDING request that is not their own). Terminal requests expose no
  * active decision controls.
+ *
+ * Localized per WP-UX-UA-03; the request status badge keeps its raw machine
+ * status value (WP-UX-UA-04 scope) and requester/comment user data is shown
+ * verbatim.
  */
 
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import {
-  getApprovalErrorMessage,
+  getApprovalErrorKey,
   type ApprovalRequestResponse,
 } from '@/lib/approval-api'
 import type { ApprovalDecisionKind } from '@/hooks/use-approval-decision'
@@ -23,9 +28,9 @@ import { ApprovalStatusBadge } from './approval-status-badge'
 const COMMENT_MAX_LENGTH = 2000
 
 interface ApprovalRequestCardProps {
-  request: ApprovalRequestResponse
-  canDecide: boolean
-  onDecide: (kind: ApprovalDecisionKind, comment: string) => Promise<void>
+  request: ApprovalRequestResponse;
+  canDecide: boolean;
+  onDecide: (kind: ApprovalDecisionKind, comment: string) => Promise<void>;
 }
 
 export function ApprovalRequestCard({
@@ -33,10 +38,11 @@ export function ApprovalRequestCard({
   canDecide,
   onDecide,
 }: ApprovalRequestCardProps) {
+  const { t } = useTranslation('approval')
   const [mode, setMode] = useState<ApprovalDecisionKind | null>(null)
   const [comment, setComment] = useState('')
   const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [errorKey, setErrorKey] = useState<string | null>(null)
   // Date rendering follows the ACTIVE locale (WP-UX-UA-01 remediation F-1):
   // the localized formatter is bound to the reactive active locale, so a
   // mounted card re-renders its dates when the user switches languages.
@@ -48,13 +54,13 @@ export function ApprovalRequestCard({
   async function submit() {
     if (!mode || !comment.trim() || pending) return
     setPending(true)
-    setError(null)
+    setErrorKey(null)
     try {
       await onDecide(mode, comment.trim())
       setMode(null)
       setComment('')
     } catch (err) {
-      setError(getApprovalErrorMessage(err))
+      setErrorKey(getApprovalErrorKey(err))
     } finally {
       setPending(false)
     }
@@ -63,7 +69,7 @@ export function ApprovalRequestCard({
   function cancel() {
     setMode(null)
     setComment('')
-    setError(null)
+    setErrorKey(null)
   }
 
   return (
@@ -84,11 +90,11 @@ export function ApprovalRequestCard({
 
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-steel-400">
         <span>
-          <span className="font-medium text-steel-300">Requester:</span>{' '}
+          <span className="font-medium text-steel-300">{t('card.requester')}</span>{' '}
           <span data-testid="requester">{request.requested_by_username}</span>
         </span>
         <span>
-          <span className="font-medium text-steel-300">Requested:</span>{' '}
+          <span className="font-medium text-steel-300">{t('card.requested')}</span>{' '}
           <span data-testid="requested-at">{formatDate(request.requested_at)}</span>
         </span>
       </div>
@@ -96,14 +102,14 @@ export function ApprovalRequestCard({
       {!isPendingRequest && (
         <div className="mt-3 rounded-md border border-steel-700 bg-steel-800/40 px-3 py-2 text-xs text-steel-300">
           <span>
-            <span className="font-medium">Decided by:</span>{' '}
+            <span className="font-medium">{t('card.decidedBy')}</span>{' '}
             <span data-testid="decided-by">
               {request.decided_by_username ?? '—'}
             </span>
           </span>
           {request.decided_at && (
             <span className="ml-2 text-steel-400">
-              on {formatDate(request.decided_at)}
+              {t('card.on', { date: formatDate(request.decided_at) })}
             </span>
           )}
           {request.decision_comment && (
@@ -121,7 +127,7 @@ export function ApprovalRequestCard({
             onClick={() => setMode('approve')}
             data-testid="approve-button"
           >
-            Approve
+            {t('card.approve')}
           </Button>
           <Button
             size="sm"
@@ -129,7 +135,7 @@ export function ApprovalRequestCard({
             onClick={() => setMode('reject')}
             data-testid="reject-button"
           >
-            Reject
+            {t('card.reject')}
           </Button>
         </div>
       )}
@@ -141,7 +147,7 @@ export function ApprovalRequestCard({
               htmlFor={`decision-comment-${request.id}`}
               className="block text-sm font-medium text-steel-300"
             >
-              {mode === 'approve' ? 'Approval comment' : 'Rejection reason'}
+              {mode === 'approve' ? t('card.approvalComment') : t('card.rejectionReason')}
             </label>
             <textarea
               id={`decision-comment-${request.id}`}
@@ -151,8 +157,8 @@ export function ApprovalRequestCard({
               rows={3}
               placeholder={
                 mode === 'approve'
-                  ? 'Reason for approval'
-                  : 'Reason for rejection'
+                  ? t('card.reasonForApproval')
+                  : t('card.reasonForRejection')
               }
               className="mt-1 w-full bg-steel-900 border border-steel-600 rounded-md px-3 py-2 text-sm text-white placeholder-steel-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50"
               data-testid="decision-comment"
@@ -160,18 +166,18 @@ export function ApprovalRequestCard({
             />
             {comment.length >= COMMENT_MAX_LENGTH && (
               <p className="mt-1 text-xs text-steel-500">
-                Maximum {COMMENT_MAX_LENGTH} characters.
+                {t('card.maxCharacters', { count: COMMENT_MAX_LENGTH })}
               </p>
             )}
           </div>
 
-          {error && (
+          {errorKey && (
             <div
               role="alert"
               className="rounded-md border border-red-600/30 bg-red-600/10 px-3 py-2 text-sm text-red-300"
               data-testid="decision-error"
             >
-              {error}
+              {t(errorKey)}
             </div>
           )}
 
@@ -184,10 +190,10 @@ export function ApprovalRequestCard({
               data-testid="decision-submit"
             >
               {pending
-                ? 'Submitting…'
+                ? t('card.submitting')
                 : mode === 'approve'
-                  ? 'Confirm approval'
-                  : 'Confirm rejection'}
+                  ? t('card.confirmApproval')
+                  : t('card.confirmRejection')}
             </Button>
             <Button
               size="sm"
@@ -196,7 +202,7 @@ export function ApprovalRequestCard({
               disabled={pending}
               data-testid="decision-cancel"
             >
-              Cancel
+              {t('card.cancel')}
             </Button>
           </div>
         </div>

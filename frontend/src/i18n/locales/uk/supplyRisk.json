@@ -1,0 +1,38 @@
+{
+  "title": "Ризики постачання",
+  "subtitle": "Визначайте та пріоритизуйте ризики постачання для активного виробничого плану.",
+  "activePlan": "Активний виробничий план",
+  "noActivePlan": "Немає активного виробничого плану",
+  "requiresActivePlan": "Аналіз ризиків постачання потребує активного виробничого плану.",
+  "multipleActive": "Виявлено кілька активних планів. Показано найновіший.",
+  "supplyRisks": "Ризики постачання",
+  "list": {
+    "loadError": "Не вдалося завантажити ризики",
+    "errorFallback": "Сталася помилка",
+    "emptyTitle": "Ризиків не розраховано",
+    "emptyDescription": "Механізм ризиків не виявив ризиків постачання для цього плану.",
+    "filteredEmptyTitle": "Жоден ризик не відповідає вибраним фільтрам",
+    "filteredEmptyDescription": "Змініть фільтри, щоб побачити більше результатів.",
+    "showingCount_one": "Показано {{visible}} із {{total}} ризику",
+    "showingCount_few": "Показано {{visible}} із {{total}} ризиків",
+    "showingCount_many": "Показано {{visible}} із {{total}} ризиків",
+    "showingCount_other": "Показано {{visible}} із {{total}} ризиків",
+    "viewAria": "Переглянути {{riskId}}"
+  },
+  "filters": {
+    "severity": "Критичність:",
+    "component": "Компонент:",
+    "componentPlaceholder": "Пошук за кодом компонента…",
+    "reset": "Скинути"
+  },
+  "columns": {
+    "severity": "Критичність",
+    "riskId": "ID ризику",
+    "componentCode": "Код компонента",
+    "componentName": "Назва компонента",
+    "shortage": "Дефіцит",
+    "available": "Доступно",
+    "required": "Потрібно",
+    "view": "Перегляд"
+  }
+}

@@ -8,9 +8,13 @@
  * - unbounded deep or oversized structures (depth and item count are capped);
  * - reinterpreting the backend ``[REDACTED]`` sentinel (string values render
  *   verbatim, so ``[REDACTED]`` is preserved exactly).
+ *
+ * Localized per WP-UX-UA-03: only the overflow hint ("… N more") is localized;
+ * raw metadata keys/values (machine content) render verbatim.
  */
 
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { isBindingHashKey } from './audit-sanitize'
 
@@ -18,22 +22,27 @@ const MAX_DEPTH = 6
 const MAX_ITEMS = 50
 
 interface SafeMetadataProps {
-  value: unknown
-  testId?: string
+  value: unknown;
+  testId?: string;
 }
 
 export function SafeMetadata({
   value,
   testId = 'audit-metadata',
 }: SafeMetadataProps) {
+  const { t } = useTranslation('audit')
   return (
     <div className="text-xs text-steel-300" data-testid={testId}>
-      {renderValue(value, 0)}
+      {renderValue(value, 0, t)}
     </div>
   )
 }
 
-function renderValue(value: unknown, depth: number): ReactNode {
+function renderValue(
+  value: unknown,
+  depth: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): ReactNode {
   if (value === null) {
     return <span className="text-steel-500">null</span>
   }
@@ -44,15 +53,19 @@ function renderValue(value: unknown, depth: number): ReactNode {
     return <span>{String(value)}</span>
   }
   if (Array.isArray(value)) {
-    return renderArray(value, depth)
+    return renderArray(value, depth, t)
   }
   if (typeof value === 'object') {
-    return renderObject(value as Record<string, unknown>, depth)
+    return renderObject(value as Record<string, unknown>, depth, t)
   }
   return <span>{String(value)}</span>
 }
 
-function renderArray(value: unknown[], depth: number): ReactNode {
+function renderArray(
+  value: unknown[],
+  depth: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): ReactNode {
   if (value.length === 0) {
     return <span className="text-steel-500">[]</span>
   }
@@ -64,16 +77,20 @@ function renderArray(value: unknown[], depth: number): ReactNode {
   return (
     <ul className="ml-4 list-disc space-y-0.5">
       {visible.map((item, index) => (
-        <li key={index}>{renderValue(item, depth + 1)}</li>
+        <li key={index}>{renderValue(item, depth + 1, t)}</li>
       ))}
       {overflow > 0 && (
-        <li className="list-none text-steel-500">… {overflow} more</li>
+        <li className="list-none text-steel-500">{t('metadata.more', { count: overflow })}</li>
       )}
     </ul>
   )
 }
 
-function renderObject(value: Record<string, unknown>, depth: number): ReactNode {
+function renderObject(
+  value: Record<string, unknown>,
+  depth: number,
+  t: (key: string, options?: Record<string, unknown>) => string,
+): ReactNode {
   // Centralized display-sanitization boundary: suppress binding_hash entries
   // (any spelling variant) so neither the key nor its value reaches the DOM.
   // The filter is non-mutating — the original object and React Query cache
@@ -92,11 +109,11 @@ function renderObject(value: Record<string, unknown>, depth: number): ReactNode 
       {visible.map(([key, val]) => (
         <div key={key} className="flex flex-wrap gap-x-2">
           <dt className="font-medium text-steel-400">{key}:</dt>
-          <dd className="break-all">{renderValue(val, depth + 1)}</dd>
+          <dd className="break-all">{renderValue(val, depth + 1, t)}</dd>
         </div>
       ))}
       {overflow > 0 && (
-        <div className="text-steel-500">… {overflow} more</div>
+        <div className="text-steel-500">{t('metadata.more', { count: overflow })}</div>
       )}
     </dl>
   )

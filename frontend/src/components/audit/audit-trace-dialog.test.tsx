@@ -1,9 +1,18 @@
+import i18n from '@/i18n'
 import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AuditTraceDialog } from './audit-trace-dialog'
 import { useAuditTrace } from '@/hooks/use-audit-events'
 import type { AuditTraceItem, AuditTraceResponse } from '@/lib/audit-api'
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 vi.mock('@/hooks/use-audit-events', () => ({
   useAuditTrace: vi.fn(),

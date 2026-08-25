@@ -1,0 +1,51 @@
+{
+  "title": "Запуск аналізу",
+  "breadcrumb": {
+    "dashboard": "Огляд",
+    "run": "Запуск аналізу {{runId}}"
+  },
+  "notFound": "Запуск аналізу не знайдено",
+  "backToDashboard": "Назад до огляду",
+  "loadFailed": "Не вдалося завантажити деталі запуску.",
+  "reload": "Оновити деталі",
+  "fields": {
+    "runId": "ID запуску:",
+    "correlationId": "ID кореляції:",
+    "planId": "ID плану:",
+    "triggeredBy": "Запустив:",
+    "started": "Початок:",
+    "completed": "Завершено:",
+    "duration": "Тривалість:",
+    "status": "Стан:",
+    "schema": "Схема:"
+  },
+  "error": {
+    "title": "Помилка",
+    "errorCode": "Код помилки:",
+    "errorDetail": "Деталі помилки:"
+  },
+  "steps": {
+    "title": "Кроки",
+    "empty": "Кроки не записано",
+    "model": "Модель:",
+    "latency": "Затримка:",
+    "tokens": "Токени:",
+    "errorCode": "Код помилки:",
+    "errorDetail": "Деталі помилки:"
+  },
+  "retry": {
+    "retries": "Спроби:",
+    "attemptHistory": "Історія спроб:",
+    "attempt": "Спроба"
+  },
+  "recommendation": {
+    "title": "Рекомендація",
+    "empty": "Рекомендації немає",
+    "noValidatedContent": "Перевірений вміст недоступний",
+    "summary": "Резюме:",
+    "businessImpact": "Вплив на бізнес:",
+    "recommendedActions": "Рекомендовані дії:",
+    "sources": "Джерела:",
+    "requiresApproval": "Потребує погодження"
+  }
+}

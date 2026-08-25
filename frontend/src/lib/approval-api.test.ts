@@ -3,7 +3,7 @@ import type { AxiosError } from 'axios'
 import {
   formatActionType,
   getApprovalErrorCode,
-  getApprovalErrorMessage,
+  getApprovalErrorKey,
   SUPPORTED_ACTION_TYPE,
 } from '@/lib/approval-api'
 
@@ -48,63 +48,63 @@ describe('getApprovalErrorCode', () => {
   })
 })
 
-describe('getApprovalErrorMessage', () => {
-  it('maps an already-decided conflict to a safe message', () => {
+describe('getApprovalErrorKey', () => {
+  it('maps an already-decided conflict to a safe key', () => {
     const error = axiosError(409, { error: 'approval_request_not_pending' })
-    expect(getApprovalErrorMessage(error)).toBe(
-      'This request has already been decided.',
+    expect(getApprovalErrorKey(error)).toBe(
+      'approval:errors.approvalRequestNotPending',
     )
   })
 
-  it('maps self-decision to a safe message', () => {
+  it('maps self-decision to a safe key', () => {
     const error = axiosError(403, { error: 'self_decision_forbidden' })
-    expect(getApprovalErrorMessage(error)).toBe(
-      'You cannot decide your own request.',
+    expect(getApprovalErrorKey(error)).toBe(
+      'approval:errors.selfDecisionForbidden',
     )
   })
 
-  it('maps a duplicate to a safe message', () => {
+  it('maps a duplicate to a safe key', () => {
     const error = axiosError(409, { error: 'approval_request_duplicate' })
-    expect(getApprovalErrorMessage(error)).toBe(
-      'A pending request already exists for this action.',
+    expect(getApprovalErrorKey(error)).toBe(
+      'approval:errors.approvalRequestDuplicate',
     )
   })
 
-  it('maps a binding/parameter mismatch to a safe message', () => {
+  it('maps a binding/parameter mismatch to a safe key', () => {
     const error = axiosError(422, { error: 'risk_action_parameters_mismatch' })
-    expect(getApprovalErrorMessage(error)).toBe(
-      'The action parameters do not match the current risk.',
+    expect(getApprovalErrorKey(error)).toBe(
+      'approval:errors.riskActionParametersMismatch',
     )
   })
 
   it('maps a scoped-out/missing 404 without disclosing existence', () => {
     const error = axiosError(404, { error: 'approval_request_not_found' })
-    const message = getApprovalErrorMessage(error)
-    expect(message).toBe('The approval request was not found.')
-    // The message must not distinguish scoped-out from missing, nor leak any
+    const key = getApprovalErrorKey(error)
+    expect(key).toBe('approval:errors.approvalRequestNotFound')
+    // The key must not distinguish scoped-out from missing, nor leak any
     // raw identifier or access-grant detail.
-    expect(message).not.toMatch(/uuid|record exists|access|forbidden|id=/i)
+    expect(key).not.toMatch(/uuid|record exists|access|forbidden|id=/i)
   })
 
-  it('maps a generic 404 without a code to a safe not-found message', () => {
-    expect(getApprovalErrorMessage(axiosError(404, undefined))).toBe(
-      'The requested record was not found.',
+  it('maps a generic 404 without a code to a safe not-found key', () => {
+    expect(getApprovalErrorKey(axiosError(404, undefined))).toBe(
+      'common:errors.notFound',
     )
   })
 
-  it('maps a network error (no response) to a reachability message', () => {
+  it('maps a network error (no response) to a reachability key', () => {
     const error = {
       isAxiosError: true,
       response: undefined,
     } as unknown as AxiosError
-    expect(getApprovalErrorMessage(error)).toBe(
-      'Unable to reach the server. Please try again.',
+    expect(getApprovalErrorKey(error)).toBe(
+      'common:errors.serverUnreachable',
     )
   })
 
-  it('falls back to a generic message for unknown errors', () => {
-    expect(getApprovalErrorMessage(new Error('boom'))).toBe(
-      'An unexpected error occurred. Please try again.',
+  it('falls back to a generic key for unknown errors', () => {
+    expect(getApprovalErrorKey(new Error('boom'))).toBe(
+      'common:errors.unexpected',
     )
   })
 })

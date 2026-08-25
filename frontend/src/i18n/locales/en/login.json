@@ -1,0 +1,30 @@
+{
+  "heading": "Sign in",
+  "username": "Username",
+  "password": "Password",
+  "showPassword": "Show password",
+  "hidePassword": "Hide password",
+  "signIn": "Sign in",
+  "signingIn": "Signing in…",
+  "tryDemo": "Try the Demo",
+  "useThisAccount": "Use this account",
+  "rolesNote": "The Demo uses separate roles to demonstrate authorization and independent approval: the Manager initiates, the Procurement Specialist approves, and the Auditor observes.",
+  "credentialsNote": "Demo credentials are provided for evaluation. Authentication is still required.",
+  "demo": {
+    "manager": {
+      "description": "Start and review supply-risk workflows"
+    },
+    "procurement": {
+      "description": "Review approvals and procurement actions"
+    },
+    "auditor": {
+      "description": "Inspect workflow and audit history"
+    }
+  },
+  "errors": {
+    "invalidCredentials": "Invalid username or password.",
+    "backendUnavailable": "Authentication service is unavailable. Please try again later.",
+    "sessionInvalid": "Your session has expired. Please sign in again.",
+    "unexpected": "An unexpected error occurred. Please try again."
+  }
+}

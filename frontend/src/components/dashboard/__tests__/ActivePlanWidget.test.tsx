@@ -1,3 +1,4 @@
+import i18n from '@/i18n'
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -6,6 +7,14 @@ import ActivePlanWidget from '../ActivePlanWidget';
 import * as useActivePlanModule from '@/hooks/useActivePlan';
 import type { ProductionPlanSummary } from '@/lib/production-plans-api';
 import { canonicalPlan, mutatedPlan } from '@/test/fixtures/risk-contract';
+
+// WP-UX-UA-03: pin the active locale to English so behavior assertions
+// against English copy stay stable after the Ukrainian-first migration.
+beforeEach(async () => {
+  localStorage.setItem('forgemind_locale', 'en')
+  await i18n.changeLanguage('en')
+})
+
 
 vi.mock('@/hooks/useActivePlan');
 
