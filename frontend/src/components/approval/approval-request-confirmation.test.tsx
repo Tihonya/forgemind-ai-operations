@@ -75,6 +75,13 @@ describe('ApprovalRequestConfirmation', () => {
     expect(details).not.toHaveAttribute('open')
   })
 
+  it('focuses the dialog panel on open (focus-on-open preserved)', () => {
+    renderConfirmation()
+    // The dialog panel receives focus when the confirmation opens, so keyboard
+    // and screen-reader users start inside the dialog (WP-UX-UA-05-R1 F3).
+    expect(document.activeElement).toBe(screen.getByTestId('approval-confirmation'))
+  })
+
   it('submits the correct existing machine identifiers', async () => {
     const onCreate = vi.fn().mockResolvedValue(createApprovalRequest())
     renderConfirmation({ onCreate })

@@ -136,6 +136,13 @@ describe('ApprovalRequestCard', () => {
     expect(screen.getByTestId('requester')).toHaveTextContent('manager.demo')
   })
 
+  it('renders the risk id as an h2 (no h1→h3 heading-order gap under a page h1)', () => {
+    renderCard()
+    // The card sits directly beneath a page-level h1; its risk-id heading
+    // must be an h2 (not h3) so the outline stays h1 → h2 → h3 (WP-UX-UA-05-R1 F4).
+    expect(screen.getByTestId('request-risk-id').tagName).toBe('H2')
+  })
+
   it('never renders the binding hash or raw internal identifiers', () => {
     const { container } = renderCard()
     const text = container.textContent ?? ''

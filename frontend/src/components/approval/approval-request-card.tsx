@@ -112,9 +112,9 @@ export function ApprovalRequestCard({
       data-testid="approval-request-card"
     >
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-white" data-testid="request-risk-id">
+        <h2 className="text-sm font-semibold text-white" data-testid="request-risk-id">
           {request.risk_id}
-        </h3>
+        </h2>
         <ApprovalStatusBadge status={request.status} />
       </div>
 

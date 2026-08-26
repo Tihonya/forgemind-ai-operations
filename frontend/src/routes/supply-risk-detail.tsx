@@ -123,6 +123,25 @@ export default function SupplyRiskDetail() {
   // drives a prefilled confirmation dialog; no UUID is entered manually.
   const approvalCreate = useApprovalCreate()
   const [approvalAction, setApprovalAction] = useState<RecommendedAction | null>(null)
+  const approvalTriggerRef = useRef<HTMLElement | null>(null)
+
+  // Capture the element that opened the dialog so focus can be returned to
+  // it on close (WP-UX-UA-05-R1 F3).
+  function openApprovalDialog(action: RecommendedAction) {
+    const active = document.activeElement
+    approvalTriggerRef.current = active instanceof HTMLElement ? active : null
+    setApprovalAction(action)
+  }
+
+  function closeApprovalDialog() {
+    setApprovalAction(null)
+    const trigger = approvalTriggerRef.current
+    approvalTriggerRef.current = null
+    // Return focus to the trigger when it is still in the document.
+    if (trigger && trigger.isConnected) {
+      trigger.focus()
+    }
+  }
 
   // Plan-change guard (E1): Reset activeRunId when the active plan changes.
   const currentPlanCodeRef = useRef<string | undefined>(currentPlanCode)
@@ -655,7 +674,7 @@ export default function SupplyRiskDetail() {
           recommendation={workflowRun.recommendation}
           riskId={risk.risk_id}
           runId={activeRunId}
-          onSubmitForApproval={isProductionManager ? setApprovalAction : undefined}
+          onSubmitForApproval={isProductionManager ? openApprovalDialog : undefined}
         />
       )}
 
@@ -778,7 +797,7 @@ export default function SupplyRiskDetail() {
             await queryClient.invalidateQueries({ queryKey: ['approval-requests'] })
             return result
           }}
-          onCancel={() => setApprovalAction(null)}
+          onCancel={closeApprovalDialog}
         />
       )}
     </div>

@@ -119,9 +119,9 @@ export function DecisionTrail({
 
   return (
     <div className="rounded-xl border border-steel-700 bg-steel-900/40 p-4" data-testid="decision-trail">
-      <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-steel-400">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-steel-400">
         {t('trail.title')}
-      </h4>
+      </h3>
       <ol className="space-y-2">
         {stages.map((stage) => {
           const label = t(stage.labelKey)

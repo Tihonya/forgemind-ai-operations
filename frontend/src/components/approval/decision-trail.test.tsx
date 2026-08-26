@@ -72,6 +72,14 @@ describe('DecisionTrail', () => {
     }
   })
 
+  it('renders the trail title as an h3 (no heading-level gap under the card h2)', () => {
+    const { container } = renderTrail()
+    // WP-UX-UA-05-R1 F4: the card risk-id is an h2, so the trail title must be
+    // an h3 — never an h4 that would reintroduce a heading-order jump.
+    expect(container.querySelector('h3')).toBeInTheDocument()
+    expect(container.querySelector('h4')).not.toBeInTheDocument()
+  })
+
   it('links the risk stage back to its risk detail', () => {
     renderTrail()
     expect(screen.getByTestId('trail-link-risk')).toHaveAttribute(

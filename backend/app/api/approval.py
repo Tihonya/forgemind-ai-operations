@@ -15,9 +15,11 @@ Authorization (canonical roles, DEC-052 M1; decomposition §3.6):
 - Approve/reject: ``PROCUREMENT_SPECIALIST`` only; self-decision fails
   closed (requester/approver separation).
 - Read (list + detail): ``PRODUCTION_MANAGER`` (own requests),
-  ``PROCUREMENT_SPECIALIST`` (PENDING requests), and ``AI_ADMINISTRATOR``
-  (administrative read of all requests) — decomposition §3.6. Row scope is
-  enforced at the service/query boundary; scoped-out and nonexistent IDs are
+  ``PROCUREMENT_SPECIALIST`` (PENDING requests plus the APPROVED requests
+  it decided — the shared decision queue and its own controllable
+  approved records), and ``AI_ADMINISTRATOR`` (administrative read of all
+  requests) — decomposition §3.6. Row scope is enforced at the
+  service/query boundary; scoped-out and nonexistent IDs are
   indistinguishable (404).
 - ``ENGINEER`` and ``AUDITOR`` have no Phase 6 approval authority.
 
@@ -184,7 +186,8 @@ async def list_approval_requests(
     """Return a caller-scoped paginated list of approval requests.
 
     Scope (decomposition §3.6): PRODUCTION_MANAGER sees its own requests;
-    PROCUREMENT_SPECIALIST sees PENDING requests; AI_ADMINISTRATOR sees all.
+    PROCUREMENT_SPECIALIST sees PENDING requests plus the APPROVED requests
+    it decided; AI_ADMINISTRATOR sees all.
 
     Optional ``status`` query parameter filters results and ``total`` to
     that status. The filter composes with — and never widens — the
