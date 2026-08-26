@@ -121,6 +121,8 @@
     "recommendedActions": "Recommended Actions:",
     "evidenceUsed": "Evidence used:",
     "humanApprovalRequired": "Human approval required before procurement",
-    "approvalBoundary": "This is a recommendation boundary. Approval and procurement actions are managed separately."
+    "approvalBoundary": "This is a recommendation boundary. Approval and procurement actions are managed separately.",
+    "submitForApproval": "Submit for approval",
+    "noEligibleAction": "No action requires approval for this risk."
   }
 }

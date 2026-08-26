@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AwaitingDecisionWidget from '../AwaitingDecisionWidget';
+import { useAuth } from '@/contexts/auth.context';
 import * as useApprovalRequestsModule from '@/hooks/use-approval-requests';
 import type { ApprovalRequestResponse } from '@/lib/approval-api';
 
@@ -15,7 +16,22 @@ beforeEach(async () => {
 })
 
 
+vi.mock('@/contexts/auth.context', () => ({ useAuth: vi.fn() }))
 vi.mock('@/hooks/use-approval-requests');
+
+const mockUseAuth = vi.mocked(useAuth)
+
+function baseAuth(roles: string[]) {
+  return {
+    user: { id: 'user-1', username: 'user', display_name: 'User', roles },
+    isAuthenticated: true,
+    isLoading: false,
+    error: null,
+    login: vi.fn(),
+    logout: vi.fn(),
+    clearError: vi.fn(),
+  }
+}
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({
@@ -70,11 +86,6 @@ function createApproval(
   };
 }
 
-/**
- * Mock return value for useApprovalRequests when the widget requests
- * status=PENDING with limit=1. The backend returns one item but the
- * exact count is in `total`.
- */
 function mockPendingTotal(
   total: number,
   items: ApprovalRequestResponse[] = [],
@@ -92,6 +103,9 @@ function mockPendingTotal(
 describe('AwaitingDecisionWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: a role with approval read authority so existing tests exercise
+    // the fetching path.
+    mockUseAuth.mockReturnValue(baseAuth(['PRODUCTION_MANAGER']))
   });
 
   it('renders loading state', () => {
@@ -147,8 +161,6 @@ describe('AwaitingDecisionWidget', () => {
   });
 
   it('displays exact backend total even when only one item is returned', () => {
-    // The widget requests limit=1, so the backend returns one item
-    // but total=73 — the widget must display 73, not 1.
     const pending = createApproval({ status: 'PENDING' });
     mockPendingTotal(73, [pending]);
 
@@ -161,9 +173,6 @@ describe('AwaitingDecisionWidget', () => {
   });
 
   it('uses backend-filtered total, not client-side count of items', () => {
-    // Even if the response includes non-PENDING items (shouldn't happen
-    // with the filter, but the widget must still use total, not filter),
-    // the displayed number must be the backend total.
     const pending = createApproval({ status: 'PENDING' });
     const approved = createApproval({
       id: 'apr-002',
@@ -213,7 +222,6 @@ describe('AwaitingDecisionWidget', () => {
   });
 
   it('passes status=PENDING option to useApprovalRequests hook', () => {
-    // Verify the widget calls useApprovalRequests with status=PENDING
     vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
       requests: [],
       total: 0,
@@ -233,6 +241,61 @@ describe('AwaitingDecisionWidget', () => {
         limit: 1,
         offset: 0,
       }),
+    );
+  });
+});
+
+describe('AwaitingDecisionWidget — role awareness (WP-UX-UA-05)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('does NOT issue the approval-summary request for AUDITOR and shows an explanatory state', () => {
+    mockUseAuth.mockReturnValue(baseAuth(['AUDITOR']))
+    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
+      requests: [],
+      total: 0,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+
+    // The explanatory state is shown (not a red technical failure).
+    expect(
+      screen.getByTestId('awaiting-decision-role-unavailable'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Approvals are available to managers and procurement specialists.'),
+    ).toBeInTheDocument();
+    // No error state is rendered.
+    expect(screen.queryByTestId('awaiting-decision-error')).not.toBeInTheDocument();
+    // The request is issued with enabled=false (no forbidden call).
+    expect(
+      useApprovalRequestsModule.useApprovalRequests,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
+  it('issues the request (enabled) for PRODUCTION_MANAGER', () => {
+    mockUseAuth.mockReturnValue(baseAuth(['PRODUCTION_MANAGER']))
+    vi.mocked(useApprovalRequestsModule.useApprovalRequests).mockReturnValue({
+      requests: [],
+      total: 0,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    renderWithProviders(<AwaitingDecisionWidget />);
+    expect(
+      useApprovalRequestsModule.useApprovalRequests,
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({ enabled: true }),
     );
   });
 });

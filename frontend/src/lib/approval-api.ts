@@ -74,23 +74,11 @@ export interface DecisionRequest {
 /**
  * The single controlled action type supported by the MVP (DEC-052 G2/G3).
  * Matches the backend ``SUPPORTED_ACTION_TYPE``.
+ *
+ * Action-type labels are localized in the UI through the ``approval.actionTypes.*``
+ * catalog (WP-UX-UA-05); this module exposes only the machine enum value.
  */
 export const SUPPORTED_ACTION_TYPE = 'CREATE_PROCUREMENT_TASK'
-
-/**
- * Human-readable labels for the bounded action-type allow-list.
- */
-const ACTION_TYPE_LABELS: Record<string, string> = {
-  CREATE_PROCUREMENT_TASK: 'Create procurement task',
-}
-
-/**
- * Return a human-readable label for an action type, falling back to the raw
- * value for unknown types (no crash, no silent skip).
- */
-export function formatActionType(actionType: string): string {
-  return ACTION_TYPE_LABELS[actionType] ?? actionType
-}
 
 /**
  * Fetch the caller-scoped page of approval requests.
@@ -127,6 +115,18 @@ export async function createApprovalRequest(
   const response = await api.post<ApprovalRequestResponse>(
     '/approval-requests',
     payload,
+  )
+  return response.data
+}
+
+/**
+ * Fetch a single approval request within the caller's scope (read-only).
+ */
+export async function fetchApprovalRequest(
+  requestId: string,
+): Promise<ApprovalRequestResponse> {
+  const response = await api.get<ApprovalRequestResponse>(
+    `/approval-requests/${requestId}`,
   )
   return response.data
 }

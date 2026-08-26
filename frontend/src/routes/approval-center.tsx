@@ -1,12 +1,12 @@
 /**
- * Approval Center route (WP-REC-04D).
+ * Approval Center route (WP-REC-04D, remediated WP-UX-UA-05).
  *
- * Orchestrates the caller-scoped approval-request list, the
- * PRODUCTION_MANAGER create form, and the PROCUREMENT_SPECIALIST
- * approve/reject controls. Role visibility is a usability mirror of the
- * backend authorization boundary — the backend remains authoritative.
- *
- * Localized per WP-UX-UA-03.
+ * Orchestrates the caller-scoped approval-request list and the
+ * PROCUREMENT_SPECIALIST approve/reject controls. The manual UUID creation
+ * form has been removed; the normal creation path now begins from a
+ * completed AI recommendation (see ApprovalCreateGuidance). Role visibility
+ * is a usability mirror of the backend authorization boundary — the backend
+ * remains authoritative.
  */
 
 import { useQueryClient } from '@tanstack/react-query'
@@ -14,25 +14,30 @@ import { useTranslation } from 'react-i18next'
 import { AlertCircle, CheckCircle2 } from 'lucide-react'
 
 import { ApprovalRequestCard } from '@/components/approval/approval-request-card'
-import { CreateApprovalRequestForm } from '@/components/approval/create-approval-request-form'
+import { ApprovalCreateGuidance } from '@/components/approval/approval-create-guidance'
 import { DataEmptyState } from '@/components/common/DataEmptyState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuth } from '@/contexts/auth.context'
-import { useApprovalCreate } from '@/hooks/use-approval-create'
-import {
-  useApprovalDecision,
-  type ApprovalDecisionKind,
-} from '@/hooks/use-approval-decision'
+import { useApprovalDecision, type ApprovalDecisionKind } from '@/hooks/use-approval-decision'
 import { useApprovalRequests } from '@/hooks/use-approval-requests'
-import type { ApprovalRequestCreate } from '@/lib/approval-api'
+import { useProcurementCreate, useProcurementTasks } from '@/hooks/use-procurement-tasks'
+import type { ProcurementTaskResponse } from '@/lib/procurement-api'
 
 const ROLE_MANAGER = 'PRODUCTION_MANAGER'
 const ROLE_SPECIALIST = 'PROCUREMENT_SPECIALIST'
+const ROLE_AUDITOR = 'AUDITOR'
+const ROLE_ADMIN = 'AI_ADMINISTRATOR'
+
+/** Roles with procurement-task read authority (backend _READ_ROLES). */
+const PROCUREMENT_READ_ROLES = new Set([
+  ROLE_MANAGER,
+  ROLE_SPECIALIST,
+  ROLE_ADMIN,
+])
 
 /**
- * Case-insensitive role membership check. Backend role codes are UPPERCASE;
- * this tolerates lowercase/whitespace variance defensively.
+ * Case-insensitive role membership check.
  */
 function hasRole(roles: string[], roleCode: string): boolean {
   return roles.some(
@@ -46,19 +51,20 @@ export default function ApprovalCenter() {
   const roles = user?.roles ?? []
 
   const { requests, total, isLoading, isError, refetch } = useApprovalRequests()
-  const createMutation = useApprovalCreate()
   const decisionMutation = useApprovalDecision()
   const queryClient = useQueryClient()
 
   const canCreate = hasRole(roles, ROLE_MANAGER)
   const canDecide = hasRole(roles, ROLE_SPECIALIST)
+  const canViewAudit = hasRole(roles, ROLE_AUDITOR) || hasRole(roles, ROLE_ADMIN)
+  const canReadTasks = roles.some((r) => PROCUREMENT_READ_ROLES.has(r.trim().toUpperCase()))
 
-  async function handleCreate(payload: ApprovalRequestCreate) {
-    try {
-      await createMutation.mutateAsync(payload)
-    } finally {
-      await queryClient.invalidateQueries({ queryKey: ['approval-requests'] })
-    }
+  const { tasks, refetch: refetchTasks } = useProcurementTasks(canReadTasks)
+  const createTaskMutation = useProcurementCreate()
+
+  const taskByApproval = new Map<string, ProcurementTaskResponse>()
+  for (const task of tasks) {
+    taskByApproval.set(task.approval_request_id, task)
   }
 
   async function handleDecide(
@@ -73,6 +79,13 @@ export default function ApprovalCenter() {
     }
   }
 
+  async function handleCreateTask(approvalRequestId: string) {
+    const task = await createTaskMutation.mutateAsync(approvalRequestId)
+    await queryClient.invalidateQueries({ queryKey: ['procurement-tasks'] })
+    void refetchTasks()
+    return task
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -80,7 +93,7 @@ export default function ApprovalCenter() {
         <p className="mt-1 text-sm text-steel-400">{t('subtitle')}</p>
       </div>
 
-      {canCreate && <CreateApprovalRequestForm onCreate={handleCreate} />}
+      {canCreate && <ApprovalCreateGuidance />}
 
       {isLoading && requests.length === 0 ? (
         <div className="space-y-3" data-testid="loading-state">
@@ -121,6 +134,12 @@ export default function ApprovalCenter() {
               request={request}
               canDecide={canDecide && request.requested_by !== user?.id}
               onDecide={(kind, comment) => handleDecide(request.id, kind, comment)}
+              procurementTask={taskByApproval.get(request.id) ?? null}
+              canCreateTask={
+                canDecide && request.decided_by === user?.id && request.status === 'APPROVED'
+              }
+              onCreateTask={() => handleCreateTask(request.id)}
+              canViewAudit={canViewAudit}
             />
           ))}
         </div>

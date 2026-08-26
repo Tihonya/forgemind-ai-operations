@@ -6,6 +6,7 @@ import SupplyRisk from './routes/supply-risk'
 import SupplyRiskDetail from './routes/supply-risk-detail'
 import WorkflowRunDetail from './routes/workflow-run-detail'
 import ApprovalCenter from './routes/approval-center'
+import ApprovalRequestDetail from './routes/approval-request-detail'
 import AuditLog from './routes/audit-log'
 import ProtectedRoute from './routes/protected'
 import RequireRole from './routes/require-role'
@@ -41,6 +42,7 @@ function App() {
                 <Route path="supply-risk/:riskId" element={<SupplyRiskDetail />} />
                 <Route path="workflow-runs/:runId" element={<WorkflowRunDetail />} />
                 <Route path="approval-center" element={<ApprovalCenter />} />
+                <Route path="approval-requests/:requestId" element={<ApprovalRequestDetail />} />
                 <Route element={<RequireRole roles={AUDIT_READ_ROLES} />}>
                   <Route path="audit-log" element={<AuditLog />} />
                 </Route>

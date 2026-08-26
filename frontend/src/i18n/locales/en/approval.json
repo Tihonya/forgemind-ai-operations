@@ -33,21 +33,57 @@
     "risk": "Risk:",
     "recommendation": "Recommendation:"
   },
-  "create": {
-    "title": "Create Approval Request",
-    "recommendationId": "Recommendation ID",
-    "recommendationPlaceholder": "UUID of a validated recommendation",
-    "riskId": "Risk ID",
-    "riskPlaceholder": "e.g. RISK-001",
-    "componentCode": "Component code",
-    "componentPlaceholder": "e.g. CTRL-X4",
+  "actionTypes": {
+    "CREATE_PROCUREMENT_TASK": "Create procurement task"
+  },
+  "guidance": {
+    "title": "How to create an approval request",
+    "body": "An approval request begins from a completed AI recommendation. Open a risk, review the recommendation, and choose \"Submit for approval\".",
+    "cta": "Go to risks"
+  },
+  "confirm": {
+    "title": "Approval request",
+    "subtitle": "Review the details before submitting. No technical identifiers need to be entered.",
+    "risk": "Risk",
+    "component": "Component",
+    "action": "Proposed action",
     "quantity": "Quantity",
-    "quantityPlaceholder": "Positive quantity",
-    "actionType": "Action type:",
-    "actionTypeNote": "— the only controlled action supported in this release.",
+    "recommendation": "Recommendation explanation",
+    "sourceAnalysis": "Source analysis",
+    "requester": "Requester",
+    "nextRole": "Next responsible role",
+    "technicalDetails": "Technical details",
+    "submit": "Submit for approval",
+    "submitting": "Submitting…",
+    "cancel": "Cancel",
     "created": "Approval request created.",
+    "whatHappened": "The request was submitted for approval. It is now awaiting a decision from the procurement specialist.",
+    "whoActsNext": "The procurement specialist performs the next step.",
+    "openRequest": "Open request",
+    "openCenter": "Approval Center",
+    "missingTitle": "Not enough data to submit",
+    "missingBody": "Recommendation data is missing to submit. Return to the AI analysis and make sure the recommendation is complete."
+  },
+  "task": {
+    "create": "Create procurement task",
     "creating": "Creating…",
-    "submit": "Create approval request"
+    "created": "Procurement task created.",
+    "open": "Open task"
+  },
+  "trail": {
+    "title": "Decision trail",
+    "current": "Current",
+    "nextAction": "Next action: {{role}}",
+    "unavailable": "Unavailable",
+    "notCreated": "Not created yet",
+    "stage": {
+      "risk": "Risk",
+      "analysis": "Analysis",
+      "recommendation": "Recommendation",
+      "approval": "Approval",
+      "task": "Task",
+      "audit": "Audit"
+    }
   },
   "errors": {
     "recommendationNotFound": "The selected recommendation could not be found.",
@@ -62,6 +98,12 @@
     "approvalRequestNotPending": "This request has already been decided.",
     "approvalRequestDuplicate": "A pending request already exists for this action.",
     "selfDecisionForbidden": "You cannot decide your own request.",
-    "approvalServiceError": "The approval service could not complete the request."
+    "approvalServiceError": "The approval service could not complete the request.",
+    "approvalRequestNotApproved": "The approval request has not been approved yet.",
+    "approvalRequestRejected": "The approval request was rejected.",
+    "approverMismatch": "Only the specialist who approved the request can create the task.",
+    "bindingMismatch": "The task parameters do not match the approved request.",
+    "procurementTaskNotFound": "The procurement task was not found.",
+    "procurementServiceError": "The procurement service could not complete the request."
   }
 }

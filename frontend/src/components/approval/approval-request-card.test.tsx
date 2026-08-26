@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
@@ -15,11 +16,13 @@ function renderCard(
   request = createApprovalRequest(),
 ) {
   return render(
-    <ApprovalRequestCard
-      request={request}
-      canDecide={props.canDecide ?? false}
-      onDecide={props.onDecide ?? vi.fn()}
-    />,
+    <MemoryRouter>
+      <ApprovalRequestCard
+        request={request}
+        canDecide={props.canDecide ?? false}
+        onDecide={props.onDecide ?? vi.fn()}
+      />
+    </MemoryRouter>,
   )
 }
 

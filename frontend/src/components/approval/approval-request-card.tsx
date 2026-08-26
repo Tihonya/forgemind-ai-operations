@@ -1,29 +1,34 @@
 /**
- * Single approval-request card (WP-REC-04D).
+ * Single approval-request card (WP-REC-04D, extended WP-UX-UA-05).
  *
- * Renders status, the safe action snapshot, requester/timestamps, and the
- * terminal decision metadata. Decision controls (approve/reject) are shown
- * only when the current user may decide this request (PROCUREMENT_SPECIALIST
- * on a PENDING request that is not their own). Terminal requests expose no
- * active decision controls.
+ * Renders status, the safe action snapshot, requester/timestamps, the
+ * terminal decision metadata, and (new) the end-to-end decision trail plus
+ * the procurement-task creation/read surface. Decision controls are shown
+ * only when the current user may decide this request.
  *
- * Localized per WP-UX-UA-03; the request status badge keeps its raw machine
- * status value (WP-UX-UA-04 scope) and requester/comment user data is shown
- * verbatim.
+ * Localized per WP-UX-UA-03; statuses resolve through the WP-UX-UA-04
+ * registry. Machine codes (risk id, component code, UUIDs) remain untranslated.
  */
 
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import StatusBadge from '@/components/status/StatusBadge'
 import {
   getApprovalErrorKey,
   type ApprovalRequestResponse,
 } from '@/lib/approval-api'
+import {
+  getProcurementErrorKey,
+  type ProcurementTaskResponse,
+} from '@/lib/procurement-api'
 import type { ApprovalDecisionKind } from '@/hooks/use-approval-decision'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import { shortRef } from '@/lib/references'
 import { ApprovalActionSnapshot } from './approval-action-snapshot'
 import { ApprovalStatusBadge } from './approval-status-badge'
+import { DecisionTrail } from './decision-trail'
 
 const COMMENT_MAX_LENGTH = 2000
 
@@ -31,25 +36,40 @@ interface ApprovalRequestCardProps {
   request: ApprovalRequestResponse;
   canDecide: boolean;
   onDecide: (kind: ApprovalDecisionKind, comment: string) => Promise<void>;
+  /** Matched procurement task for this request (null when none exists). */
+  procurementTask?: ProcurementTaskResponse | null;
+  /** Whether the current user may create a procurement task for this request. */
+  canCreateTask?: boolean;
+  onCreateTask?: () => Promise<ProcurementTaskResponse>;
+  /** Whether the current role may open the Audit Log. */
+  canViewAudit?: boolean;
 }
 
 export function ApprovalRequestCard({
   request,
   canDecide,
   onDecide,
+  procurementTask = null,
+  canCreateTask = false,
+  onCreateTask,
+  canViewAudit = false,
 }: ApprovalRequestCardProps) {
   const { t } = useTranslation('approval')
   const [mode, setMode] = useState<ApprovalDecisionKind | null>(null)
   const [comment, setComment] = useState('')
   const [pending, setPending] = useState(false)
   const [errorKey, setErrorKey] = useState<string | null>(null)
-  // Date rendering follows the ACTIVE locale (WP-UX-UA-01 remediation F-1):
-  // the localized formatter is bound to the reactive active locale, so a
-  // mounted card re-renders its dates when the user switches languages.
+
+  // Procurement-task creation state.
+  const [taskPending, setTaskPending] = useState(false)
+  const [taskErrorKey, setTaskErrorKey] = useState<string | null>(null)
+  const [localTask, setLocalTask] = useState<ProcurementTaskResponse | null>(null)
+
   const { formatDate } = useLocalizedFormatters()
 
   const isPendingRequest = request.status === 'PENDING'
   const canAct = canDecide && isPendingRequest
+  const activeTask = localTask ?? procurementTask
 
   async function submit() {
     if (!mode || !comment.trim() || pending) return
@@ -72,6 +92,20 @@ export function ApprovalRequestCard({
     setErrorKey(null)
   }
 
+  async function handleCreateTask() {
+    if (!onCreateTask || taskPending) return
+    setTaskPending(true)
+    setTaskErrorKey(null)
+    try {
+      const task = await onCreateTask()
+      setLocalTask(task)
+    } catch (err) {
+      setTaskErrorKey(getProcurementErrorKey(err))
+    } finally {
+      setTaskPending(false)
+    }
+  }
+
   return (
     <div
       className="rounded-xl border border-steel-700 bg-steel-900/60 p-5"
@@ -88,6 +122,20 @@ export function ApprovalRequestCard({
         <ApprovalActionSnapshot request={request} />
       </div>
 
+      {/* End-to-end decision trail (WP-UX-UA-05) */}
+      <div className="mt-4">
+        <DecisionTrail
+          riskId={request.risk_id}
+          workflowRunId={request.workflow_run_id}
+          recommendationId={request.recommendation_id}
+          correlationId={request.correlation_id}
+          approvalStatus={request.status}
+          approvalRequestId={request.id}
+          procurementTask={activeTask}
+          canViewAudit={canViewAudit}
+        />
+      </div>
+
       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-steel-400">
         <span>
           <span className="font-medium text-steel-300">{t('card.requester')}</span>{' '}
@@ -101,7 +149,16 @@ export function ApprovalRequestCard({
 
       {!isPendingRequest && (
         <div className="mt-3 rounded-md border border-steel-700 bg-steel-800/40 px-3 py-2 text-xs text-steel-300">
-          <span>
+          {/* Previous → new status transition (WP-UX-UA-05) */}
+          <div
+            className="flex flex-wrap items-center gap-1.5"
+            data-testid="status-transition"
+          >
+            <StatusBadge domain="approval" code="PENDING" testId="transition-from" />
+            <span className="text-steel-500" aria-hidden="true">→</span>
+            <StatusBadge domain="approval" code={request.status} testId="transition-to" />
+          </div>
+          <span className="mt-2 block">
             <span className="font-medium">{t('card.decidedBy')}</span>{' '}
             <span data-testid="decided-by">
               {request.decided_by_username ?? '—'}
@@ -205,6 +262,44 @@ export function ApprovalRequestCard({
               {t('card.cancel')}
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Procurement task (WP-UX-UA-05): read + create */ }
+      {activeTask && (
+        <div
+          className="mt-4 flex items-center gap-2 rounded-md border border-steel-700 bg-steel-800/40 px-3 py-2 text-xs text-steel-300"
+          data-testid="procurement-task-present"
+        >
+          <span className="font-medium">{t('trail.stage.task')}:</span>
+          <span data-testid="task-reference">{shortRef('TASK', activeTask.id)}</span>
+          <StatusBadge
+            domain="procurementTask"
+            code={activeTask.task_state}
+            testId="task-state-badge"
+          />
+        </div>
+      )}
+
+      {canCreateTask && request.status === 'APPROVED' && !activeTask && (
+        <div className="mt-4 space-y-2" data-testid="procurement-task-create">
+          {taskErrorKey && (
+            <div
+              role="alert"
+              className="rounded-md border border-red-600/30 bg-red-600/10 px-3 py-2 text-sm text-red-300"
+              data-testid="task-error"
+            >
+              {t(taskErrorKey)}
+            </div>
+          )}
+          <Button
+            size="sm"
+            onClick={handleCreateTask}
+            disabled={taskPending}
+            data-testid="create-task-button"
+          >
+            {taskPending ? t('task.creating') : t('task.create')}
+          </Button>
         </div>
       )}
     </div>

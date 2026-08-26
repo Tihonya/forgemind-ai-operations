@@ -69,7 +69,7 @@ describe('NavigationItem', () => {
     expect(disabled).toBeInTheDocument()
     expect(disabled.getAttribute('aria-disabled')).toBe('true')
     expect(disabled).toHaveTextContent('Джерела знань')
-    expect(disabled).toHaveTextContent('Фаза 4')
+    expect(disabled).toHaveTextContent('Незабаром')
   })
 
   it('renders phase marker in English after switching', () => {
@@ -89,7 +89,7 @@ describe('NavigationItem', () => {
     )
     const disabled = screen.getByTestId('nav-disabled-knowledge')
     expect(disabled).toHaveTextContent('Knowledge Sources')
-    expect(disabled).toHaveTextContent('Phase 4')
+    expect(disabled).toHaveTextContent('Coming soon')
   })
 
   it('prevents click on disabled future module', () => {

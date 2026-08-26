@@ -110,6 +110,20 @@ vi.mock('@/hooks/use-workflow-retry', () => ({
   }),
 }));
 
+// Mock approval-creation mutation (WP-UX-UA-05: the route now wires guided
+// approval creation from the recommendation surface).
+vi.mock('@/hooks/use-approval-create', () => ({
+  useApprovalCreate: () => ({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn(),
+    isPending: false,
+    isError: false,
+    error: null,
+    data: undefined,
+    reset: vi.fn(),
+  }),
+}));
+
 vi.mock('@/hooks/useRiskDetail', () => ({
   useRiskDetail: ({ riskId }: { riskId: string }) => {
     if (riskId === 'RISK-001') {
