@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AxiosError } from 'axios'
 import {
-  formatActionType,
   getApprovalErrorCode,
   getApprovalErrorKey,
   SUPPORTED_ACTION_TYPE,
@@ -21,15 +20,9 @@ function axiosError(status: number, detail?: unknown): AxiosError {
   } as unknown as AxiosError
 }
 
-describe('formatActionType', () => {
-  it('maps the supported action type to a human label', () => {
-    expect(formatActionType(SUPPORTED_ACTION_TYPE)).toBe(
-      'Create procurement task',
-    )
-  })
-
-  it('falls back to the raw value for unknown action types', () => {
-    expect(formatActionType('SOME_OTHER_ACTION')).toBe('SOME_OTHER_ACTION')
+describe('SUPPORTED_ACTION_TYPE', () => {
+  it('remains the single controlled machine enum value (never translated)', () => {
+    expect(SUPPORTED_ACTION_TYPE).toBe('CREATE_PROCUREMENT_TASK')
   })
 })
 

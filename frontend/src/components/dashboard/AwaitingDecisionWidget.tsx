@@ -1,12 +1,10 @@
 /**
- * Awaiting Decision widget — replaces the stale "Pending Approvals —
- * Unavailable — Phase 6" placeholder.
+ * Awaiting Decision widget — role-aware (WP-UX-UA-05).
  *
- * Shows the exact count of PENDING approval requests (as reported by the
- * backend) and a CTA to the Approval Center. Zero state is positive and
- * truthful.
- *
- * Localized per WP-UX-UA-03; the count uses Ukrainian/English plural rules.
+ * Shows the exact count of PENDING approval requests and a CTA to the
+ * Approval Center. For roles without approval read authority (AUDITOR,
+ * ENGINEER), the widget does NOT issue the forbidden request and instead
+ * renders a localized explanatory state — never a red technical failure.
  */
 
 import { useTranslation } from 'react-i18next'
@@ -16,15 +14,50 @@ import { CheckSquare, ArrowRight } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { useAuth } from '@/contexts/auth.context'
 import { useApprovalRequests } from '@/hooks/use-approval-requests'
+
+/** Backend approval read roles (mirrors ``_READ_ROLES`` in approval.py). */
+const APPROVAL_READ_ROLES = new Set([
+  'PRODUCTION_MANAGER',
+  'PROCUREMENT_SPECIALIST',
+  'AI_ADMINISTRATOR',
+])
+
+function hasApprovalRead(roles: string[]): boolean {
+  return roles.some((r) => APPROVAL_READ_ROLES.has(r.trim().toUpperCase()))
+}
 
 export default function AwaitingDecisionWidget() {
   const { t } = useTranslation('dashboard')
+  const { user } = useAuth()
+  const roles = user?.roles ?? []
+  const canViewApprovals = hasApprovalRead(roles)
+
   const { total: pendingCount, isLoading, isError, refetch } = useApprovalRequests({
     status: 'PENDING',
     limit: 1,
     offset: 0,
+    enabled: canViewApprovals,
   })
+
+  if (!canViewApprovals) {
+    return (
+      <Card data-testid="awaiting-decision-widget">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-medium text-steel-300">
+            <CheckSquare className="h-4 w-4 text-steel-500" aria-hidden="true" />
+            {t('widgets.awaitingDecision.title')}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-steel-400" data-testid="awaiting-decision-role-unavailable">
+            {t('widgets.awaitingDecision.roleUnavailable')}
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card data-testid="awaiting-decision-widget">

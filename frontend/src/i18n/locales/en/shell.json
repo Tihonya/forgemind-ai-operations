@@ -8,8 +8,8 @@
     "auditLog": "Audit Log",
     "admin": "Admin / Model Status"
   },
-  "phaseMarker": "Phase {{phase}}",
-  "phaseAvailable": "Available in Phase {{phase}}",
+  "phaseMarker": "Coming soon",
+  "phaseAvailable": "Will be available soon",
   "roleLabels": {
     "unknown": "User",
     "productionManager": "Production Manager",

@@ -32,11 +32,14 @@ import { PlanContextPanel } from '@/components/supply-risk/PlanContextPanel'
 import { PartialFailurePlaceholder } from '@/components/supply-risk/PartialFailurePlaceholder'
 import RecommendationForRisk from '@/components/supply-risk/RecommendationForRisk'
 import WorkflowStateBadge from '@/components/dashboard/WorkflowStateBadge'
+import { ApprovalRequestConfirmation } from '@/components/approval/approval-request-confirmation'
+import { useApprovalCreate } from '@/hooks/use-approval-create'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   isNonterminalState,
   isFailedState,
 } from '@/lib/workflow-state-labels'
+import type { RecommendedAction } from '@/lib/workflow-api'
 
 export default function SupplyRiskDetail() {
   const { t } = useTranslation('riskDetail')
@@ -115,6 +118,30 @@ export default function SupplyRiskDetail() {
   const isProductionManager = (user?.roles ?? []).some(
     (r) => r.trim().toLowerCase() === 'production_manager',
   )
+
+  // Guided approval creation (WP-UX-UA-05): the selected eligible action
+  // drives a prefilled confirmation dialog; no UUID is entered manually.
+  const approvalCreate = useApprovalCreate()
+  const [approvalAction, setApprovalAction] = useState<RecommendedAction | null>(null)
+  const approvalTriggerRef = useRef<HTMLElement | null>(null)
+
+  // Capture the element that opened the dialog so focus can be returned to
+  // it on close (WP-UX-UA-05-R1 F3).
+  function openApprovalDialog(action: RecommendedAction) {
+    const active = document.activeElement
+    approvalTriggerRef.current = active instanceof HTMLElement ? active : null
+    setApprovalAction(action)
+  }
+
+  function closeApprovalDialog() {
+    setApprovalAction(null)
+    const trigger = approvalTriggerRef.current
+    approvalTriggerRef.current = null
+    // Return focus to the trigger when it is still in the document.
+    if (trigger && trigger.isConnected) {
+      trigger.focus()
+    }
+  }
 
   // Plan-change guard (E1): Reset activeRunId when the active plan changes.
   const currentPlanCodeRef = useRef<string | undefined>(currentPlanCode)
@@ -647,6 +674,7 @@ export default function SupplyRiskDetail() {
           recommendation={workflowRun.recommendation}
           riskId={risk.risk_id}
           runId={activeRunId}
+          onSubmitForApproval={isProductionManager ? openApprovalDialog : undefined}
         />
       )}
 
@@ -748,6 +776,29 @@ export default function SupplyRiskDetail() {
             <Skeleton className="h-24 w-full" />
           </CardContent>
         </Card>
+      )}
+
+      {/* Guided approval confirmation (WP-UX-UA-05) */}
+      {approvalAction && workflowRun && workflowRun.recommendation && (
+        <ApprovalRequestConfirmation
+          prefill={{
+            riskId: risk.risk_id,
+            componentCode: risk.component_code,
+            quantity: risk.shortage,
+            actionTitle: approvalAction.title,
+            actionRationale: approvalAction.rationale,
+            recommendationId: workflowRun.recommendation.id,
+            workflowRunId: activeRunId ?? '',
+            correlationId: workflowRun.correlation_id,
+          }}
+          requester={user?.username ?? ''}
+          onCreate={async (payload) => {
+            const result = await approvalCreate.mutateAsync(payload)
+            await queryClient.invalidateQueries({ queryKey: ['approval-requests'] })
+            return result
+          }}
+          onCancel={closeApprovalDialog}
+        />
       )}
     </div>
   )

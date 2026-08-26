@@ -8,8 +8,8 @@
     "auditLog": "Журнал аудиту",
     "admin": "Адміністрування"
   },
-  "phaseMarker": "Фаза {{phase}}",
-  "phaseAvailable": "Доступно у фазі {{phase}}",
+  "phaseMarker": "Незабаром",
+  "phaseAvailable": "Буде доступно незабаром",
   "roleLabels": {
     "unknown": "Користувач",
     "productionManager": "Керівник виробництва",

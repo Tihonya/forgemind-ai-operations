@@ -14,6 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useSearchParams } from 'react-router-dom'
 import { AlertCircle, FileText, Search } from 'lucide-react'
 
 import { AuditEventDetail } from '@/components/audit/audit-event-detail'
@@ -45,9 +46,13 @@ import {
 export default function AuditLog() {
   const { t } = useTranslation('audit')
   const { formatDateTime } = useLocalizedFormatters()
+  const [searchParams] = useSearchParams()
   const [limit, setLimit] = useState(AUDIT_DEFAULT_PAGE_SIZE)
   const [offset, setOffset] = useState(0)
-  const [query, setQuery] = useState('')
+  // Deep-link support (WP-UX-UA-05): a `?correlation_id=…` query parameter
+  // pre-fills the client-side filter so a decision trail can link directly
+  // to the correlated audit events.
+  const [query, setQuery] = useState(searchParams.get('correlation_id') ?? '')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [traceCorrelationId, setTraceCorrelationId] = useState<string | null>(null)
 

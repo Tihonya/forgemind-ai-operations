@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { act } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import i18n from '@/i18n'
@@ -15,11 +16,13 @@ function renderCard(
   request = createApprovalRequest(),
 ) {
   return render(
-    <ApprovalRequestCard
-      request={request}
-      canDecide={props.canDecide ?? false}
-      onDecide={props.onDecide ?? vi.fn()}
-    />,
+    <MemoryRouter>
+      <ApprovalRequestCard
+        request={request}
+        canDecide={props.canDecide ?? false}
+        onDecide={props.onDecide ?? vi.fn()}
+      />
+    </MemoryRouter>,
   )
 }
 
@@ -131,6 +134,13 @@ describe('ApprovalRequestCard', () => {
     expect(screen.getByTestId('quantity')).toHaveTextContent('250')
     expect(screen.getByTestId('risk-id')).toHaveTextContent('RISK-001')
     expect(screen.getByTestId('requester')).toHaveTextContent('manager.demo')
+  })
+
+  it('renders the risk id as an h2 (no h1→h3 heading-order gap under a page h1)', () => {
+    renderCard()
+    // The card sits directly beneath a page-level h1; its risk-id heading
+    // must be an h2 (not h3) so the outline stays h1 → h2 → h3 (WP-UX-UA-05-R1 F4).
+    expect(screen.getByTestId('request-risk-id').tagName).toBe('H2')
   })
 
   it('never renders the binding hash or raw internal identifiers', () => {

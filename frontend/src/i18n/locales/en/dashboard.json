@@ -30,7 +30,8 @@
       "waiting_few": "approval requests waiting",
       "waiting_many": "approval requests waiting",
       "waiting_other": "approval requests waiting",
-      "review": "Review"
+      "review": "Review",
+      "roleUnavailable": "Approvals are available to managers and procurement specialists."
     },
     "datasetStatus": {
       "title": "Dataset Status",

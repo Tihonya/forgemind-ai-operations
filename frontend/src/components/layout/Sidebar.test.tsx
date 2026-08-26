@@ -89,7 +89,7 @@ describe('Sidebar', () => {
     renderSidebar(user)
     expect(screen.getByTestId('nav-disabled-workflows')).toBeInTheDocument()
     expect(screen.getByTestId('nav-disabled-workflows')).toHaveTextContent('Запуски аналізу')
-    expect(screen.getByTestId('nav-disabled-workflows')).toHaveTextContent('Фаза 5')
+    expect(screen.getByTestId('nav-disabled-workflows')).toHaveTextContent('Незабаром')
   })
 
   it('renders Approval Center link for production_manager (active, localized)', () => {

@@ -25,7 +25,9 @@ Contract (WP-REC-04-DEC §4 WP-REC-04A; DEC-052 G1/G2/G3):
 - Creation and each decision emit the corresponding audit event in the
   same transaction as the business mutation.
 - Read scope: ``PRODUCTION_MANAGER`` sees only its own requests;
-  ``PROCUREMENT_SPECIALIST`` sees only PENDING requests;
+  ``PROCUREMENT_SPECIALIST`` sees PENDING requests (the shared decision
+  queue) plus the APPROVED requests it decided (so the approved record
+  stays reachable for the controlled procurement task);
   ``AI_ADMINISTRATOR`` retains administrative read access (decomposition
   §3.6). Scoped-out and nonexistent IDs are indistinguishable (404).
 
@@ -45,7 +47,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import ColumnElement, func, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.correlation import generate_correlation_id, validate_correlation_id
@@ -148,15 +150,18 @@ def _read_scope(user: AuthenticatedUser) -> str:
 
     Precedence (decomposition §3.6): ``AI_ADMINISTRATOR`` → administrative
     read (all); ``PRODUCTION_MANAGER`` → own requests only;
-    ``PROCUREMENT_SPECIALIST`` → PENDING requests only. Any other caller has
-    no read scope (the API role gate rejects them with 403 before this).
+    ``PROCUREMENT_SPECIALIST`` → PENDING requests (the shared decision
+    queue) plus the APPROVED requests the specialist themselves decided,
+    so an approved request stays reachable for the controlled
+    procurement-task execution and after a reload. Any other caller has no
+    read scope (the API role gate rejects them with 403 before this).
     """
     if _ROLE_ADMIN in user.roles:
         return "all"
     if _ROLE_MANAGER in user.roles:
         return "own"
     if _ROLE_SPECIALIST in user.roles:
-        return "pending"
+        return "actionable"
     return "none"
 
 
@@ -165,8 +170,22 @@ def _scope_conditions(user: AuthenticatedUser) -> list[ColumnElement[bool]]:
     scope = _read_scope(user)
     if scope == "own":
         return [ApprovalRequest.requested_by == user.user_id]
-    if scope == "pending":
-        return [ApprovalRequest.status == ApprovalStatus.PENDING.value]
+    if scope == "actionable":
+        # WP-UX-UA-05-R1: the specialist still sees every PENDING request
+        # (the shared decision queue), and additionally the APPROVED requests
+        # they themselves decided — the actor who may invoke the controlled
+        # procurement task. This keeps the approved record reachable after
+        # the decision and after a reload without granting access to other
+        # specialists' approved records or to any REJECTED record.
+        return [
+            or_(
+                ApprovalRequest.status == ApprovalStatus.PENDING.value,
+                and_(
+                    ApprovalRequest.status == ApprovalStatus.APPROVED.value,
+                    ApprovalRequest.decided_by == user.user_id,
+                ),
+            )
+        ]
     return []
 
 
@@ -500,8 +519,9 @@ class ApprovalService:
         """Return the caller-scoped page of approval requests.
 
         Scope (decomposition §3.6): manager sees own requests; specialist
-        sees PENDING requests; administrator sees all. Returns
-        ``(items, total)`` ordered by ``requested_at DESC, id DESC``.
+        sees PENDING requests plus the APPROVED requests it decided;
+        administrator sees all. Returns ``(items, total)`` ordered by
+        ``requested_at DESC, id DESC``.
 
         When ``status`` is provided, results and ``total`` are further
         filtered to that status. The status filter composes with — and

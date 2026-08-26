@@ -1061,10 +1061,11 @@ class TestReadScope:
         assert str(own.id) in ids
         assert str(foreign.id) not in ids
 
-    async def test_specialist_sees_pending_but_not_terminal(
+    async def test_specialist_sees_pending_and_own_approved(
         self, client: AsyncClient, db_session: AsyncSession,
         _seeded_golden_dataset: None,
     ) -> None:
+        """WP-UX-UA-05-R1: the approving specialist keeps PENDING + own APPROVED."""
         rec = await _seed_recommendation(db_session)
         approval = await _create_pending_request(
             db_session,
@@ -1076,6 +1077,7 @@ class TestReadScope:
             client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
         )
 
+        # PENDING request is visible before the decision.
         pending_detail = await client.get(
             f"/api/v1/approval-requests/{approval.id}", headers=_auth(token)
         )
@@ -1088,10 +1090,101 @@ class TestReadScope:
         )
         assert approve.status_code == 200
 
-        terminal_detail = await client.get(
+        # After approval the decider can still read it and it stays in the
+        # list — the approved record remains reachable for the controlled
+        # procurement-task step.
+        approved_detail = await client.get(
             f"/api/v1/approval-requests/{approval.id}", headers=_auth(token)
         )
-        assert terminal_detail.status_code == 404
+        assert approved_detail.status_code == 200
+        assert approved_detail.json()["status"] == "APPROVED"
+
+        listing = await client.get("/api/v1/approval-requests", headers=_auth(token))
+        ids = {item["id"] for item in listing.json()["items"]}
+        assert str(approval.id) in ids
+
+    async def test_specialist_can_reload_own_approved_request(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        """The approved request stays reachable after a direct reload."""
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        await client.post(
+            f"/api/v1/approval-requests/{approval.id}/approve",
+            json={"comment": "ok"},
+            headers=_auth(token),
+        )
+
+        # A fresh session (fresh login) reopens the exact approved request.
+        fresh_token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        detail = await client.get(
+            f"/api/v1/approval-requests/{approval.id}", headers=_auth(fresh_token)
+        )
+        assert detail.status_code == 200
+        assert detail.json()["status"] == "APPROVED"
+
+    async def test_specialist_cannot_read_approved_by_another_actor(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        """APPROVED rows are readable only by the deciding specialist."""
+        rec = await _seed_recommendation(db_session)
+        rows = await _create_approval_rows(
+            db_session, rec=rec,
+            requester_id=_get_user_id("engineer.demo"),
+            requester_username="engineer.demo",
+            count=1, status="APPROVED",
+        )
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        detail = await client.get(
+            f"/api/v1/approval-requests/{rows[0].id}", headers=_auth(token)
+        )
+        # Another actor's APPROVED record is out of the specialist's scope.
+        assert detail.status_code == 404
+
+        listing = await client.get("/api/v1/approval-requests", headers=_auth(token))
+        ids = {item["id"] for item in listing.json()["items"]}
+        assert str(rows[0].id) not in ids
+
+    async def test_specialist_cannot_read_rejected_request(
+        self, client: AsyncClient, db_session: AsyncSession,
+        _seeded_golden_dataset: None,
+    ) -> None:
+        """REJECTED requests are terminal and out of scope (nothing to execute)."""
+        rec = await _seed_recommendation(db_session)
+        approval = await _create_pending_request(
+            db_session,
+            rec=rec,
+            requester_id=_get_user_id("manager.demo"),
+            requester_username="manager.demo",
+        )
+        token = await _login(
+            client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
+        )
+        reject = await client.post(
+            f"/api/v1/approval-requests/{approval.id}/reject",
+            json={"comment": "no"},
+            headers=_auth(token),
+        )
+        assert reject.status_code == 200
+
+        detail = await client.get(
+            f"/api/v1/approval-requests/{approval.id}", headers=_auth(token)
+        )
+        assert detail.status_code == 404
 
         listing = await client.get("/api/v1/approval-requests", headers=_auth(token))
         ids = {item["id"] for item in listing.json()["items"]}
@@ -1843,8 +1936,8 @@ class TestStatusFilter:
         """RBAC composition proof: status filter never widens read authority.
 
         manager sees only own rows with or without status filter.
-        specialist sees only PENDING with or without status filter —
-        status=APPROVED yields zero for specialist.
+        specialist sees PENDING plus its own APPROVED (WP-UX-UA-05-R1) —
+        the status filter composes with (never widens) that scope.
         """
         manager_id = _get_user_id("manager.demo")
         procurement_id = _get_user_id("procurement.demo")
@@ -1879,18 +1972,24 @@ class TestStatusFilter:
         )
         assert mgr_pending.json()["total"] == 2
 
-        # Specialist: all PENDING in the system (2+4=6), status=APPROVED → 0
+        # Specialist: all PENDING in the system (2+4=6) plus the one APPROVED
+        # row it decided (procurement.demo). status=APPROVED → that single own
+        # APPROVED row; other actors' APPROVED rows stay out of scope.
         spec_token = await _login(
             client, "procurement.demo", _DEMO_PASSWORDS["procurement.demo"]
         )
         spec_all = await client.get(
             "/api/v1/approval-requests", headers=_auth(spec_token)
         )
-        assert spec_all.json()["total"] == 6
+        assert spec_all.json()["total"] == 7
         spec_approved = await client.get(
             "/api/v1/approval-requests?status=APPROVED", headers=_auth(spec_token)
         )
-        assert spec_approved.json()["total"] == 0
+        assert spec_approved.json()["total"] == 1
+        spec_pending = await client.get(
+            "/api/v1/approval-requests?status=PENDING", headers=_auth(spec_token)
+        )
+        assert spec_pending.json()["total"] == 6
 
         # Admin: all 10, status=PENDING → 6, status=APPROVED → 4
         admin_token = await _login(

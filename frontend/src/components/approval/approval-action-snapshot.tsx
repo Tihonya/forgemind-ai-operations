@@ -14,10 +14,7 @@
 import { useTranslation } from 'react-i18next'
 
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
-import {
-  formatActionType,
-  type ApprovalRequestResponse,
-} from '@/lib/approval-api'
+import type { ApprovalRequestResponse } from '@/lib/approval-api'
 
 interface ApprovalActionSnapshotProps {
   request: ApprovalRequestResponse;
@@ -30,6 +27,12 @@ export function ApprovalActionSnapshot({
   const { formatQuantity } = useLocalizedFormatters()
   const { component_code: componentCode, quantity, title } = request.action_snapshot
 
+  // Localized action-type label (WP-UX-UA-05): resolved within the approval
+  // namespace; unknown action types fall back to the raw machine code.
+  const actionTypeLabel = t(`actionTypes.${request.action_type}`, {
+    defaultValue: request.action_type,
+  })
+
   return (
     <div
       className="space-y-1.5 text-sm text-steel-400"
@@ -38,7 +41,7 @@ export function ApprovalActionSnapshot({
       <div>
         <span className="font-medium text-steel-300">{t('snapshot.action')}</span>{' '}
         <span data-testid="action-type">
-          {formatActionType(request.action_type)}
+          {actionTypeLabel}
         </span>
       </div>
       {componentCode && (

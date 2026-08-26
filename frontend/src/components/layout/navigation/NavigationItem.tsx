@@ -82,12 +82,12 @@ function DisabledFutureModule({ item }: DisabledFutureModuleProps) {
             <Icon className="h-4 w-4" aria-hidden="true" />
             <LocalizedLabel item={item} />
             <span className="ml-auto text-xs text-steel-500">
-              {t('phaseMarker', { phase: item.phase })}
+              {t('phaseMarker')}
             </span>
           </div>
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={8}>
-          <p>{t('phaseAvailable', { phase: item.phase })}</p>
+          <p>{t('phaseAvailable')}</p>
         </TooltipContent>
       </Tooltip>
     </TooltipProvider>

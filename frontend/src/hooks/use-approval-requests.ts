@@ -28,6 +28,8 @@ export interface UseApprovalRequestsOptions {
   limit?: number
   /** Page offset (default 0). */
   offset?: number
+  /** When false, the query is disabled (no request is issued). */
+  enabled?: boolean
 }
 
 /**
@@ -43,6 +45,7 @@ export function useApprovalRequests(
   const status = options?.status
   const limit = options?.limit ?? 50
   const offset = options?.offset ?? 0
+  const enabled = options?.enabled ?? true
 
   const { data, isLoading, isError, error, refetch } = useQuery<
     { items: ApprovalRequestResponse[]; total: number },
@@ -55,6 +58,7 @@ export function useApprovalRequests(
     },
     staleTime: 30_000,
     retry: 1,
+    enabled,
   })
 
   return {

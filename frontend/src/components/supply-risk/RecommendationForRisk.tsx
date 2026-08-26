@@ -18,11 +18,13 @@
  */
 
 import { useTranslation } from 'react-i18next'
-import { AlertCircle, ShieldCheck, FileText } from 'lucide-react'
+import { AlertCircle, ShieldCheck, FileText, ArrowRight } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { SUPPORTED_ACTION_TYPE } from '@/lib/approval-api'
 import type {
+  RecommendedAction,
   RecommendationContent,
   RecommendationResponse,
   RecommendationRisk,
@@ -35,6 +37,8 @@ interface RecommendationForRiskProps {
   riskId: string;
   /** The workflow run UUID, used for the "View full AI analysis" CTA. */
   runId: string;
+  /** Invoked when the user selects "Передати на погодження" for an eligible action. */
+  onSubmitForApproval?: (action: RecommendedAction) => void;
 }
 
 /**
@@ -56,6 +60,7 @@ export default function RecommendationForRisk({
   recommendation,
   riskId,
   runId,
+  onSubmitForApproval,
 }: RecommendationForRiskProps) {
   const { t } = useTranslation('riskDetail')
 
@@ -138,6 +143,14 @@ export default function RecommendationForRisk({
     (a) => a.requires_approval,
   )
 
+  // The single controlled action eligible for approval creation (WP-UX-UA-05):
+  // the supported action type that requires approval. Only this action can
+  // originate an approval request; no identifier is parsed from display text.
+  const eligibleAction =
+    riskRec.recommended_actions.find(
+      (a) => a.action_type === SUPPORTED_ACTION_TYPE && a.requires_approval,
+    ) ?? null
+
   return (
     <Card data-testid="recommendation-panel">
       <CardHeader>
@@ -218,6 +231,23 @@ export default function RecommendationForRisk({
               </p>
             </div>
           </div>
+        )}
+
+        {/* Primary action — guided approval creation (WP-UX-UA-05) */}
+        {eligibleAction && onSubmitForApproval && (
+          <Button
+            onClick={() => onSubmitForApproval(eligibleAction)}
+            data-testid="submit-for-approval"
+          >
+            {t('recommendation.submitForApproval')}
+            <ArrowRight className="ml-1 h-4 w-4" aria-hidden="true" />
+          </Button>
+        )}
+
+        {hasApprovalAction && !eligibleAction && (
+          <p className="text-xs text-muted-foreground" data-testid="no-eligible-action">
+            {t('recommendation.noEligibleAction')}
+          </p>
         )}
 
         {/* Next action — View full AI analysis */}
