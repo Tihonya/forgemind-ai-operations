@@ -34,8 +34,6 @@ const ALLOWLIST: Record<string, string> = {
   // Product name — rendered as the application brand mark, not localizable copy.
   'Supply Risk Intelligence':
     'ForgeMind product subtitle (brand name), intentionally not translated',
-  // Dataset status is a raw machine value; its localized registry is WP-UX-UA-04.
-  'Not Loaded': 'Raw dataset status label owned by the WP-UX-UA-04 status registry',
 }
 
 /** User-facing attributes whose literal string values are visible copy. */

@@ -166,8 +166,13 @@ test.describe('WP-UX-UA-01-R1 — locale-connected date formatting (focused)', (
     await expect(page.locator('html')).toHaveAttribute('lang', 'en');
     await expect(page.getByTestId('requested-at').first()).toHaveText(/Jul 16, 2026/);
 
-    // Approval status and decision controls unchanged by the switch.
-    await expect(page.getByTestId('approval-status-badge').first()).toHaveText(/PENDING/);
+    // Approval status localizes with the locale switch while the machine code
+    // stays pinned on data-code (WP-UX-UA-04); decision controls unchanged.
+    await expect(page.getByTestId('approval-status-badge').first()).toHaveText('Awaiting decision');
+    await expect(page.getByTestId('approval-status-badge').first()).toHaveAttribute(
+      'data-code',
+      'PENDING',
+    );
 
     // And back to Ukrainian.
     await page.getByTestId('locale-switch-uk').click();

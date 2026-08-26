@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { ClipboardList } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import StatusBadge from '@/components/status/StatusBadge'
 import type { ProductionOrderDetail } from '@/lib/risk-detail-api'
 
 interface ProductionOrderPanelProps {
@@ -35,7 +36,11 @@ export function ProductionOrderPanel({ productionOrder }: ProductionOrderPanelPr
             </div>
             <div>
               <div className="text-sm text-muted-foreground">{t('productionOrder.status')}</div>
-              <div className="text-sm">{productionOrder.status}</div>
+              <StatusBadge
+                domain="productionOrder"
+                code={productionOrder.status}
+                testId="production-order-status"
+              />
             </div>
             <div>
               <div className="text-sm text-muted-foreground">{t('productionOrder.product')}</div>

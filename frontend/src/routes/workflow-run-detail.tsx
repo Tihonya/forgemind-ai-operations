@@ -23,55 +23,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
 // ---------------------------------------------------------------------------
-// State label styling (locally styled — no Badge component in repo).
-// Raw state enum values are machine content and remain untranslated
-// (WP-UX-UA-04 scope).
+// State/status presentation: migrated to the WP-UX-UA-04 localized status
+// registry (StatusBadge). Raw state enum values remain available as machine
+// metadata on ``data-code`` attributes and are never the primary label.
 // ---------------------------------------------------------------------------
 
-const STATE_STYLES: Record<string, string> = {
-  PENDING: 'bg-steel-600/20 text-steel-300 border-steel-600/40',
-  RUNNING: 'bg-blue-600/20 text-blue-300 border-blue-600/40',
-  AWAITING_VALIDATION: 'bg-amber-600/20 text-amber-300 border-amber-600/40',
-  COMPLETED: 'bg-green-600/20 text-green-300 border-green-600/40',
-  FAILED_VALIDATION: 'bg-red-600/20 text-red-300 border-red-600/40',
-  FAILED_PROVIDER: 'bg-red-600/20 text-red-300 border-red-600/40',
-  FAILED_INTERNAL: 'bg-red-600/20 text-red-300 border-red-600/40',
-  FAILED_RETRIEVAL: 'bg-red-600/20 text-red-300 border-red-600/40',
-}
-
-const STEP_STATUS_STYLES: Record<string, string> = {
-  started: 'bg-blue-600/20 text-blue-300 border-blue-600/40',
-  completed: 'bg-green-600/20 text-green-300 border-green-600/40',
-  failed: 'bg-red-600/20 text-red-300 border-red-600/40',
-}
-
-const FALLBACK_STYLE = 'bg-steel-600/20 text-steel-300 border-steel-600/40'
-
-function StateLabel({ state }: { state: string }) {
-  const style = STATE_STYLES[state] ?? FALLBACK_STYLE
-  return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${style}`}
-      data-testid="run-state-badge"
-      data-state={state}
-    >
-      {state}
-    </span>
-  )
-}
-
-function StepStatusLabel({ status }: { status: string }) {
-  const style = STEP_STATUS_STYLES[status] ?? FALLBACK_STYLE
-  return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${style}`}
-      data-testid="step-status-badge"
-      data-status={status}
-    >
-      {status}
-    </span>
-  )
-}
+import StatusBadge from '@/components/status/StatusBadge'
 
 // ---------------------------------------------------------------------------
 // Retry visibility helpers (defensive narrowing of step_metadata)
@@ -168,7 +125,11 @@ function StepRow({ step, t }: { step: WorkflowStep; t: (key: string) => string }
       data-testid={`step-${step.seq}`}
     >
       <div className="flex items-center gap-3">
-        <StepStatusLabel status={step.status} />
+        <StatusBadge
+          domain="workflowStep"
+          code={step.status}
+          testId="step-status-badge"
+        />
         <span className="font-medium">{step.step_name}</span>
         <span className="text-xs text-muted-foreground">#{step.seq}</span>
       </div>
@@ -247,9 +208,14 @@ function RecommendationSection({
         <CardTitle>{t('recommendation.title')}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div className="flex gap-4 text-sm text-muted-foreground">
-          <span>
-            <span className="font-medium">{t('fields.status')}</span> {recommendation.status}
+        <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="font-medium">{t('fields.status')}</span>
+            <StatusBadge
+              domain="recommendation"
+              code={recommendation.status}
+              testId="recommendation-status"
+            />
           </span>
           {recommendation.schema_version && (
             <span>
@@ -410,7 +376,12 @@ export default function WorkflowRunDetail() {
         <CardHeader>
           <div className="flex items-center gap-3">
             <CardTitle>{t('title')}</CardTitle>
-            <StateLabel state={run.state} />
+            <StatusBadge
+              domain="workflowRun"
+              code={run.state}
+              showCode
+              testId="run-state-badge"
+            />
           </div>
         </CardHeader>
         <CardContent className="space-y-2 text-sm text-muted-foreground">

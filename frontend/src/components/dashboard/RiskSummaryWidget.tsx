@@ -5,22 +5,41 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { useRiskSummary } from '@/hooks/useRiskSummary'
+import { resolveStatus, type StatusTone } from '@/lib/status-registry'
+import { useStatusTranslation } from '@/lib/status-i18n'
 import type { RiskSummary } from '@/lib/risks-api'
 
+/** Tone → count text class (repository severity colors, non-color label). */
+const TONE_TEXT_CLASSES: Record<StatusTone | 'neutral', string> = {
+  neutral: 'text-steel-400',
+  info: 'text-blue-400',
+  success: 'text-emerald-400',
+  warning: 'text-amber-400',
+  danger: 'text-red-400',
+}
+
 interface SeverityBadgeProps {
-  label: string;
+  /** One of CRITICAL | HIGH | MEDIUM | LOW (machine code). */
+  severityCode: string;
   count: number;
-  color: string;
   testId: string;
 }
 
-function SeverityBadge({ label, count, color, testId }: SeverityBadgeProps) {
+function SeverityBadge({ severityCode, count, testId }: SeverityBadgeProps) {
+  const entry = resolveStatus('severity', severityCode)
+  const { t } = useStatusTranslation()
+  const label = entry.known ? t(entry.labelKey) : severityCode
+
   return (
     <div
       className="flex flex-col items-center rounded-lg border border-steel-700 bg-steel-800/40 px-3 py-2"
       data-testid={testId}
+      data-severity={severityCode}
     >
-      <span className={`text-lg font-bold ${color}`} data-testid={`${testId}-count`}>
+      <span
+        className={`text-lg font-bold ${TONE_TEXT_CLASSES[entry.tone]}`}
+        data-testid={`${testId}-count`}
+      >
         {count}
       </span>
       <span className="text-xs text-steel-400">{label}</span>
@@ -52,29 +71,24 @@ function SummaryContent({ summary, t }: { summary: RiskSummary; t: (key: string)
         className="grid grid-cols-4 gap-2"
         data-testid="severity-breakdown"
       >
-        {/* Severity labels are machine-status labels owned by WP-UX-UA-04. */}
         <SeverityBadge
-          label="Critical"
+          severityCode="CRITICAL"
           count={summary.critical}
-          color="text-red-400"
           testId="severity-critical"
         />
         <SeverityBadge
-          label="High"
+          severityCode="HIGH"
           count={summary.high}
-          color="text-amber-400"
           testId="severity-high"
         />
         <SeverityBadge
-          label="Medium"
+          severityCode="MEDIUM"
           count={summary.medium}
-          color="text-yellow-400"
           testId="severity-medium"
         />
         <SeverityBadge
-          label="Low"
+          severityCode="LOW"
           count={summary.low}
-          color="text-blue-400"
           testId="severity-low"
         />
       </div>

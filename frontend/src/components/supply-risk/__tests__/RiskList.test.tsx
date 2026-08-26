@@ -83,8 +83,10 @@ describe('RiskList', () => {
     renderWithRouter(<RiskList {...defaultProps} />);
     const badges = screen.getAllByTestId('severity-badge');
     expect(badges).toHaveLength(2);
-    expect(badges[0]).toHaveTextContent('CRITICAL');
-    expect(badges[1]).toHaveTextContent('HIGH');
+    expect(badges[0]).toHaveTextContent('Critical');
+    expect(badges[0]).toHaveAttribute('data-code', 'CRITICAL');
+    expect(badges[1]).toHaveTextContent('High');
+    expect(badges[1]).toHaveAttribute('data-code', 'HIGH');
   });
 
   it('shows loading skeletons when isLoading', () => {
@@ -184,9 +186,9 @@ describe('RiskList — AT-005 data fidelity (canonical + mutated fixtures)', () 
     const rows = screen.getAllByRole('row');
     // Header + 3 data rows
     expect(rows.length).toBeGreaterThanOrEqual(4);
-    // First data risk should be CRITICAL (RISK-001)
+    // First data risk should be Critical (RISK-001) — localized English label
     expect(screen.getByText('RISK-001')).toBeInTheDocument();
-    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
+    expect(screen.getByText('Critical')).toBeInTheDocument();
     expect(screen.getByText('8')).toBeInTheDocument();
   });
 
@@ -212,7 +214,7 @@ describe('RiskList — AT-005 data fidelity (canonical + mutated fixtures)', () 
     expect(screen.getByText('37.25')).toBeInTheDocument(); // shortage (formatted from '37.2500')
     expect(screen.getByText('61.75')).toBeInTheDocument(); // available (formatted from '61.7500')
     expect(screen.getByText('99')).toBeInTheDocument(); // required (formatted from '99.0000')
-    expect(screen.getByText('LOW')).toBeInTheDocument(); // severity mutation
+    expect(screen.getByText('Low')).toBeInTheDocument(); // severity mutation (localized label)
   });
 
   it('filtering and ordering work on mutated fixture data', () => {
@@ -233,10 +235,12 @@ describe('RiskList — AT-005 data fidelity (canonical + mutated fixtures)', () 
       />
     );
 
-    // Ordering: CRITICAL before LOW
+    // Ordering: CRITICAL before LOW (localized labels)
     const badges = screen.getAllByTestId('severity-badge');
-    expect(badges[0]).toHaveTextContent('CRITICAL');
-    expect(badges[1]).toHaveTextContent('LOW');
+    expect(badges[0]).toHaveTextContent('Critical');
+    expect(badges[0]).toHaveAttribute('data-code', 'CRITICAL');
+    expect(badges[1]).toHaveTextContent('Low');
+    expect(badges[1]).toHaveAttribute('data-code', 'LOW');
 
     // Filter would be in RiskFilters, but list receives filtered; here verify data is used
     expect(screen.getByText('37.25')).toBeInTheDocument();

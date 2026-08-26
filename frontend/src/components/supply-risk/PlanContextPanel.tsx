@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Calendar } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import StatusBadge from '@/components/status/StatusBadge'
 import type { ProductionPlanDetail } from '@/lib/risk-detail-api'
 
 interface PlanContextPanelProps {
@@ -34,7 +35,7 @@ export function PlanContextPanel({ productionPlan }: PlanContextPanelProps) {
           </div>
           <div>
             <div className="text-sm text-muted-foreground">{t('planContext.status')}</div>
-            <div className="text-sm">{productionPlan.status}</div>
+            <StatusBadge domain="plan" code={productionPlan.status} testId="plan-context-status" />
           </div>
           <div>
             <div className="text-sm text-muted-foreground">{t('planContext.periodStart')}</div>

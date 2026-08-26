@@ -12,6 +12,8 @@ import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { resolveStatus } from '@/lib/status-registry'
+import { useStatusTranslation } from '@/lib/status-i18n'
 
 interface RiskFiltersProps {
   selectedSeverities: string[];
@@ -36,6 +38,12 @@ export function RiskFilters({
   hasActiveFilters,
 }: RiskFiltersProps) {
   const { t } = useTranslation('supplyRisk')
+  const { t: tStatus } = useStatusTranslation()
+
+  function severityLabel(severity: string): string {
+    const entry = resolveStatus('severity', severity)
+    return entry.known ? tStatus(entry.labelKey) : severity
+  }
 
   function toggleSeverity(severity: string) {
     if (selectedSeverities.includes(severity)) {
@@ -64,7 +72,7 @@ export function RiskFilters({
               data-testid={`severity-filter-${severity.toLowerCase()}`}
               aria-pressed={isSelected}
             >
-              {severity}
+              {severityLabel(severity)}
             </button>
           )
         })}

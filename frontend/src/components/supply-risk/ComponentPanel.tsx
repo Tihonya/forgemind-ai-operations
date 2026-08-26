@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next'
 import { Package } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import StatusBadge from '@/components/status/StatusBadge'
 import type { ComponentDetail } from '@/lib/risk-detail-api'
 
 interface ComponentPanelProps {
@@ -43,7 +44,11 @@ export function ComponentPanel({ component }: ComponentPanelProps) {
                 {component.alternatives.map((alt) => (
                   <div key={alt.alternative_code} className="flex items-center gap-2 text-sm">
                     <span className="font-mono">{alt.alternative_code}</span>
-                    <span className="text-muted-foreground">— {alt.status}</span>
+                    <StatusBadge
+                      domain="alternative"
+                      code={alt.status}
+                      testId={`alternative-status-${alt.alternative_code}`}
+                    />
                   </div>
                 ))}
               </div>

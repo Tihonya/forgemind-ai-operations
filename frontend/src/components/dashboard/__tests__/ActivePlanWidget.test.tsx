@@ -125,7 +125,8 @@ describe('ActivePlanWidget', () => {
 
     renderWithQuery(<ActivePlanWidget />);
     expect(screen.getByTestId('plan-code')).toHaveTextContent('PLAN-2026-W31');
-    expect(screen.getByTestId('plan-status')).toHaveTextContent('EXECUTING');
+    expect(screen.getByTestId('plan-status')).toHaveTextContent('Executing');
+    expect(screen.getByTestId('plan-status')).toHaveAttribute('data-code', 'EXECUTING');
     expect(screen.getByTestId('plan-period')).toBeInTheDocument();
   });
 
@@ -230,6 +231,7 @@ describe('ActivePlanWidget — AT-005 data fidelity (plan mutation)', () => {
 
     renderWithQuery(<ActivePlanWidget />);
     expect(screen.getByTestId('plan-code')).toHaveTextContent('PLAN-TEST-MUTATED');
-    expect(screen.getByTestId('plan-status')).toHaveTextContent('DRAFT');
+    expect(screen.getByTestId('plan-status')).toHaveTextContent('Draft');
+    expect(screen.getByTestId('plan-status')).toHaveAttribute('data-code', 'DRAFT');
   });
 });

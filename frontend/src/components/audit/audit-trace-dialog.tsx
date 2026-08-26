@@ -24,6 +24,7 @@ import {
   formatTraceCategory,
   getAuditErrorKey,
 } from '@/lib/audit-api'
+import StatusBadge from '@/components/status/StatusBadge'
 import { useAuditTrace } from '@/hooks/use-audit-events'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import { TraceCategoryBadge } from './trace-category-badge'
@@ -179,7 +180,11 @@ export function AuditTraceDialog({
                   {t('trace.finalState')}
                 </dt>
                 <dd className="text-steel-200" data-testid="trace-final-state">
-                  {trace.final_state}
+                  <StatusBadge
+                    domain="workflowRun"
+                    code={trace.final_state}
+                    testId="trace-final-state-badge"
+                  />
                 </dd>
               </div>
             </dl>
