@@ -182,8 +182,10 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   // Step 3: Verify Dashboard - Active Plan and Risk Summary
   // ────────────────────────────────────────────────────────────
   // AT-003: Golden Dataset integrity - active plan PLAN-2026-W31
+  // (WP-UX-UA-04: plan status is localized; machine code stays on data-code)
   await expect(page.getByTestId('plan-code')).toHaveText('PLAN-2026-W31');
-  await expect(page.getByTestId('plan-status')).toHaveText('EXECUTING');
+  await expect(page.getByTestId('plan-status')).toHaveText('Виконується');
+  await expect(page.getByTestId('plan-status')).toHaveAttribute('data-code', 'EXECUTING');
 
   // AT-004: Deterministic risk calculation - 3 total risks
   await expect(page.getByTestId('risk-total')).toHaveText('3');
@@ -218,7 +220,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   const risk001Row = riskList.getByRole('row', { name: /RISK-001/i });
   await expect(risk001Row).toBeVisible();
   await expect(risk001Row.getByText('CTRL-X4')).toBeVisible();
-  await expect(risk001Row.getByText('CRITICAL', { exact: true })).toBeVisible();
+  await expect(risk001Row.getByText('Критичний', { exact: true })).toBeVisible();
   await expect(risk001Row.getByRole('cell', { name: '8', exact: true })).toBeVisible(); // shortage
   await expect(risk001Row.getByRole('link', { name: 'Переглянути RISK-001' })).toBeVisible();
 
@@ -226,7 +228,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   const risk002Row = riskList.getByRole('row', { name: /RISK-002/i });
   await expect(risk002Row).toBeVisible();
   await expect(risk002Row.getByText('MOTOR-M2')).toBeVisible();
-  await expect(risk002Row.getByText('HIGH', { exact: true })).toBeVisible();
+  await expect(risk002Row.getByText('Високий', { exact: true })).toBeVisible();
   await expect(risk002Row.getByRole('cell', { name: '6', exact: true })).toBeVisible(); // shortage
   await expect(risk002Row.getByRole('link', { name: 'Переглянути RISK-002' })).toBeVisible();
 
@@ -234,7 +236,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   const risk003Row = riskList.getByRole('row', { name: /RISK-003/i });
   await expect(risk003Row).toBeVisible();
   await expect(risk003Row.getByText('SENSOR-L9')).toBeVisible();
-  await expect(risk003Row.getByText('MEDIUM', { exact: true })).toBeVisible();
+  await expect(risk003Row.getByText('Середній', { exact: true })).toBeVisible();
   await expect(risk003Row.getByRole('cell', { name: '5', exact: true })).toBeVisible(); // shortage
   await expect(risk003Row.getByRole('link', { name: 'Переглянути RISK-003' })).toBeVisible();
 
@@ -248,9 +250,9 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   const secondDataRow = rows.nth(2);
   const thirdDataRow = rows.nth(3);
 
-  await expect(firstDataRow.getByText('CRITICAL', { exact: true })).toBeVisible();
-  await expect(secondDataRow.getByText('HIGH', { exact: true })).toBeVisible();
-  await expect(thirdDataRow.getByText('MEDIUM', { exact: true })).toBeVisible();
+  await expect(firstDataRow.getByText('Критичний', { exact: true })).toBeVisible();
+  await expect(secondDataRow.getByText('Високий', { exact: true })).toBeVisible();
+  await expect(thirdDataRow.getByText('Середній', { exact: true })).toBeVisible();
 
   // ────────────────────────────────────────────────────────────
   // Step 6: Navigate to RISK-001 detail
@@ -272,7 +274,7 @@ test('Golden Scenario - Complete user flow with seeded data', async ({ page }) =
   await expect(
     page.getByText(/^Компонент:$/).locator('xpath=..').getByText('CTRL-X4', { exact: true }),
   ).toBeVisible();
-  await expect(page.getByText(/CRITICAL/i)).toBeVisible();
+  await expect(page.getByText(/Критичний/i)).toBeVisible();
   await expect(
     page.getByText(/^Виробниче замовлення:$/).locator('xpath=..').getByText('WO-2026-0142'),
   ).toBeVisible();

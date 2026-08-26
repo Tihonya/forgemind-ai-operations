@@ -18,6 +18,8 @@
 
 import axios from 'axios'
 import api from './api'
+import { resolveStatus } from './status-registry'
+import { buildRegistryLabelMap, translateStatusLabel } from './status-i18n'
 
 /**
  * Canonical Phase 6 audit-event taxonomy (WP-REC-04B). The API response is
@@ -39,22 +41,19 @@ export const AUDIT_ENTITY_TYPES = [
 ] as const
 
 /**
- * Human-readable labels for every incorporated audit event type. Unknown
- * values fall back to the raw value (no crash, no silent skip).
+ * Human-readable labels for every incorporated audit event type — resolved
+ * through the localized status registry (WP-UX-UA-04); no component-local
+ * machine-code→label map remains. Unknown values fall back to the raw value
+ * (no crash, no silent skip).
  */
-export const EVENT_TYPE_LABELS: Record<string, string> = {
-  APPROVAL_REQUEST_CREATED: 'Approval request created',
-  APPROVAL_APPROVED: 'Approval approved',
-  APPROVAL_REJECTED: 'Approval rejected',
-  PROCUREMENT_TASK_CREATION_ATTEMPTED: 'Procurement task creation attempted',
-  PROCUREMENT_TASK_CREATED: 'Procurement task created',
-  PROCUREMENT_TASK_CREATION_FAILED: 'Procurement task creation failed',
-}
+export const EVENT_TYPE_LABELS: Record<string, string> =
+  buildRegistryLabelMap('auditEvent')
 
-export const ENTITY_TYPE_LABELS: Record<string, string> = {
-  APPROVAL_REQUEST: 'Approval request',
-  PROCUREMENT_TASK: 'Procurement task',
-}
+export const ENTITY_TYPE_LABELS: Record<string, string> =
+  buildRegistryLabelMap('auditEntity')
+
+export const TRACE_CATEGORY_LABELS: Record<string, string> =
+  buildRegistryLabelMap('traceCategory')
 
 /** Redaction sentinel the backend writes for secret-bearing values. */
 export const REDACTED_SENTINEL = '[REDACTED]'
@@ -93,7 +92,8 @@ export const AUDIT_MIN_PAGE_SIZE = 1
  * value for unknown types.
  */
 export function formatEventType(eventType: string): string {
-  return EVENT_TYPE_LABELS[eventType] ?? eventType
+  const entry = resolveStatus('auditEvent', eventType)
+  return entry.known ? translateStatusLabel(entry) : entry.code
 }
 
 /**
@@ -101,7 +101,8 @@ export function formatEventType(eventType: string): string {
  * value for unknown types.
  */
 export function formatEntityType(entityType: string): string {
-  return ENTITY_TYPE_LABELS[entityType] ?? entityType
+  const entry = resolveStatus('auditEntity', entityType)
+  return entry.known ? translateStatusLabel(entry) : entry.code
 }
 
 /**
@@ -121,20 +122,10 @@ export const TRACE_CATEGORY_ORDER = [
 ] as const
 
 /**
- * Human-readable labels for the nine trace categories. Unknown values fall
- * back to the raw value (no crash, no silent skip).
+ * Human-readable labels for the nine trace categories — resolved through
+ * the localized status registry (WP-UX-UA-04); the label map lives at the
+ * top of this module with the other registry-backed maps.
  */
-export const TRACE_CATEGORY_LABELS: Record<string, string> = {
-  user_action: 'User action',
-  deterministic_calculation: 'Deterministic calculation',
-  retrieval: 'Retrieval',
-  model_call: 'Model call',
-  structured_validation: 'Structured validation',
-  recommendation: 'Recommendation',
-  approval_request: 'Approval request',
-  human_decision: 'Human decision',
-  write_action: 'Write action',
-}
 
 /** A single normalized item in the nine-item trace. */
 export interface AuditTraceItem {
@@ -167,7 +158,8 @@ export interface AuditTraceResponse {
  * value for unknown categories.
  */
 export function formatTraceCategory(category: string): string {
-  return TRACE_CATEGORY_LABELS[category] ?? category
+  const entry = resolveStatus('traceCategory', category)
+  return entry.known ? translateStatusLabel(entry) : entry.code
 }
 
 /**

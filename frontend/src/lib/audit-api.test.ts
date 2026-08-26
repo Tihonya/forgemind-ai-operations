@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AxiosError } from 'axios'
 
+import i18n from '@/i18n'
+
 import {
   AUDIT_ENTITY_TYPES,
   AUDIT_EVENT_TYPES,
@@ -48,8 +50,12 @@ function axiosError(status: number, detail?: unknown): AxiosError {
   } as unknown as AxiosError
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks()
+  // The registry-backed formatters resolve through the real i18n layer;
+  // pin English so the intentional English expectations stay stable after
+  // the Ukrainian-first migration (same convention as the route tests).
+  await i18n.changeLanguage('en')
 })
 
 describe('audit-event taxonomy', () => {
@@ -74,12 +80,12 @@ describe('audit-event taxonomy', () => {
     }
   })
 
-  it('maps known event types to human labels', () => {
+  it('maps known event types to localized registry labels', () => {
     expect(formatEventType('APPROVAL_REQUEST_CREATED')).toBe(
       'Approval request created',
     )
     expect(formatEventType('PROCUREMENT_TASK_CREATION_FAILED')).toBe(
-      'Procurement task creation failed',
+      'Procurement action creation failed',
     )
   })
 

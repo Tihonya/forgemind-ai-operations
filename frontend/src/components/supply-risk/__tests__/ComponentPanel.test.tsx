@@ -1,6 +1,12 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
+
+import i18n from '@/i18n';
 import { ComponentPanel } from '../ComponentPanel';
+
+beforeEach(async () => {
+  await i18n.changeLanguage('en');
+});
 
 describe('ComponentPanel', () => {
   it('displays component code', () => {
@@ -17,7 +23,7 @@ describe('ComponentPanel', () => {
     // Note: ComponentPanel does not display component.name in current implementation
   });
 
-  it('displays alternatives when present', () => {
+  it('displays alternatives with localized status badges when present', () => {
     const component = {
       code: 'COMP-001',
       name: 'Widget A',
@@ -31,10 +37,18 @@ describe('ComponentPanel', () => {
     render(<ComponentPanel component={component} />);
 
     expect(screen.getByText('ALT-001')).toBeInTheDocument();
-    // Alternatives are rendered as "— STATUS"
-    expect(screen.getByText(/— APPROVED/)).toBeInTheDocument();
+    // Localized registry badge; the machine code stays on data-code.
+    expect(screen.getByTestId('alternative-status-ALT-001')).toHaveTextContent('Approved');
+    expect(screen.getByTestId('alternative-status-ALT-001')).toHaveAttribute(
+      'data-code',
+      'APPROVED',
+    );
     expect(screen.getByText('ALT-002')).toBeInTheDocument();
-    expect(screen.getByText(/— PROPOSED/)).toBeInTheDocument();
+    expect(screen.getByTestId('alternative-status-ALT-002')).toHaveTextContent('Proposed');
+    expect(screen.getByTestId('alternative-status-ALT-002')).toHaveAttribute(
+      'data-code',
+      'PROPOSED',
+    );
   });
 
   it('does not display alternatives section when empty', () => {
@@ -47,6 +61,6 @@ describe('ComponentPanel', () => {
 
     render(<ComponentPanel component={component} />);
 
-    expect(screen.queryByText('Alternatives')).not.toBeInTheDocument();
+    expect(screen.queryByText('ALT-001')).not.toBeInTheDocument();
   });
 });

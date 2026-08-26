@@ -4,30 +4,10 @@ import { Calendar, AlertTriangle, Package } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import StatusBadge from '@/components/status/StatusBadge'
 import { useActivePlan } from '@/hooks/useActivePlan'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
 import type { ProductionPlanSummary } from '@/lib/production-plans-api'
-
-function StatusBadge({ status }: { status: string }) {
-  const colorMap: Record<string, string> = {
-    EXECUTING: 'bg-primary-600/20 text-primary-300 border-primary-600/40',
-    DRAFT: 'bg-steel-700/40 text-steel-300 border-steel-600/40',
-    APPROVED: 'bg-emerald-600/20 text-emerald-300 border-emerald-600/40',
-    COMPLETED: 'bg-steel-700/40 text-steel-400 border-steel-600/40',
-    CLOSED: 'bg-steel-700/40 text-steel-400 border-steel-600/40',
-  }
-
-  const classes = colorMap[status] ?? 'bg-steel-700/40 text-steel-300 border-steel-600/40'
-
-  return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${classes}`}
-      data-testid="plan-status"
-    >
-      {status}
-    </span>
-  )
-}
 
 function PlanContent({
   plan,
@@ -38,11 +18,11 @@ function PlanContent({
 }) {
   return (
     <div className="space-y-3" data-testid="active-plan-content">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <span className="text-lg font-semibold text-white" data-testid="plan-code">
           {plan.code}
         </span>
-        <StatusBadge status={plan.status} />
+        <StatusBadge domain="plan" code={plan.status} testId="plan-status" />
       </div>
       <div className="flex items-center gap-2 text-sm text-steel-400">
         <Calendar className="h-4 w-4 text-steel-500" aria-hidden="true" />

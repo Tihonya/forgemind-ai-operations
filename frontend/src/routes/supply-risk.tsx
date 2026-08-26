@@ -21,6 +21,7 @@ import { AlertTriangle, Calendar, Package } from 'lucide-react'
 import { RiskFilters } from '@/components/supply-risk/RiskFilters'
 import { RiskList } from '@/components/supply-risk/RiskList'
 import { filterRisks, sortRisksBySeverity } from '@/components/supply-risk/riskFilterUtils'
+import StatusBadge from '@/components/status/StatusBadge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useActivePlan } from '@/hooks/useActivePlan'
@@ -93,9 +94,7 @@ function ActivePlanBanner({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-lg font-semibold text-white">{plan.code}</span>
-            <span className="inline-flex items-center rounded-md border border-primary-600/40 bg-primary-600/20 px-2 py-0.5 text-xs font-medium text-primary-300">
-              {plan.status}
-            </span>
+            <StatusBadge domain="plan" code={plan.status} testId="active-plan-status" />
           </div>
           <div className="flex items-center gap-2 text-sm text-steel-400">
             <Calendar className="h-4 w-4 text-steel-500" aria-hidden="true" />

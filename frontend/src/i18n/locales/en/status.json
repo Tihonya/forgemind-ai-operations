@@ -1,0 +1,344 @@
+{
+  "entity": {
+    "workflowRun": "Workflow run state",
+    "workflowStep": "Step state",
+    "approval": "Approval decision",
+    "severity": "Risk level",
+    "dataset": "Data state",
+    "health": "Service state",
+    "healthCheck": "System component state",
+    "plan": "Production plan state",
+    "purchaseOrder": "Purchase order state",
+    "purchaseOrderLine": "Purchase order line state",
+    "procurementTask": "Procurement action state",
+    "recommendation": "Recommendation state",
+    "productionOrder": "Production order state",
+    "alternative": "Alternative decision",
+    "auditEvent": "Audit event",
+    "auditEntity": "Entity type",
+    "traceCategory": "Trace category",
+    "unknown": "Status"
+  },
+  "explanation": {
+    "title": "Explanation",
+    "labelTrigger": "Show or hide the status explanation"
+  },
+  "transition": {
+    "actor": "By:",
+    "time": "Time:",
+    "reason": "Reason:",
+    "correlationId": "Correlation ID:"
+  },
+  "workflowRun": {
+    "pending": {
+      "label": "Queued",
+      "description": "The analysis has been created and is waiting to start. The system will begin execution automatically once a worker is available."
+    },
+    "running": {
+      "label": "Analysis in progress",
+      "description": "The system is executing this process right now. Wait for completion or review the execution details."
+    },
+    "awaitingValidation": {
+      "label": "Validating result",
+      "description": "The model response has been received. The system is checking whether the result satisfies the required structure."
+    },
+    "completed": {
+      "label": "Completed",
+      "description": "The process finished successfully. Results are available for review and further decisions."
+    },
+    "failedValidation": {
+      "label": "Validation failed",
+      "description": "The result failed structural validation and cannot be used. Run the analysis again."
+    },
+    "failedProvider": {
+      "label": "AI service unavailable",
+      "description": "The AI provider did not respond or rejected the request. Try again later."
+    },
+    "failedInternal": {
+      "label": "Analysis failed",
+      "description": "An internal error occurred during the analysis. Retry; if the error persists, contact an administrator."
+    },
+    "failedRetrieval": {
+      "label": "Evidence retrieval failed",
+      "description": "The system could not retrieve the documents needed for the analysis. Try again."
+    }
+  },
+  "workflowStep": {
+    "started": {
+      "label": "Started",
+      "description": "This step is currently executing."
+    },
+    "completed": {
+      "label": "Completed",
+      "description": "The step finished successfully."
+    },
+    "failed": {
+      "label": "Failed",
+      "description": "The step finished with an error. Details are shown below."
+    }
+  },
+  "approval": {
+    "pending": {
+      "label": "Awaiting decision",
+      "description": "The request is waiting for an authorized user to approve or reject it."
+    },
+    "approved": {
+      "label": "Approved",
+      "description": "An authorized user approved the action. The controlled action will be executed."
+    },
+    "rejected": {
+      "label": "Rejected",
+      "description": "An authorized user rejected the request. The action will not be executed."
+    }
+  },
+  "severity": {
+    "critical": {
+      "label": "Critical",
+      "description": "Requires immediate attention: the shortage may stop production."
+    },
+    "high": {
+      "label": "High",
+      "description": "A significant risk that requires urgent action."
+    },
+    "medium": {
+      "label": "Medium",
+      "description": "A moderate risk that requires attention from the responsible people."
+    },
+    "low": {
+      "label": "Low",
+      "description": "A minor risk; regular monitoring is sufficient."
+    }
+  },
+  "dataset": {
+    "valid": {
+      "label": "Data valid",
+      "description": "The dataset matches the approved Golden Dataset fixture."
+    },
+    "invalid": {
+      "label": "Data invalid",
+      "description": "The dataset differs from the approved Golden Dataset fixture."
+    },
+    "notLoaded": {
+      "label": "Not loaded",
+      "description": "No Golden Dataset has been loaded into the system."
+    }
+  },
+  "health": {
+    "healthy": {
+      "label": "Healthy",
+      "description": "All services are operating within normal limits."
+    },
+    "degraded": {
+      "label": "Degraded",
+      "description": "Some services are operating with deviations; core functions remain available."
+    },
+    "unhealthy": {
+      "label": "Unhealthy",
+      "description": "One or more services are unavailable. User actions may be limited."
+    }
+  },
+  "healthCheck": {
+    "ok": {
+      "label": "Available",
+      "description": "The component is operating normally."
+    },
+    "error": {
+      "label": "Error",
+      "description": "The component reported an error."
+    },
+    "unknown": {
+      "label": "Unknown",
+      "description": "The component state could not be determined."
+    }
+  },
+  "plan": {
+    "draft": {
+      "label": "Draft",
+      "description": "The plan is not yet ready for execution."
+    },
+    "approved": {
+      "label": "Approved",
+      "description": "The plan has been approved for execution."
+    },
+    "executing": {
+      "label": "Executing",
+      "description": "The system is executing this plan right now: orders are actively being processed."
+    },
+    "completed": {
+      "label": "Completed",
+      "description": "The production plan has been fully executed."
+    },
+    "closed": {
+      "label": "Closed",
+      "description": "The plan has been closed; no further changes are available."
+    }
+  },
+  "purchaseOrder": {
+    "placed": {
+      "label": "Placed",
+      "description": "The order has been created and sent to the supplier."
+    },
+    "confirmed": {
+      "label": "Confirmed",
+      "description": "The supplier confirmed the order."
+    },
+    "cancelled": {
+      "label": "Cancelled",
+      "description": "The order has been cancelled and will not be fulfilled."
+    },
+    "received": {
+      "label": "Received",
+      "description": "The order has been fully received."
+    }
+  },
+  "purchaseOrderLine": {
+    "pending": {
+      "label": "Pending",
+      "description": "The supplier has not yet confirmed supply for this line."
+    },
+    "confirmed": {
+      "label": "Confirmed",
+      "description": "The supplier confirmed supply for this line."
+    },
+    "inTransit": {
+      "label": "In transit",
+      "description": "The shipment for this line is in delivery."
+    },
+    "delivered": {
+      "label": "Delivered",
+      "description": "The item has been delivered and received."
+    },
+    "cancelled": {
+      "label": "Cancelled",
+      "description": "The order line has been cancelled."
+    }
+  },
+  "procurementTask": {
+    "created": {
+      "label": "Created",
+      "description": "The controlled procurement action has been created in the system based on the approved request."
+    }
+  },
+  "recommendation": {
+    "validated": {
+      "label": "Validated",
+      "description": "The recommendation passed structural validation and is ready for review."
+    }
+  },
+  "productionOrder": {
+    "planned": {
+      "label": "Planned",
+      "description": "The order is planned; execution has not started."
+    },
+    "released": {
+      "label": "Released",
+      "description": "The order has been released to production."
+    },
+    "inProgress": {
+      "label": "In progress",
+      "description": "The order is being executed."
+    },
+    "completed": {
+      "label": "Completed",
+      "description": "The order has been completed."
+    },
+    "cancelled": {
+      "label": "Cancelled",
+      "description": "The order has been cancelled."
+    }
+  },
+  "alternative": {
+    "proposed": {
+      "label": "Proposed",
+      "description": "The alternative has been proposed; no decision has been made yet."
+    },
+    "approved": {
+      "label": "Approved",
+      "description": "The alternative has been approved for use."
+    },
+    "rejected": {
+      "label": "Rejected",
+      "description": "The alternative has been rejected."
+    }
+  },
+  "auditEvent": {
+    "approvalRequestCreated": {
+      "label": "Approval request created",
+      "description": "A user created an approval request for a controlled action."
+    },
+    "approvalApproved": {
+      "label": "Approval approved",
+      "description": "An authorized user approved the request."
+    },
+    "approvalRejected": {
+      "label": "Approval rejected",
+      "description": "An authorized user rejected the request."
+    },
+    "procurementTaskCreationAttempted": {
+      "label": "Procurement action creation attempted",
+      "description": "The system began creating the controlled procurement action."
+    },
+    "procurementTaskCreated": {
+      "label": "Procurement action created",
+      "description": "The controlled procurement action was created successfully."
+    },
+    "procurementTaskCreationFailed": {
+      "label": "Procurement action creation failed",
+      "description": "The attempt to create the controlled action ended with an error."
+    }
+  },
+  "auditEntity": {
+    "approvalRequest": {
+      "label": "Approval request",
+      "description": "An entity associated with an approval request."
+    },
+    "procurementTask": {
+      "label": "Procurement action",
+      "description": "An entity associated with a controlled procurement action."
+    }
+  },
+  "traceCategory": {
+    "userAction": {
+      "label": "User action",
+      "description": "A step performed by a user in the interface."
+    },
+    "deterministicCalculation": {
+      "label": "Deterministic calculation",
+      "description": "A result computed by the deterministic engine without an AI model."
+    },
+    "retrieval": {
+      "label": "Retrieval",
+      "description": "Searching the knowledge base for relevant documents."
+    },
+    "modelCall": {
+      "label": "Model call",
+      "description": "A request to the language model and its response."
+    },
+    "structuredValidation": {
+      "label": "Structured validation",
+      "description": "Checking the model response against a defined schema."
+    },
+    "recommendation": {
+      "label": "Recommendation",
+      "description": "The generated and persisted recommendation about the risk."
+    },
+    "approvalRequest": {
+      "label": "Approval request",
+      "description": "The created approval request for a controlled action."
+    },
+    "humanDecision": {
+      "label": "Human decision",
+      "description": "An authorized user made a decision."
+    },
+    "writeAction": {
+      "label": "Write action",
+      "description": "The execution of a controlled write action in the system."
+    }
+  },
+  "unknown": {
+    "value": {
+      "label": "Unknown status",
+      "description": "The system has no explanation for this value. The technical code has been preserved for diagnosis."
+    }
+  }
+}

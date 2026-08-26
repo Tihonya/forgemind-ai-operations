@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 
+import i18n from '@/i18n'
 import { TraceCategoryBadge } from './trace-category-badge'
+
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
+})
 
 const KNOWN_CATEGORIES: Record<string, string> = {
   user_action: 'User action',

@@ -26,6 +26,7 @@ import enRiskDetail from './locales/en/riskDetail.json'
 import enWorkflow from './locales/en/workflow.json'
 import enApproval from './locales/en/approval.json'
 import enAudit from './locales/en/audit.json'
+import enStatus from './locales/en/status.json'
 import ukCommon from './locales/uk/common.json'
 import ukShell from './locales/uk/shell.json'
 import ukDashboard from './locales/uk/dashboard.json'
@@ -35,6 +36,7 @@ import ukRiskDetail from './locales/uk/riskDetail.json'
 import ukWorkflow from './locales/uk/workflow.json'
 import ukApproval from './locales/uk/approval.json'
 import ukAudit from './locales/uk/audit.json'
+import ukStatus from './locales/uk/status.json'
 import { resolveInitialLocale } from './locale-service'
 
 export const RESOURCES = {
@@ -48,6 +50,7 @@ export const RESOURCES = {
     workflow: ukWorkflow,
     approval: ukApproval,
     audit: ukAudit,
+    status: ukStatus,
   },
   en: {
     common: enCommon,
@@ -59,6 +62,7 @@ export const RESOURCES = {
     workflow: enWorkflow,
     approval: enApproval,
     audit: enAudit,
+    status: enStatus,
   },
 } as const
 
@@ -73,6 +77,7 @@ export const CATALOG_NAMESPACES = [
   'workflow',
   'approval',
   'audit',
+  'status',
 ] as const
 
 /**

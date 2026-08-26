@@ -4,6 +4,8 @@ import { Database, CheckCircle2, AlertTriangle, AlertCircle } from 'lucide-react
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDatasetStatus } from '@/hooks/useDatasetStatus'
+import { resolveStatus } from '@/lib/status-registry'
+import { useStatusTranslation } from '@/lib/status-i18n'
 import type { DatasetStatusResponse } from '@/lib/dataset-api'
 import { Button } from '@/components/ui/button'
 
@@ -12,45 +14,49 @@ interface StatusDisplayProps {
 }
 
 /**
- * Dataset status values ("Valid"/"Invalid"/"Not Loaded") and their plain
- * explanations are machine-status labels owned by WP-UX-UA-04; they remain
- * English here and are inventoried as intentional machine-code exceptions.
+ * Dataset status values ("valid"/"invalid"/"not_loaded") — localized
+ * registry presentation (WP-UX-UA-04). The raw machine code remains
+ * available on ``data-code`` and the unknown fallback preserves it.
  */
 function StatusDisplay({ status }: StatusDisplayProps) {
-  switch (status) {
-    case 'valid':
-      return (
-        <div className="flex items-center gap-2" data-testid="dataset-status-valid">
-          <CheckCircle2 className="h-5 w-5 text-emerald-400" aria-hidden="true" />
-          <span className="text-lg font-semibold text-emerald-400">Valid</span>
-        </div>
-      )
-    case 'invalid':
-      return (
-        <div className="flex items-center gap-2" data-testid="dataset-status-invalid">
-          <AlertTriangle className="h-5 w-5 text-amber-400" aria-hidden="true" />
-          <span className="text-lg font-semibold text-amber-400">Invalid</span>
-        </div>
-      )
-    case 'not_loaded':
-      return (
-        <div className="flex items-center gap-2" data-testid="dataset-status-not-loaded">
-          <AlertCircle className="h-5 w-5 text-steel-400" aria-hidden="true" />
-          <span className="text-lg font-semibold text-steel-400">Not Loaded</span>
-        </div>
-      )
-  }
+  const { t } = useStatusTranslation()
+  const entry = resolveStatus('dataset', status)
+  const label = entry.known ? t(entry.labelKey) : status
+
+  const icon = entry.known
+    ? (status === 'valid' ? CheckCircle2 : status === 'invalid' ? AlertTriangle : AlertCircle)
+    : AlertCircle
+
+  const Icon = icon
+
+  return (
+    <div
+      className="flex items-start gap-2"
+      data-testid={`dataset-status-${status}`}
+      data-code={entry.code}
+    >
+      <Icon className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <span>
+        <span
+          className={`block text-lg font-semibold ${
+            entry.known ? DATASET_TONE_TEXT[entry.tone] ?? 'text-steel-200' : 'text-steel-200'
+          }`}
+        >
+          {label}
+        </span>
+        <p className="text-xs text-steel-400">{t(entry.descriptionKey)}</p>
+      </span>
+    </div>
+  )
 }
 
-function statusDescription(status: DatasetStatusResponse['status']): string {
-  switch (status) {
-    case 'valid':
-      return 'Dataset matches approved Golden Dataset fixture.'
-    case 'invalid':
-      return 'Dataset differs from the approved fixture.'
-    case 'not_loaded':
-      return 'No Golden Dataset has been loaded.'
-  }
+/** Registry tone → dataset status text class. */
+const DATASET_TONE_TEXT: Record<string, string> = {
+  neutral: 'text-steel-400',
+  info: 'text-blue-400',
+  success: 'text-emerald-400',
+  warning: 'text-amber-400',
+  danger: 'text-red-400',
 }
 
 function DatasetContent({
@@ -63,7 +69,6 @@ function DatasetContent({
   return (
     <div className="space-y-3" data-testid="dataset-content">
       <StatusDisplay status={data.status} />
-      <p className="text-xs text-steel-400">{statusDescription(data.status)}</p>
       <div className="space-y-1 border-t border-steel-700 pt-3">
         <div className="flex items-center justify-between">
           <span className="text-xs text-steel-400">{t('widgets.datasetStatus.version')}</span>

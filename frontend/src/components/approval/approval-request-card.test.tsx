@@ -87,19 +87,23 @@ describe('ApprovalRequestCard — locale-connected date formatting', () => {
     expect(screen.getByTestId('requested-at')).toHaveTextContent('16 лип. 2026 р.')
   })
 
-  it('approval status, actions and permissions remain unchanged across the switch', async () => {
+  it('approval status localizes, actions and permissions remain unchanged across the switch', async () => {
     renderCard({ canDecide: true }, createApprovalRequest({ requested_at: REQUESTED_AT }))
     await act(async () => {
       await i18n.changeLanguage('uk')
     })
-    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('PENDING')
+    // Localized Ukrainian status label; the machine code is preserved on
+    // the data attribute (never translated).
+    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('Очікує рішення')
+    expect(screen.getByTestId('approval-status-badge')).toHaveAttribute('data-code', 'PENDING')
     expect(screen.getByTestId('approve-button')).toBeInTheDocument()
     expect(screen.getByTestId('reject-button')).toBeInTheDocument()
 
     await act(async () => {
       await i18n.changeLanguage('en')
     })
-    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('PENDING')
+    expect(screen.getByTestId('approval-status-badge')).toHaveTextContent('Awaiting decision')
+    expect(screen.getByTestId('approval-status-badge')).toHaveAttribute('data-code', 'PENDING')
     expect(screen.getByTestId('approve-button')).toBeInTheDocument()
     expect(screen.getByTestId('reject-button')).toBeInTheDocument()
   })
@@ -114,6 +118,10 @@ describe('ApprovalRequestCard', () => {
   it('renders status, action snapshot, requester, and timestamp', () => {
     renderCard()
     expect(screen.getByTestId('approval-status-badge')).toHaveTextContent(
+      'Awaiting decision',
+    )
+    expect(screen.getByTestId('approval-status-badge')).toHaveAttribute(
+      'data-code',
       'PENDING',
     )
     expect(screen.getByTestId('action-type')).toHaveTextContent(

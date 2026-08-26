@@ -301,9 +301,10 @@ describe('WorkflowRunDetail — route rendering', () => {
     await waitFor(() => {
       expect(screen.getByTestId('run-detail')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('run-state-badge').getAttribute('data-state')).toBe(
+    expect(screen.getByTestId('run-state-badge').getAttribute('data-code')).toBe(
       'FAILED_VALIDATION',
     );
+    expect(screen.getByTestId('run-state-badge')).toHaveTextContent('Validation failed');
     expect(screen.getByTestId('step-error-code').textContent).toBe(
       'VALIDATION_ERROR',
     );
@@ -347,8 +348,11 @@ describe('WorkflowRunDetail — route rendering', () => {
     await waitFor(() => {
       expect(screen.getByTestId('run-detail')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('run-state-badge').getAttribute('data-state')).toBe(
+    expect(screen.getByTestId('run-state-badge').getAttribute('data-code')).toBe(
       'FAILED_RETRIEVAL',
+    );
+    expect(screen.getByTestId('run-state-badge')).toHaveTextContent(
+      'Evidence retrieval failed',
     );
     expect(screen.getByTestId('step-error-code').textContent).toBe(
       'RETRIEVAL_FAILED',

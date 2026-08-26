@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { useLocalizedFormatters } from '@/hooks/useLocalizedFormatters'
+import StatusBadge from '@/components/status/StatusBadge'
 import type { ComponentPurchaseOrder } from '@/lib/risk-detail-api'
 
 interface IncomingSupplyPanelProps {
@@ -62,15 +63,11 @@ export function IncomingSupplyPanel({ purchaseOrders, isPartial }: IncomingSuppl
                 <TableCell>{po.supplier_code}</TableCell>
                 <TableCell>{formatDate(po.expected_delivery_date)}</TableCell>
                 <TableCell>
-                  <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
-                    po.line_status === 'CONFIRMED'
-                      ? 'bg-green-100 text-green-700'
-                      : po.line_status === 'PENDING'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-700'
-                  }`}>
-                    {po.line_status}
-                  </span>
+                  <StatusBadge
+                    domain="purchaseOrderLine"
+                    code={po.line_status}
+                    testId={`po-line-status-${po.po_number}`}
+                  />
                 </TableCell>
                 <TableCell className="text-right font-mono text-sm">
                   {formatQuantity(po.ordered_quantity)}

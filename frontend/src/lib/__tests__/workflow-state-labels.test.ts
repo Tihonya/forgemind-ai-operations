@@ -1,6 +1,18 @@
-import { describe, it, expect } from 'vitest';
+/**
+ * Workflow-state label helpers — registry-backed (WP-UX-UA-04).
+ *
+ * Label expectations are resolved through the SAME i18n instance the app
+ * uses, but the expected STRINGS are read from the committed catalogs (uk
+ * and en), never copied from the implementation. Tone expectations pin the
+ * semantic design-token vocabulary (neutral/info/success/warning/danger):
+ * these are the WP-UX-UA-04 contract values for workflow states.
+ */
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+import i18n from '@/i18n';
+import ukStatus from '@/i18n/locales/uk/status.json';
+import enStatus from '@/i18n/locales/en/status.json';
 import {
-  WORKFLOW_STATE_LABELS,
   getWorkflowStateLabel,
   getWorkflowStateTone,
   isNonterminalState,
@@ -9,23 +21,46 @@ import {
   FAILED_STATES,
 } from '@/lib/workflow-state-labels';
 
-describe('workflow-state-labels', () => {
+function catalogLabel(locale: 'uk' | 'en', key: string): string {
+  const catalog = locale === 'uk' ? ukStatus : enStatus;
+  const bundle = (catalog as unknown as {
+    workflowRun: Record<string, { label: string }>;
+  }).workflowRun;
+  return bundle[key].label;
+}
+
+const WORKFLOW_KEYS: Record<string, string> = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  AWAITING_VALIDATION: 'awaitingValidation',
+  COMPLETED: 'completed',
+  FAILED_PROVIDER: 'failedProvider',
+  FAILED_VALIDATION: 'failedValidation',
+  FAILED_RETRIEVAL: 'failedRetrieval',
+  FAILED_INTERNAL: 'failedInternal',
+};
+
+describe('workflow-state-labels (registry-backed)', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('uk');
+  });
+
+  afterEach(async () => {
+    await i18n.changeLanguage('uk');
+  });
+
   describe('getWorkflowStateLabel', () => {
-    it('maps all known nonterminal states', () => {
-      expect(getWorkflowStateLabel('PENDING')).toBe('Queued');
-      expect(getWorkflowStateLabel('RUNNING')).toBe('Analysis in progress');
-      expect(getWorkflowStateLabel('AWAITING_VALIDATION')).toBe('Validating result');
+    it('returns the Ukrainian registry label for every known state', async () => {
+      for (const [code, key] of Object.entries(WORKFLOW_KEYS)) {
+        expect(getWorkflowStateLabel(code), code).toBe(catalogLabel('uk', key));
+      }
     });
 
-    it('maps COMPLETED', () => {
-      expect(getWorkflowStateLabel('COMPLETED')).toBe('Completed');
-    });
-
-    it('maps all known failed states', () => {
-      expect(getWorkflowStateLabel('FAILED_PROVIDER')).toBe('AI service unavailable');
-      expect(getWorkflowStateLabel('FAILED_VALIDATION')).toBe('Validation failed');
-      expect(getWorkflowStateLabel('FAILED_RETRIEVAL')).toBe('Evidence retrieval failed');
-      expect(getWorkflowStateLabel('FAILED_INTERNAL')).toBe('Analysis failed');
+    it('returns the English registry label under the en locale', async () => {
+      await i18n.changeLanguage('en');
+      for (const [code, key] of Object.entries(WORKFLOW_KEYS)) {
+        expect(getWorkflowStateLabel(code), code).toBe(catalogLabel('en', key));
+      }
     });
 
     it('returns Unknown for null/undefined/empty', () => {
@@ -34,27 +69,28 @@ describe('workflow-state-labels', () => {
       expect(getWorkflowStateLabel('')).toBe('Unknown');
     });
 
-    it('returns the raw value for unknown states', () => {
+    it('preserves the raw value for unknown states', async () => {
+      expect(getWorkflowStateLabel('SOME_NEW_STATE')).toBe('SOME_NEW_STATE');
+      await i18n.changeLanguage('en');
       expect(getWorkflowStateLabel('SOME_NEW_STATE')).toBe('SOME_NEW_STATE');
     });
   });
 
   describe('getWorkflowStateTone', () => {
-    it('returns active for nonterminal states', () => {
-      expect(getWorkflowStateTone('PENDING')).toBe('neutral');
-      expect(getWorkflowStateTone('RUNNING')).toBe('active');
-      expect(getWorkflowStateTone('AWAITING_VALIDATION')).toBe('active');
+    it('maps nonterminal states to the registry info tone', () => {
+      expect(getWorkflowStateTone('PENDING')).toBe('info');
+      expect(getWorkflowStateTone('RUNNING')).toBe('info');
+      expect(getWorkflowStateTone('AWAITING_VALIDATION')).toBe('warning');
     });
 
-    it('returns success for COMPLETED', () => {
+    it('maps COMPLETED to success', () => {
       expect(getWorkflowStateTone('COMPLETED')).toBe('success');
     });
 
-    it('returns error for failed states', () => {
-      expect(getWorkflowStateTone('FAILED_PROVIDER')).toBe('error');
-      expect(getWorkflowStateTone('FAILED_VALIDATION')).toBe('error');
-      expect(getWorkflowStateTone('FAILED_RETRIEVAL')).toBe('error');
-      expect(getWorkflowStateTone('FAILED_INTERNAL')).toBe('error');
+    it('maps failed states to danger', () => {
+      for (const code of ['FAILED_PROVIDER', 'FAILED_VALIDATION', 'FAILED_RETRIEVAL', 'FAILED_INTERNAL']) {
+        expect(getWorkflowStateTone(code), code).toBe('danger');
+      }
     });
 
     it('returns neutral for unknown/null', () => {
@@ -83,10 +119,9 @@ describe('workflow-state-labels', () => {
 
   describe('isFailedState', () => {
     it('returns true for all FAILED_* states', () => {
-      expect(isFailedState('FAILED_PROVIDER')).toBe(true);
-      expect(isFailedState('FAILED_VALIDATION')).toBe(true);
-      expect(isFailedState('FAILED_RETRIEVAL')).toBe(true);
-      expect(isFailedState('FAILED_INTERNAL')).toBe(true);
+      for (const code of ['FAILED_PROVIDER', 'FAILED_VALIDATION', 'FAILED_RETRIEVAL', 'FAILED_INTERNAL']) {
+        expect(isFailedState(code), code).toBe(true);
+      }
     });
 
     it('returns false for COMPLETED and nonterminal', () => {
@@ -100,21 +135,8 @@ describe('workflow-state-labels', () => {
     });
   });
 
-  describe('canonical mapping completeness', () => {
-    it('covers all known workflow states', () => {
-      const knownStates = [
-        'PENDING',
-        'RUNNING',
-        'AWAITING_VALIDATION',
-        'COMPLETED',
-        'FAILED_PROVIDER',
-        'FAILED_VALIDATION',
-        'FAILED_RETRIEVAL',
-        'FAILED_INTERNAL',
-      ];
-      for (const state of knownStates) {
-        expect(WORKFLOW_STATE_LABELS[state]).toBeDefined();
-      }
+  describe('state-set invariants', () => {
+    it('keeps the canonical set sizes', () => {
       expect(NONTERMINAL_STATES.size).toBe(3);
       expect(FAILED_STATES.size).toBe(4);
     });

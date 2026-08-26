@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 
+import i18n from '@/i18n'
 import { AuditEventTypeBadge } from './audit-event-type-badge'
+
+beforeEach(async () => {
+  await i18n.changeLanguage('en')
+})
 
 describe('AuditEventTypeBadge', () => {
   it('renders a human label for every known event type', () => {
@@ -9,9 +14,9 @@ describe('AuditEventTypeBadge', () => {
       ['APPROVAL_REQUEST_CREATED', 'Approval request created'],
       ['APPROVAL_APPROVED', 'Approval approved'],
       ['APPROVAL_REJECTED', 'Approval rejected'],
-      ['PROCUREMENT_TASK_CREATION_ATTEMPTED', 'Procurement task creation attempted'],
-      ['PROCUREMENT_TASK_CREATED', 'Procurement task created'],
-      ['PROCUREMENT_TASK_CREATION_FAILED', 'Procurement task creation failed'],
+      ['PROCUREMENT_TASK_CREATION_ATTEMPTED', 'Procurement action creation attempted'],
+      ['PROCUREMENT_TASK_CREATED', 'Procurement action created'],
+      ['PROCUREMENT_TASK_CREATION_FAILED', 'Procurement action creation failed'],
     ]
     for (const [type, label] of cases) {
       const { unmount } = render(<AuditEventTypeBadge eventType={type} />)

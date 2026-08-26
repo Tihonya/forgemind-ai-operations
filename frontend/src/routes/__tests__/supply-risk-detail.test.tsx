@@ -199,8 +199,9 @@ describe('SupplyRiskDetail', () => {
     // RISK-001 appears in breadcrumb and in risk summary
     const riskIdElements = screen.getAllByText('RISK-001');
     expect(riskIdElements.length).toBeGreaterThanOrEqual(2);
-    // CRITICAL severity badge is rendered
-    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
+    // Critical severity badge is rendered (localized English label;
+    // machine code preserved via data-code below)
+    expect(screen.getByText('Critical')).toBeInTheDocument();
   });
 
   it('shows not-found screen for invalid riskId', () => {
@@ -256,7 +257,7 @@ describe('SupplyRiskDetail', () => {
     expect(screen.getByText('MUT-TEST')).toBeInTheDocument();
     expect(screen.getByText(/Mutated Test Component/)).toBeInTheDocument();
     // Mutated severity
-    expect(screen.getByText('LOW')).toBeInTheDocument();
+    expect(screen.getByText('Low')).toBeInTheDocument();
     // Mutated work order
     expect(screen.getByText('WO-TEST-999')).toBeInTheDocument();
     // Evidence panel shows mutated values (formatQuantity strips trailing zeros)

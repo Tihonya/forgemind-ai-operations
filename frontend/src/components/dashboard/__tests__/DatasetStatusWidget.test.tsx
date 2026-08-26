@@ -76,8 +76,9 @@ describe('DatasetStatusWidget', () => {
 
     renderWithQuery(<DatasetStatusWidget />);
     expect(screen.getByTestId('dataset-content')).toBeInTheDocument();
-    expect(screen.getByText('Valid')).toBeInTheDocument();
+    expect(screen.getByText('Data valid')).toBeInTheDocument();
     expect(screen.getByTestId('dataset-status-valid')).toBeInTheDocument();
+    expect(screen.getByTestId('dataset-status-valid')).toHaveAttribute('data-code', 'valid');
   });
 
   it('renders invalid status', () => {
@@ -95,8 +96,9 @@ describe('DatasetStatusWidget', () => {
     } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
-    expect(screen.getByText('Invalid')).toBeInTheDocument();
+    expect(screen.getByText('Data invalid')).toBeInTheDocument();
     expect(screen.getByTestId('dataset-status-invalid')).toBeInTheDocument();
+    expect(screen.getByTestId('dataset-status-invalid')).toHaveAttribute('data-code', 'invalid');
   });
 
   it('renders not_loaded status', () => {
@@ -114,8 +116,9 @@ describe('DatasetStatusWidget', () => {
     } as ReturnType<typeof useDatasetStatus>);
 
     renderWithQuery(<DatasetStatusWidget />);
-    expect(screen.getByText('Not Loaded')).toBeInTheDocument();
-    expect(screen.getByTestId('dataset-status-not-loaded')).toBeInTheDocument();
+    expect(screen.getByText('Not loaded')).toBeInTheDocument();
+    expect(screen.getByTestId('dataset-status-not_loaded')).toBeInTheDocument();
+    expect(screen.getByTestId('dataset-status-not_loaded')).toHaveAttribute('data-code', 'not_loaded');
   });
 
   it('calls refetch when retry button is clicked', async () => {
