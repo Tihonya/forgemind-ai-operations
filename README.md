@@ -260,6 +260,7 @@ Run tests: `make test`
 | Production deployment runbook | [docs/infra-production.md](docs/infra-production.md) |
 | Release 1 operator runbook | [docs/operations/release_1_runbook.md](docs/operations/release_1_runbook.md) |
 | Isolated Demo environment | [docs/demo-environment.md](docs/demo-environment.md) |
+| Demo Pre-Release 1 checkpoint | [docs/demo-pre-release-1.md](docs/demo-pre-release-1.md) |
 | Current lifecycle status | [docs/next_steps.md](docs/next_steps.md) |
 | Active work tracker | [docs/ACTIVE_WORK.md](docs/ACTIVE_WORK.md) |
 | Decision log | [forgemind_project_source_of_truth/08_DECISION_LOG.md](forgemind_project_source_of_truth/08_DECISION_LOG.md) |
@@ -285,7 +286,7 @@ ForgeMind is a **portfolio MVP**. The following are intentionally out of scope f
 
 - **Synthetic data only:** All production plans, BOMs, inventory, suppliers, documents, and audit events are synthetic. No real corporate ERP or procurement system is connected.
 - **No Release 1 production deployment yet:** Release 1 has not been formally deployed or accepted. A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056); demo availability is not a Release 1 deployment, acceptance, or completion claim.
-- **Ukrainian-first direction adopted, not yet implemented:** The Product Owner has accepted Ukrainian as the default product and demo language with English as the secondary locale (DEC-059, superseding only the English-first ordering of DEC-054). The currently deployed/committed UI remains English-only until the WP-UX-UA localization packages are implemented; no localization code exists yet.
+- **Ukrainian-first direction adopted and implemented in `main`:** Ukrainian is the default product language with English secondary (DEC-059); localization, localized statuses, guided approval flow and the Decision Trail are incorporated via PRs #128–#135 and described in [docs/demo-pre-release-1.md](docs/demo-pre-release-1.md). The publicly deployed Demo environment predates these incorporations until an independently authorized redeployment brings it to this code level; the demo must not be advertised as updated until post-deployment verification passes.
 - **Bounded deployment profile:** Initial deployment uses OpenRouter-only chat and embedding providers. A Groq-first fallback chain exists as a runtime capability but is not the initial deployment profile.
 - **No CI/CD deployment automation:** First deployment is manual and checklist-driven.
 - **No full observability platform:** Monitoring is limited to Docker logs, backend `/health`, and backup state markers.
