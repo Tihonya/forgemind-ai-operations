@@ -9,7 +9,7 @@
 
 ## What Demo Pre-Release 1 Is
 
-Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, intended to be shown publicly (CV, technical review, hiring review) once an independently authorized deployment action brings the running isolated Demo environment to this code level.
+Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, shown publicly (CV, technical review, hiring review) through the live public Demo. The public portfolio Demo has been deployed to this code level, and candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` has passed independent live verification; formal Release 1 remains a separate lifecycle state.
 
 It demonstrates one complete, auditable, human-approved vertical workflow — Production Plan Supply Risk Review — in a Ukrainian-first interface, backed by passing acceptance tests AT-003 through AT-013 and Playwright end-to-end journeys (`golden-scenario.spec.ts`, `approval-trail.spec.ts`).
 
@@ -22,7 +22,7 @@ It demonstrates one complete, auditable, human-approved vertical workflow — Pr
 | Final Release 1 acceptance | All Phase 7 gates remain intact; Release 1 remains NOT READY / NOT DEPLOYED |
 | Completion of all planned UX work | WP-UX-UA-06 through WP-UX-UA-12 (including the full interactive Document Trace Map) remain NOT STARTED |
 
-Marking the demo updated, publishing a Release, accepting Release 1, or completing the UX roadmap each require their own separate authorization and verification. This document does none of them.
+Marking the demo updated, publishing a Release, accepting Release 1, or completing the UX roadmap each require their own separate authorization and verification. This revision records the completed public Demo deployment (WP-DPR1-02A), the completed independent live verification (WP-DPR1-03A), and the satisfied advertisement boundary (below); it does not declare formal Release 1 acceptance, does not claim production deployment, does not complete the remaining UX roadmap, does not create a Git tag, and does not publish a GitHub Release.
 
 ## Purpose
 
@@ -85,12 +85,12 @@ Recorded during reconnaissance, additionally material: the currently published D
 
 ## Lifecycle Position
 
-Accepted order for the coming steps (each a separately authorized, bounded action):
+Accepted lifecycle order (each step a separately authorized, bounded action; completed steps marked COMPLETE below):
 
 ```
 Demo Pre-Release 1 documentation baseline (WP-DPR1-01 — COMPLETE, merged)
 → independent public-demo deployment action (WP-DPR1-02A — COMPLETE, 2026-08-27: demo.forgemind-ai.tech runs candidate edbbc938)
-→ independent post-deployment verification (WP-DPR1-03A — COMPLETE, 2026-08-29: PASSED; advertisement/resume references updated)
+→ independent post-deployment verification (WP-DPR1-03A — COMPLETE, 2026-08-29: PASSED; advertisement boundary satisfied)
 → subsequent UX packages (Trace Map backend 07 → Trace Map frontend 08; provider-output language 09;
    consolidation audits; WP-UX-UA-12 demo verification) continue WITHOUT blocking the portfolio publication
 ```

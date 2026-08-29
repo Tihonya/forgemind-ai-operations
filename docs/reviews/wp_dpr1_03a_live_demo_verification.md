@@ -26,7 +26,7 @@ Support services matched the deployment report as-found (backup `cf78e766…`, c
 
 ## Observations (recorded, not remediated)
 
-- **O1 (cosmetic):** some Golden Dataset / provider-produced AI text remains English inside the Ukrainian interface (e.g. «Резюме ШІ: 8-unit shortage…»). Dataset-owned content; does not obstruct the walkthrough.
+- **O1 (cosmetic):** some Golden Dataset-owned AI text remains English inside the Ukrainian interface (e.g. «Резюме ШІ: 8-unit shortage…»). Dataset-owned content; does not obstruct the walkthrough.
 - **O2 (cosmetic):** some Audit Log detail rows may render the raw i18n fallback string `key 'trace (uk)' returned an object instead of string.`; the event data itself renders correctly. Candidate for a later small code-remediation package.
 - **O3 (by design):** rejected requests are intentionally unavailable to the deciding Procurement Specialist (backend role scoping) while remaining visible to the initiator and the immutable audit log.
 
