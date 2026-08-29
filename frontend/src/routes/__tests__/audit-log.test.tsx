@@ -243,6 +243,37 @@ describe('AuditLog route', () => {
     expect(screen.getByTestId('audit-trace-panel')).toBeInTheDocument()
   })
 
+  // WP-DPR1-05 regression: the row-action label formerly used t('trace'),
+  // which collided with the nested `trace` dialog object in both audit
+  // catalogs — JSON parsing kept the object, i18next returned an
+  // object-instead-of-string diagnostic, and the button rendered garbage
+  // instead of the human-readable label. The row action now resolves the
+  // dedicated `viewTrace` string leaf.
+  it('renders the human-readable trace label instead of the key or an object', async () => {
+    mockUseAuditEvents.mockReturnValue({
+      ...baseList(),
+      events: [createAuditEvent({ id: 'evt-1' })],
+      total: 1,
+    })
+    renderRoute()
+    const button = screen.getByTestId('trace-event-evt-1')
+    // The visible label is the localized viewTrace string…
+    expect(button).toHaveTextContent('Trace')
+    // …and never the raw key, an object render, or an i18next diagnostic.
+    expect(button.textContent).not.toBe('trace')
+    expect(button.textContent).not.toContain('[object Object]')
+    expect(button.textContent).not.toContain(
+      'returned an object instead of string',
+    )
+  })
+
+  it('resolves the audit row-action leaf key in every catalog locale', () => {
+    for (const locale of ['uk', 'en'] as const) {
+      const t = i18n.getFixedT(locale, 'audit')
+      expect(t('viewTrace')).toBe(locale === 'uk' ? 'Слід' : 'Trace')
+    }
+  })
+
   it('exposes no mutation controls', () => {
     mockUseAuditEvents.mockReturnValue({
       ...baseList(),

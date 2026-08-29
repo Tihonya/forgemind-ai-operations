@@ -31,7 +31,7 @@
     "details": "Деталі"
   },
   "system": "Система",
-  "trace": "Слід",
+  "viewTrace": "Слід",
   "view": "Переглянути",
   "viewTraceAria": "Переглянути слід для {{eventType}}",
   "viewDetailsAria": "Переглянути деталі для {{eventType}}",

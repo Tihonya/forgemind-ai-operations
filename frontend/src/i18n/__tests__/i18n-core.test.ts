@@ -8,6 +8,9 @@
  * - changing locale persists and updates html[lang].
  */
 
+import { readFileSync } from 'node:fs'
+import * as path from 'node:path'
+
 import { act, renderHook } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
 
@@ -84,6 +87,74 @@ describe('translation fallback', () => {
     expect(() => t('navigation.definitelyMissing')).not.toThrow()
     expect(t('navigation.definitelyMissing')).toBe('navigation.definitelyMissing')
   })
+})
+
+describe('audit catalog collision regression (WP-DPR1-05)', () => {
+  // Defect O2: the top-level string "trace" and the nested "trace" object
+  // coexisted in both audit catalogs. JSON parsing kept the later object, so
+  // `t('trace')` for the Audit Log row action returned an object and i18next
+  // emitted its object-instead-of-string diagnostic. The row-action string
+  // now lives under `viewTrace`; the nested `trace.*` namespace is unchanged
+  // and remains in use by AuditTraceDialog.
+  const AUDIT_FILES = {
+    uk: '../locales/uk/audit.json',
+    en: '../locales/en/audit.json',
+  } as const
+
+  /**
+   * Count occurrences of an exact raw JSON key spelling at any nesting level;
+   * used here only to ensure each collision key occurs once in the catalog
+   * source. This is NOT a top-level-only or general duplicate-key detector.
+   */
+  function rawKeyOccurrences(locale: keyof typeof AUDIT_FILES, key: string): number {
+    const source = readFileSync(path.resolve(__dirname, AUDIT_FILES[locale]), 'utf8')
+    return source.split(`"${key}":`).length - 1
+  }
+
+  it.each(['uk', 'en'] as const)(
+    '%s: audit:viewTrace resolves to the primitive row-action string',
+    (locale) => {
+      const t = i18n.getFixedT(locale, 'audit')
+      const value = t('viewTrace')
+      expect(typeof value).toBe('string')
+      expect(value).toBe(locale === 'uk' ? 'Слід' : 'Trace')
+    },
+  )
+
+  it.each(['uk', 'en'] as const)(
+    '%s: audit:trace.title continues to resolve for the dialog',
+    (locale) => {
+      const t = i18n.getFixedT(locale, 'audit')
+      const value = t('trace.title')
+      expect(typeof value).toBe('string')
+      expect(value).toBe(locale === 'uk' ? 'Слід аудиту' : 'Audit trace')
+    },
+  )
+
+  it.each(['uk', 'en'] as const)(
+    '%s: audit catalog holds zero trace strings, one viewTrace string, and one trace object',
+    (locale) => {
+      const source = readFileSync(path.resolve(__dirname, AUDIT_FILES[locale]), 'utf8')
+
+      // Raw-source assertions: JSON.parse silently keeps the LAST duplicate,
+      // so a parsed-object walk cannot detect raw duplicate keys and no such
+      // claim is made here. This guard is intentionally collision-specific:
+      // exactly one raw `trace:` occurrence (the dialog-namespace object) and
+      // one raw `viewTrace:` occurrence (the row-action leaf) may exist.
+      expect(rawKeyOccurrences(locale, 'trace')).toBe(1)
+      expect(rawKeyOccurrences(locale, 'viewTrace')).toBe(1)
+      expect(source).not.toMatch(/"trace":\s*"/)
+      expect(source).toMatch(/"viewTrace":\s*"Trace"|"viewTrace":\s*"Слід"/)
+
+      // Shape assertions on the parsed catalog: exactly one `trace` object
+      // remains as the dialog namespace, zero string-valued `trace` leaves
+      // remain, and the row-action string exists only under `viewTrace`.
+      const parsed: Record<string, unknown> = JSON.parse(source)
+      expect(parsed.trace).toEqual(expect.any(Object))
+      expect(Array.isArray(parsed.trace)).toBe(false)
+      expect(typeof parsed.viewTrace).toBe('string')
+    },
+  )
 })
 
 describe('useActiveLocale — html[lang] synchronization and persistence', () => {
