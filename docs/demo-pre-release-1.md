@@ -1,15 +1,15 @@
 # Demo Pre-Release 1 — Public Portfolio-Demo Checkpoint
 
-**Last Updated:** 2026-08-27
+**Last Updated:** 2026-08-29
 **Defined by:** WP-DPR1-01
 **Reconciliation base snapshot:** main @ `feb14a73617c3c13f677e46c199fefae1c6b6111` (PR #135 merge commit; snapshot semantics per DEC-051)
-**Status:** DOCUMENTATION BASELINE ONLY — all described code is incorporated into `main`; nothing has been deployed by this milestone definition. Post-merge Frontend CI, Backend CI, and End-to-End Tests are complete and successful at this commit.
+**Status:** DOCUMENTATION BASELINE — described code is incorporated into `main` and has been **deployed to the public Demo and independently verified**: deployment completed through WP-DPR1-02A (candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` at https://demo.forgemind-ai.tech/), independent live verification passed through WP-DPR1-03A (2026-08-29). Post-merge Frontend CI, Backend CI, and End-to-End Tests are complete and successful at this commit. This remains distinct from formal Release 1: Release 1 stays NOT READY / NOT DEPLOYED, staging and production remain NOT STARTED, and no GitHub Release is published.
 
 ---
 
 ## What Demo Pre-Release 1 Is
 
-Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, intended to be shown publicly (CV, technical review, hiring review) once an independently authorized deployment action brings the running isolated Demo environment to this code level.
+Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, shown publicly (CV, technical review, hiring review) through the live public Demo. The public portfolio Demo has been deployed to this code level, and candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` has passed independent live verification; formal Release 1 remains a separate lifecycle state.
 
 It demonstrates one complete, auditable, human-approved vertical workflow — Production Plan Supply Risk Review — in a Ukrainian-first interface, backed by passing acceptance tests AT-003 through AT-013 and Playwright end-to-end journeys (`golden-scenario.spec.ts`, `approval-trail.spec.ts`).
 
@@ -22,7 +22,7 @@ It demonstrates one complete, auditable, human-approved vertical workflow — Pr
 | Final Release 1 acceptance | All Phase 7 gates remain intact; Release 1 remains NOT READY / NOT DEPLOYED |
 | Completion of all planned UX work | WP-UX-UA-06 through WP-UX-UA-12 (including the full interactive Document Trace Map) remain NOT STARTED |
 
-Marking the demo updated, publishing a Release, accepting Release 1, or completing the UX roadmap each require their own separate authorization and verification. This document does none of them.
+Marking the demo updated, publishing a Release, accepting Release 1, or completing the UX roadmap each require their own separate authorization and verification. This revision records the completed public Demo deployment (WP-DPR1-02A), the completed independent live verification (WP-DPR1-03A), and the satisfied advertisement boundary (below); it does not declare formal Release 1 acceptance, does not claim production deployment, does not complete the remaining UX roadmap, does not create a Git tag, and does not publish a GitHub Release.
 
 ## Purpose
 
@@ -71,34 +71,38 @@ Demo Pre-Release 1 does **not** claim:
 5. **No real enterprise integrations.** Only synthetic data and synthetic local records exist; no ERP or corporate system is connected. (The hosted OpenAI-compatible provider integration — OpenRouter — is real and verified.)
 6. **Provider key/budget configuration is operator-side.** The repository itself carries no provider keys; runtime embedding/chat providers require operator `.env` configuration, including at seeding time.
 
-Recorded during reconnaissance, additionally material: the currently published Demo environment predates WP-UX-UA-04/05 incorporation — until redeployed it may show older behavior, which is precisely why advertisement of the update requires post-deployment verification (below).
+Recorded during reconnaissance, additionally material: the currently published Demo environment predates WP-UX-UA-04/05 incorporation — until redeployed it may show older behavior, which is precisely why advertisement of the update requires post-deployment verification (below). *(Historical note, resolved 2026-08-29: the Demo has since been redeployed to candidate `edbbc938` through WP-DPR1-02A and independently verified through WP-DPR1-03A; the advertisement boundary below has been satisfied.)*
 
 ## Demo Readiness and Deployment Boundary
 
 - The code described by this checkpoint **is incorporated into `main`** at `feb14a73617c3c13f677e46c199fefae1c6b6111` (PR #135 merge commit), with all required post-merge CI workflows complete and successful.
-- **Deployment to the public demo is a separate controlled action**, governed by the isolated disposable Demo stack procedures (`docker-compose.demo.yml`, operator-level reset; see [demo-environment.md](demo-environment.md)).
-- **This documentation milestone deploys nothing.** Defining Demo Pre-Release 1 does not touch the demo host, containers, DNS, TLS, or secrets.
-- **The public demo must not be advertised as updated until an independent post-deployment check passes** against the deployed instance (observing the UA-04/UA-05 behavior described here).
+- **Deployment to the public Demo is a separate controlled action**, governed by the isolated disposable Demo stack procedures (`docker-compose.demo.yml`, operator-level reset; see [demo-environment.md](demo-environment.md)).
+- **Deployed (2026-08-27, WP-DPR1-02A):** the public Demo at **https://demo.forgemind-ai.tech/** runs the exact candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` (in-place Compose update, one controlled reset, per-service candidate image IDs verified). The deployment report recorded zero repository edits and no lifecycle-reconciliation claims.
+- **Independently verified (2026-08-29, WP-DPR1-03A):** live verification **passed** — verified Manager → Procurement Specialist → Auditor journey, rejection path, role boundaries, Ukrainian-first and responsive presentation (desktop 1440×900 and mobile 390×844) and basic keyboard accessibility, against the deployed instance. The concise durable record: [reviews/wp_dpr1_03a_live_demo_verification.md](reviews/wp_dpr1_03a_live_demo_verification.md). The practical public walkthrough: [demo-guide.uk.md](demo-guide.uk.md).
+- **Advertisement boundary satisfied:** the public Demo may now be advertised as updated to this checkpoint's code level, based on the passed independent verification.
+- **This documentation milestone deploys nothing.** Updating this document does not touch the demo host, containers, DNS, TLS, or secrets.
+- **Not formal Release 1:** the verified Demo does not constitute Release 1 deployment, acceptance or completion — Release 1 remains NOT READY / NOT DEPLOYED, staging and production remain NOT STARTED, no GitHub Release is published, and the remaining UX packages (WP-UX-UA-06 through WP-UX-UA-12, including the interactive Document Trace Map) remain NOT STARTED.
 
 ## Lifecycle Position
 
-Accepted order for the coming steps (each a separately authorized, bounded action):
+Accepted lifecycle order (each step a separately authorized, bounded action; completed steps marked COMPLETE below):
 
 ```
-Demo Pre-Release 1 documentation baseline (WP-DPR1-01 — THIS milestone, awaiting review/merge)
-→ independent public-demo deployment action (brings demo.forgemind-ai.tech to this code level)
-→ independent post-deployment verification (then, and only then, advertise/update resume references)
+Demo Pre-Release 1 documentation baseline (WP-DPR1-01 — COMPLETE, merged)
+→ independent public-demo deployment action (WP-DPR1-02A — COMPLETE, 2026-08-27: demo.forgemind-ai.tech runs candidate edbbc938)
+→ independent post-deployment verification (WP-DPR1-03A — COMPLETE, 2026-08-29: PASSED; advertisement boundary satisfied)
 → subsequent UX packages (Trace Map backend 07 → Trace Map frontend 08; provider-output language 09;
    consolidation audits; WP-UX-UA-12 demo verification) continue WITHOUT blocking the portfolio publication
 ```
 
-The full Document Trace Map and further visual polish are subsequent roadmap work, not prerequisites for the first portfolio-demo publication. Release 1 completion continues through the unchanged Phase 7 gates.
+The first three steps of this order are complete: the Demo is deployed, verified, and publicly presentable at this checkpoint's code level. The full Document Trace Map and further visual polish remain subsequent roadmap work, not prerequisites for the portfolio-demo publication. Release 1 completion continues through the unchanged Phase 7 gates.
 
 ## Related Documents
 
 - [Current lifecycle status](next_steps.md)
 - [Active work tracker](ACTIVE_WORK.md)
 - [Isolated Demo environment](demo-environment.md)
+- [Ukrainian recruiter Demo walkthrough](demo-guide.uk.md)
 - [UX product direction and decomposition](planning/wp_ux_ua_00_product_direction.md)
 - [Phase 7 deployment contract](planning/phase_7_deployment_contract.md)
 - [Product and MVP scope (Source of Truth)](../forgemind_project_source_of_truth/01_PRODUCT_AND_MVP_SCOPE.md)
