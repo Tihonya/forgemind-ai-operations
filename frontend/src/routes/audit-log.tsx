@@ -282,7 +282,7 @@ export default function AuditLog() {
                         aria-label={t('viewTraceAria', { eventType: formatEventType(event.event_type) })}
                         data-testid={`trace-event-${event.id}`}
                       >
-                        {t('trace')}
+                        {t('viewTrace')}
                       </Button>
                       <Button
                         variant="outline"
