@@ -1,8 +1,12 @@
 # ForgeMind AI Operations
 
+**Language:** English | [Українська](README.uk.md)
+
 **Controlled AI-assisted Supply Risk Intelligence** — a portfolio MVP demonstrating one complete, auditable, human-approved vertical workflow from production plan to procurement decision.
 
-> **Status: NOT YET DEPLOYED** — The Release 1 application feature set is implemented and locally runnable, but Release 1 has not yet completed its deployment and acceptance gates. No public Live Demo URL exists. Staging: NOT STARTED. Production: NOT STARTED. Release 1: NOT READY / NOT DEPLOYED.
+> **Live public Demo:** **https://demo.forgemind-ai.tech/**
+>
+> The public portfolio Demo is **live and independently verified** (deployed candidate `edbbc938`, verification passed 2026-08-29). This is a verified public Demo — it is **not** formal Release 1 production acceptance. Release 1 remains NOT READY / NOT DEPLOYED; staging and production remain NOT STARTED.
 
 **Source Code:** https://github.com/Tihonya/forgemind-ai-operations
 
@@ -78,6 +82,8 @@ Three public Demo accounts are displayed on the login page for the isolated Demo
 | `auditor.demo` | Auditor | Inspects the audit trail — cannot approve |
 
 Additional non-public demo identities exist in the seed data but are not presented as public Demo login options. Demo passwords are shown on the login page itself — they are not repeated in this README.
+
+**Try it in 3–5 minutes:** the Ukrainian recruiter walkthrough [docs/demo-guide.uk.md](docs/demo-guide.uk.md) guides you through the full Manager → Procurement Specialist → Auditor journey on the live Demo.
 
 ---
 
@@ -253,6 +259,9 @@ Run tests: `make test`
 
 | Document | Path |
 |----------|------|
+| Українська версія README | [README.uk.md](README.uk.md) |
+| Ukrainian recruiter Demo walkthrough | [docs/demo-guide.uk.md](docs/demo-guide.uk.md) |
+| Live Demo verification record | [docs/reviews/wp_dpr1_03a_live_demo_verification.md](docs/reviews/wp_dpr1_03a_live_demo_verification.md) |
 | Source of Truth (9 documents) | [forgemind_project_source_of_truth/](forgemind_project_source_of_truth/) |
 | Phase 7 deployment contract | [docs/planning/phase_7_deployment_contract.md](docs/planning/phase_7_deployment_contract.md) |
 | Requirements traceability matrix | [docs/planning/requirements_traceability_matrix.md](docs/planning/requirements_traceability_matrix.md) |
@@ -285,8 +294,8 @@ Run tests: `make test`
 ForgeMind is a **portfolio MVP**. The following are intentionally out of scope for Release 1:
 
 - **Synthetic data only:** All production plans, BOMs, inventory, suppliers, documents, and audit events are synthetic. No real corporate ERP or procurement system is connected.
-- **No Release 1 production deployment yet:** Release 1 has not been formally deployed or accepted. A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056); demo availability is not a Release 1 deployment, acceptance, or completion claim.
-- **Ukrainian-first direction adopted and implemented in `main`:** Ukrainian is the default product language with English secondary (DEC-059); localization, localized statuses, guided approval flow and the Decision Trail are incorporated via PRs #128–#135 and described in [docs/demo-pre-release-1.md](docs/demo-pre-release-1.md). The publicly deployed Demo environment predates these incorporations until an independently authorized redeployment brings it to this code level; the demo must not be advertised as updated until post-deployment verification passes.
+- **No Release 1 production deployment yet:** Release 1 has not been formally deployed or accepted. The public portfolio Demo at `https://demo.forgemind-ai.tech/` (DEC-056) is live and independently verified (candidate `edbbc938`, 2026-08-29); demo availability is not a Release 1 deployment, acceptance, or completion claim.
+- **Ukrainian-first direction adopted and implemented in `main`:** Ukrainian is the default product language with English secondary (DEC-059); localization, localized statuses, guided approval flow and the Decision Trail are incorporated via PRs #128–#135 and described in [docs/demo-pre-release-1.md](docs/demo-pre-release-1.md). The public Demo runs this code level (candidate `edbbc938`) and passed independent live verification of the UA-04/UA-05 behavior on 2026-08-29 (see [docs/reviews/wp_dpr1_03a_live_demo_verification.md](docs/reviews/wp_dpr1_03a_live_demo_verification.md)).
 - **Bounded deployment profile:** Initial deployment uses OpenRouter-only chat and embedding providers. A Groq-first fallback chain exists as a runtime capability but is not the initial deployment profile.
 - **No CI/CD deployment automation:** First deployment is manual and checklist-driven.
 - **No full observability platform:** Monitoring is limited to Docker logs, backend `/health`, and backup state markers.
