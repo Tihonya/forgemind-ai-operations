@@ -14,7 +14,7 @@
 
 O2 was the public-Demo Audit Log defect in which the row action for the audit trace rendered the i18next diagnostic `key 'trace (uk)' returned an object instead of string.` (and `[object Object]`) instead of a localized label: a duplicate string-valued `trace` key in the `uk`/`en` audit catalogs collided with (and shadowed) the nested `trace` object namespace used by the read-only trace dialog.
 
-## 3. Fix summary (production source fix, deployed)
+## 3. Fix summary (application source fix deployed to the public Demo frontend)
 
 - The row-action key was renamed to `viewTrace` — `Слід` (`uk`) / `Trace` (`en`) — leaving exactly one nested `trace` object per audit catalog; the read-only dialog (`AuditTraceDialog`) continues its `trace.*` namespace with title `Слід аудиту`.
 - Collision-specific regression tests were added (raw-source catalog guard plus Audit Log label/object-diagnostic cases).
