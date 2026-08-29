@@ -1325,6 +1325,47 @@ A reviewer opening the demo for the first time must understand the product, the 
 
 ---
 
+## DEC-060 — Portfolio release v0.1.0 (bounded first public portfolio release)
+
+**Date:** 2026-08-29
+
+**Status:** Accepted
+
+**Context:**
+
+The public portfolio Demo at `https://demo.forgemind-ai.tech/` is live and independently verified (WP-DPR1-02A deployment of candidate `edbbc93894e74689e54c22056ac3e0b56880a72a`, WP-DPR1-03A independent live verification PASSED; WP-DPR1-05 O2 frontend correction deployed and independently verified through PR #138, merge commit `7b8af58db8ed9a953fb5e7cbcdcbba7fdb30d8ad`; WP-DPR1-06 stabilized the live Compose frontend pin). The WP-DPR1-05/06 deployment retains the previously verified backend and worker images from candidate `edbbc938` and runs the WP-DPR1-05 frontend built from `7b8af58` — exact mixed provenance is recorded in `docs/reviews/wp_dpr1_05_06_demo_frontend_closure.md`. Formal staging and production remain NOT STARTED; PRE-STAGING VPS SECURITY HARDENING has not started; WP-UX-UA-06 through WP-UX-UA-12 (including the full interactive Document Trace Map) remain roadmap work. The Product Owner now fixes the presentation boundary of the first public portfolio release.
+
+**Decision:**
+
+The Product Owner accepts:
+
+1. `v0.1.0` will be ForgeMind's first public portfolio release.
+2. The independently verified public Demo satisfies the demonstration and advertisement boundary for this portfolio release.
+3. `v0.1.0` is not a production deployment, production acceptance, SLA declaration, or completion of every Phase 7 and UX-roadmap package.
+4. Formal staging, production promotion, remaining production hardening, and WP-UX-UA-06 through WP-UX-UA-12 remain future roadmap work (WP-UX-UA-06 through WP-UX-UA-12 are not blockers for the bounded portfolio release).
+5. The live Demo guide and durable verification evidence are sufficient presentation artifacts for `v0.1.0`; a recorded Demo video remains optional future portfolio polish and is not marked complete.
+6. The exact mixed deployment provenance must remain documented.
+7. Routine rotation of all Demo credentials is deferred to one bounded pre-conservation maintenance action; it is not part of the WP-DPR1-07 reconciliation PR or the `v0.1.0` publication package.
+8. After the WP-DPR1-07 reconciliation is independently reviewed and merged, the next action is one bounded tag-and-GitHub-Release package (WP-DPR1-08).
+
+**Reason:**
+
+The verified public Demo is ready to serve as the basis for portfolio release `v0.1.0`; formal production deployment remains separate and incomplete. Recording this boundary prevents the portfolio release from being misread as production acceptance while giving the publication package a precise, verifiable definition.
+
+**Consequences:**
+
+- DEC-060 supplements rather than erases DEC-054/058/059; all Phase 7 deployment-security and lifecycle gates remain intact.
+- `v0.1.0` is defined as a bounded portfolio release; it does not convert the public Demo into production.
+- It does not waive production security, staging or SLA gates for a later production-grade release; formal Release 1 remains NOT READY / NOT DEPLOYED, and no deployment-gated acceptance test is marked PASS on Demo evidence alone.
+- It authorizes only preparation for a separate tag-and-Release package (WP-DPR1-08) after the WP-DPR1-07 reconciliation PR is reviewed and incorporated; the WP-DPR1-07 PR itself must not create the tag or the GitHub Release.
+- No credential rotation, deployment, or Demo mutation is authorized or performed by this decision or the recording PR.
+
+**Affected documents/tests:** `docs/ACTIVE_WORK.md`, `docs/next_steps.md`, `docs/demo-pre-release-1.md`, `docs/reviews/wp_dpr1_05_06_demo_frontend_closure.md`, `forgemind_project_source_of_truth/05_DEPLOYMENT_AND_DEMO.md`, `forgemind_project_source_of_truth/07_ROADMAP.md`, `forgemind_project_source_of_truth/08_DECISION_LOG.md`.
+
+**Approved by:** Product Owner (2026-08-29)
+
+---
+
 ## Template for new decisions
 
 ```markdown

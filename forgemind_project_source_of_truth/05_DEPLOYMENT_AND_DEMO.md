@@ -148,3 +148,20 @@ Deployment вважається готовим, коли:
 - inspect logs;
 - verify health;
 - disable AI provider in emergency.
+
+## 10. Актуальний стан публічного портфоліо-демо (станом на 2026-08-29)
+
+Публічний портфоліо-демо розгорнуто, незалежно перевірено та працює: `https://demo.forgemind-ai.tech/`. Це ізольоване одноразове демонстраційне середовище (DEC-056) — воно не є formal production deployment: Release 1 залишається NOT READY / NOT DEPLOYED, staging і production — NOT STARTED, формальне production acceptance не оголошено, SLA не завершено, і жоден acceptance-тест, що залежить від deployment evidence, не позначено PASS лише на підставі демо.
+
+Що перевірено на публічному демо:
+
+- працює українськомовний рекрутерський сценарій (менеджер → фахівець із закупівель → аудитор) із role boundaries; існують три demo-ролі (`manager.demo`, `procurement.demo`, `auditor.demo`);
+- український рекрутерський гайд існує й опубліковано в репозиторії (`docs/demo-guide.uk.md`, PR #137);
+- health-перевірка проходить: HTTPS доступний, `/` і `/login` повертають 200, `/health` — 200 із перевірками backend/postgresql/redis/worker = ok; HTTP перенаправляється на HTTPS (redirect 308); валідний TLS;
+- первинний демо-маршрут (Golden Scenario walkthrough) пройдено під час незалежної живої верифікації (WP-DPR1-03A);
+- O2 закрито на публічному демо: дії в Журналі аудиту відображають `Слід`, діалог лише для читання має заголовок `Слід аудиту`, i18next-діагностика об'єкта більше не відтворюється (WP-DPR1-05, PR #138, merge commit `7b8af58db8ed9a953fb5e7cbcdcbba7fdb30d8ad`);
+- стабільна live Compose-команда (base + override) утримує виправлений фронтенд — пін фронтенду в override узгоджено з розгорнутим образом (WP-DPR1-06); rollback-тег зберігається та не використовується.
+
+Точний змішаний походження образів (mixed provenance): The public Demo retains the previously verified backend and worker images from candidate edbbc938 and runs the WP-DPR1-05 frontend built from 7b8af58. Увесь запущений стек НЕ було перезібрано з `7b8af58`. Точні ідентифікатори образів: backend `sha256:7e1b21c263b710beecc13028f357adf030d2605568266f4873a5c29f6056ef51`; worker `sha256:58d156b611c9b478fd3a59d41c1a5714dc002363ea3f19b700004bef4796c730`; frontend `sha256:ecae3e2f60f81c31487a3764c05303a0af29adc4dbb966612166f5f7e064b19d`; Alembic-ревізія `d00f71c78f67`. Жодних даних застосунку або персистентних сервісів не змінено (WP-DPR1-05/06). Повний підсумок: `docs/reviews/wp_dpr1_05_06_demo_frontend_closure.md`.
+
+Не задекларовано й не зроблено: credential rotation (відкладено до однієї обмеженої консерваційної дії, DEC-060), автоматичний reset перед кожним відвідуванням рекрутера, staging/production розгортання, GitHub Release або тег для цього чекпоінту. Портфоліо-реліз `v0.1.0` готується як окрема обмежена дія (WP-DPR1-08) після незалежного рев'ю та злиття WP-DPR1-07.
