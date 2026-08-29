@@ -101,7 +101,11 @@ describe('audit catalog collision regression (WP-DPR1-05)', () => {
     en: '../locales/en/audit.json',
   } as const
 
-  /** Count occurrences of a raw JSON key at ANY nesting level. */
+  /**
+   * Count occurrences of an exact raw JSON key spelling at any nesting level;
+   * used here only to ensure each collision key occurs once in the catalog
+   * source. This is NOT a top-level-only or general duplicate-key detector.
+   */
   function rawKeyOccurrences(locale: keyof typeof AUDIT_FILES, key: string): number {
     const source = readFileSync(path.resolve(__dirname, AUDIT_FILES[locale]), 'utf8')
     return source.split(`"${key}":`).length - 1
@@ -128,32 +132,27 @@ describe('audit catalog collision regression (WP-DPR1-05)', () => {
   )
 
   it.each(['uk', 'en'] as const)(
-    '%s: audit catalog holds exactly one trace string, one viewTrace string, and one trace object',
+    '%s: audit catalog holds zero trace strings, one viewTrace string, and one trace object',
     (locale) => {
       const source = readFileSync(path.resolve(__dirname, AUDIT_FILES[locale]), 'utf8')
 
-      // Raw source assertions: JSON.parse silently keeps the LAST duplicate,
-      // so parsed-object checks cannot detect the collision. Exactly one
-      // top-level `trace` string must remain (the dialog namespace), and the
-      // row-action leaf must exist only as `viewTrace`.
+      // Raw-source assertions: JSON.parse silently keeps the LAST duplicate,
+      // so a parsed-object walk cannot detect raw duplicate keys and no such
+      // claim is made here. This guard is intentionally collision-specific:
+      // exactly one raw `trace:` occurrence (the dialog-namespace object) and
+      // one raw `viewTrace:` occurrence (the row-action leaf) may exist.
       expect(rawKeyOccurrences(locale, 'trace')).toBe(1)
       expect(rawKeyOccurrences(locale, 'viewTrace')).toBe(1)
       expect(source).not.toMatch(/"trace":\s*"/)
       expect(source).toMatch(/"viewTrace":\s*"Trace"|"viewTrace":\s*"Слід"/)
 
-      // No duplicate keys at all may remain (defense in depth).
-      const parsed = JSON.parse(source)
-      const seen = new Set<string>()
-      const walk = (node: unknown, prefix: string): void => {
-        if (node === null || typeof node !== 'object') return
-        for (const [key, value] of Object.entries(node)) {
-          const path = prefix ? `${prefix}.${key}` : key
-          expect(seen.has(path), `duplicate key path: ${path}`).toBe(false)
-          seen.add(path)
-          walk(value, path)
-        }
-      }
-      walk(parsed, '')
+      // Shape assertions on the parsed catalog: exactly one `trace` object
+      // remains as the dialog namespace, zero string-valued `trace` leaves
+      // remain, and the row-action string exists only under `viewTrace`.
+      const parsed: Record<string, unknown> = JSON.parse(source)
+      expect(parsed.trace).toEqual(expect.any(Object))
+      expect(Array.isArray(parsed.trace)).toBe(false)
+      expect(typeof parsed.viewTrace).toBe('string')
     },
   )
 })
