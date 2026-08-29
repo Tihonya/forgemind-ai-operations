@@ -2,14 +2,14 @@
 
 **Last Updated:** 2026-08-29
 **Defined by:** WP-DPR1-01
-**Reconciliation base snapshot:** main @ `feb14a73617c3c13f677e46c199fefae1c6b6111` (PR #135 merge commit; snapshot semantics per DEC-051)
-**Status:** DOCUMENTATION BASELINE — described code is incorporated into `main` and has been **deployed to the public Demo and independently verified**: deployment completed through WP-DPR1-02A (candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` at https://demo.forgemind-ai.tech/), independent live verification passed through WP-DPR1-03A (2026-08-29). Post-merge Frontend CI, Backend CI, and End-to-End Tests are complete and successful at this commit. This remains distinct from formal Release 1: Release 1 stays NOT READY / NOT DEPLOYED, staging and production remain NOT STARTED, and no GitHub Release is published.
+**Reconciliation base snapshot:** main @ `7b8af58db8ed9a953fb5e7cbcdcbba7fdb30d8ad` (PR #138 merge commit; snapshot semantics per DEC-051)
+**Status:** DOCUMENTATION BASELINE — described code is incorporated into `main` and has been **deployed to the public Demo and independently verified**: deployment completed through WP-DPR1-02A (candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` at https://demo.forgemind-ai.tech/), independent live verification passed through WP-DPR1-03A (2026-08-29). Post-merge Frontend CI, Backend CI, and End-to-End Tests are complete and successful at this commit. Current state (2026-08-29): the WP-DPR1-05 frontend correction (O2 fix, PR #138, merge commit `7b8af58db8ed9a953fb5e7cbcdcbba7fdb30d8ad`) is deployed to the public Demo and independently verified; O2 is closed; the stable live Compose invocation retains the corrected frontend (WP-DPR1-06). Exact mixed provenance: The public Demo retains the previously verified backend and worker images from candidate edbbc938 and runs the WP-DPR1-05 frontend built from 7b8af58. Durable closure record: [reviews/wp_dpr1_05_06_demo_frontend_closure.md](reviews/wp_dpr1_05_06_demo_frontend_closure.md). This checkpoint is now the basis for portfolio release `v0.1.0`; the annotated tag and GitHub Release have not yet been created. This remains distinct from formal Release 1: Release 1 stays NOT READY / NOT DEPLOYED, staging and production remain NOT STARTED, and no GitHub Release is published.
 
 ---
 
 ## What Demo Pre-Release 1 Is
 
-Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, shown publicly (CV, technical review, hiring review) through the live public Demo. The public portfolio Demo has been deployed to this code level, and candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` has passed independent live verification; formal Release 1 remains a separate lifecycle state.
+Demo Pre-Release 1 is the **first public portfolio-demo checkpoint** of ForgeMind: a clearly bounded, verified slice of `main`, shown publicly (CV, technical review, hiring review) through the live public Demo. The public portfolio Demo has been deployed to this code level, candidate `edbbc93894e74689e54c22056ac3e0b56880a72a` has passed independent live verification, and the WP-DPR1-05 frontend correction is deployed and independently verified on top of it; formal Release 1 remains a separate lifecycle state. This checkpoint is now the basis for portfolio release `v0.1.0` (DEC-060): the annotated tag `v0.1.0` and the GitHub Release have not yet been created; publication is the separate bounded action WP-DPR1-08 after independent review and merge of the WP-DPR1-07 lifecycle reconciliation.
 
 It demonstrates one complete, auditable, human-approved vertical workflow — Production Plan Supply Risk Review — in a Ukrainian-first interface, backed by passing acceptance tests AT-003 through AT-013 and Playwright end-to-end journeys (`golden-scenario.spec.ts`, `approval-trail.spec.ts`).
 
@@ -18,7 +18,7 @@ It demonstrates one complete, auditable, human-approved vertical workflow — Pr
 | Demo Pre-Release 1 is NOT | Authoritative reason |
 |---------------------------|----------------------|
 | A formal Release 1 production deployment | Phase 7 deployment contract (DEC-054, DEC-058 Model C): staging/production remain NOT STARTED |
-| A GitHub Release | No tag or GitHub Release is created for this checkpoint (GitHub Release publication is a separate Phase 7 package, WP-P7-11) |
+| A GitHub Release | No tag or GitHub Release is created for this checkpoint (portfolio release `v0.1.0` publication is the separate bounded action WP-DPR1-08 after this reconciliation is merged; formal Release 1 publication remains WP-P7-11) |
 | Final Release 1 acceptance | All Phase 7 gates remain intact; Release 1 remains NOT READY / NOT DEPLOYED |
 | Completion of all planned UX work | WP-UX-UA-06 through WP-UX-UA-12 (including the full interactive Document Trace Map) remain NOT STARTED |
 
@@ -91,6 +91,10 @@ Accepted lifecycle order (each step a separately authorized, bounded action; com
 Demo Pre-Release 1 documentation baseline (WP-DPR1-01 — COMPLETE, merged)
 → independent public-demo deployment action (WP-DPR1-02A — COMPLETE, 2026-08-27: demo.forgemind-ai.tech runs candidate edbbc938)
 → independent post-deployment verification (WP-DPR1-03A — COMPLETE, 2026-08-29: PASSED; advertisement boundary satisfied)
+→ O2 frontend correction deployed and independently verified (WP-DPR1-05 — COMPLETE, 2026-08-29: PR #138, merge commit 7b8af58; O2 closed on the public Demo)
+→ live Compose frontend-pin stabilization (WP-DPR1-06 — COMPLETE, 2026-08-29: the stable live Compose invocation retains the corrected frontend)
+→ lifecycle reconciliation and DEC-060 (WP-DPR1-07 — this PR: this checkpoint is the basis for portfolio release v0.1.0; no tag or Release created by it)
+→ portfolio release publication (WP-DPR1-08 — NEXT bounded action after this PR is independently reviewed and merged: annotated tag v0.1.0 + one GitHub Release; a portfolio release, not production acceptance)
 → subsequent UX packages (Trace Map backend 07 → Trace Map frontend 08; provider-output language 09;
    consolidation audits; WP-UX-UA-12 demo verification) continue WITHOUT blocking the portfolio publication
 ```

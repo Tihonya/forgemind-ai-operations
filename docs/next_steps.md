@@ -1,12 +1,14 @@
 # ForgeMind — Next Steps
 
-**Last Updated:** 2026-08-26
+**Last Updated:** 2026-08-29
 **Current Status:** Development in progress — Release 1 NOT READY
 **Reconciliation base snapshot:** main @ `feb14a73617c3c13f677e46c199fefae1c6b6111` (PR #135 merge commit; snapshot semantics per DEC-051)
 
 The `Reconciliation base snapshot` field records the immutable base snapshot used to prepare this document's lifecycle state — it is not a current-`main` assertion; current `main` is determined from Git/GitHub (see DEC-051).
 
-**Current action:** WP-DPR1-01 — Demo Pre-Release 1 documentation baseline (`docs/demo-pre-release-1.md`): the first public portfolio-demo checkpoint defined from verified repository state; public-demo deployment is a separate subsequent action and no deployment occurred or is authorized here. See also `docs/ACTIVE_WORK.md`.
+**Current action:** WP-DPR1-07 — portfolio release lifecycle reconciliation (documentation-only): it reconciles the durable lifecycle documentation with the verified public Demo state and records DEC-060; it performs no deployment, no credential rotation, no tagging and no Release publication. See also `docs/ACTIVE_WORK.md`.
+
+**Top-level next action after incorporation of this reconciliation:** `WP-DPR1-08 — Publish portfolio release v0.1.0`. Its boundaries: create annotated tag `v0.1.0`; publish one GitHub Release; use the exact reviewed merge commit resulting from WP-DPR1-07; include links to the live Demo, the Ukrainian README and the recruiter guide; describe it as a portfolio release, not production acceptance; no deployment or credential rotation in that package. The verified public Demo is ready to serve as the basis for portfolio release v0.1.0; formal production deployment remains separate and incomplete.
 
 ---
 
@@ -67,11 +69,13 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 | Demo reset (operator-level, disposable) | WP-P7-03 COMPLETE — `make demo-reset` / `scripts/demo-reset.sh` | Implemented; AT-015 not yet evaluated from deployment evidence |
 | Distributed rate limiting | WP-P7-02 COMPLETE — Redis-backed, fail-closed | Implemented; requires deployment verification |
 | Backup/restore | WP-P7-02 COMPLETE — `scripts/backup*.sh`, compose `backup` profile | Implemented; restore rehearsal required before production |
-| Public HTTPS deployment | WP-P7-02 configuration COMPLETE | NOT STARTED — WP-P7-06 |
+| Public portfolio Demo (isolated disposable environment, DEC-056) | Live and independently verified at https://demo.forgemind-ai.tech/ — exact mixed provenance recorded in `docs/reviews/wp_dpr1_05_06_demo_frontend_closure.md` | Live; presentation-ready for portfolio release v0.1.0 |
+| Formal Release 1 production deployment | WP-P7-02 configuration COMPLETE | NOT STARTED — WP-P7-06 onward |
 | Operational runbooks | `docs/infra-production.md` + `docs/operations/release_1_runbook.md` | COMPLETE |
 
 ### What remains before Release 1
 
+- PORTFOLIO RELEASE v0.1.0 (WP-DPR1-08): publish the portfolio release — annotated tag `v0.1.0` and one GitHub Release at the exact reviewed merge commit resulting from WP-DPR1-07, with links to the live Demo, the Ukrainian README and the recruiter guide; a portfolio release, NOT production acceptance; no deployment or credential rotation in that package. PRECONDITION: independent review and merge of the WP-DPR1-07 lifecycle reconciliation (this PR).
 - PRE-STAGING VPS SECURITY HARDENING (separate bounded operational action; NOT STARTED)
 - Staging deployment (WP-P7-06)
 - Staging verification (WP-P7-07)
@@ -84,7 +88,7 @@ CV → Live Demo → complete working scenario (3–5 minutes) → inspect resul
 
 ### Demo availability versus Release 1 deployment (DEC-059 §9)
 
-A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056; observed serving the ForgeMind frontend, HTTP 200, 2026-08-24; the FQDN is operator configuration, not a committed repository value). This demo fact does NOT make Release 1 deployed, accepted or complete: the formal Release 1 production deployment remains NOT STARTED under the Phase 7 deployment contract (DEC-054, DEC-058 Model C), and no deployment-gated acceptance test is marked PASS on demo availability alone.
+A publicly reachable isolated disposable Demo environment exists at `https://demo.forgemind-ai.tech/` (DEC-056; observed serving the ForgeMind frontend, HTTP 200, 2026-08-24; the FQDN is operator configuration, not a committed repository value). This demo fact does NOT make Release 1 deployed, accepted or complete: the formal Release 1 production deployment remains NOT STARTED under the Phase 7 deployment contract (DEC-054, DEC-058 Model C), and no deployment-gated acceptance test is marked PASS on demo availability alone. Current truth (2026-08-29): the public portfolio Demo is live, independently verified and recruiter-ready — including the WP-DPR1-05 frontend correction (O2 closed) and the WP-DPR1-06 stable frontend pin; exact mixed provenance is recorded in `docs/reviews/wp_dpr1_05_06_demo_frontend_closure.md` — and this still does not make Release 1 deployed, accepted or complete.
 
 ### Ukrainian-first product direction (DEC-059)
 
