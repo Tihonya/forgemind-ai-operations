@@ -5,6 +5,7 @@
 > **Живе демо:** **https://demo.forgemind-ai.tech/**
 >
 > Публічне портфоліо-демо розгорнуто та незалежно перевірено (кандидат `edbbc938`, серпень 2026). Це верифіковане публічне демо — воно не є формальним релізом Release 1 та промисловим розгортанням у виробництві.
+> **Портфоліо-реліз [`v0.1.0`](https://github.com/Tihonya/forgemind-ai-operations/releases/tag/v0.1.0) опубліковано** (2026-08-29) — це перший публічний портфоліо-реліз ForgeMind; це не production-розгортання і не production-приймання Release 1.
 
 **Код проєкту:** https://github.com/Tihonya/forgemind-ai-operations
 **Гайд для рекрутера (3–5 хв):** [docs/demo-guide.uk.md](docs/demo-guide.uk.md)
@@ -125,7 +126,7 @@ make seed               # заповнення бази золотим набо�
 | Публічне портфоліо-демо | **Розгорнуто та незалежно перевірено** (https://demo.forgemind-ai.tech/, кандидат `edbbc938`) |
 | Формальний реліз Release 1 | НЕ ГОТОВИЙ / НЕ РОЗГОРНУТИЙ — ворота Phase 7 чинні |
 | Staging і промислове розгортання | НЕ ПОЧАТІ |
-| GitHub Release | НЕ створений (окремий майбутній пакет) |
+| GitHub Release | **Опубліковано** — [v0.1.0](https://github.com/Tihonya/forgemind-ai-operations/releases/tag/v0.1.0): перший публічний портфоліо-реліз ForgeMind; не production-приймання Release 1 |
 
 ## Обмеження (портфоліо-MVP)
 

@@ -7,6 +7,7 @@
 > **Live public Demo:** **https://demo.forgemind-ai.tech/**
 >
 > The public portfolio Demo is **live and independently verified** (deployed candidate `edbbc938`, verification passed 2026-08-29). This is a verified public Demo — it is **not** formal Release 1 production acceptance. Release 1 remains NOT READY / NOT DEPLOYED; staging and production remain NOT STARTED.
+> **Portfolio release [`v0.1.0`](https://github.com/Tihonya/forgemind-ai-operations/releases/tag/v0.1.0) is published** (2026-08-29) — the first public portfolio release of ForgeMind. This is a public portfolio release, **not** formal production Release 1 acceptance.
 
 **Source Code:** https://github.com/Tihonya/forgemind-ai-operations
 
